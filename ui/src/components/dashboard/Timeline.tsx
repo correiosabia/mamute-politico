@@ -92,15 +92,16 @@ function formatDate(dateStr: string): string {
 }
 
 export function Timeline() {
+  const queryParams = { limit: 20, offset: 0 } as const;
   const [propositionsQuery, votesQuery] = useQueries({
     queries: [
       {
-        queryKey: ['propositions', 'timeline'],
-        queryFn: () => listPropositions({ limit: 20, offset: 0 }),
+        queryKey: ['propositions', 'timeline', queryParams],
+        queryFn: () => listPropositions(queryParams),
       },
       {
-        queryKey: ['roll-call-votes', 'timeline'],
-        queryFn: () => listRollCallVotes({ limit: 20, offset: 0 }),
+        queryKey: ['roll-call-votes', 'timeline', queryParams],
+        queryFn: () => listRollCallVotes(queryParams),
       },
     ],
   });
@@ -131,11 +132,18 @@ export function Timeline() {
     })),
   ]
     .filter((i) => i.data)
-    .sort((a, b) => (b.data > a.data ? 1 : -1))
-    .slice(0, 15);
+    .sort((a, b) => {
+      const aTs = Date.parse(a.data);
+      const bTs = Date.parse(b.data);
+      if (Number.isNaN(aTs) || Number.isNaN(bTs)) {
+        return b.data.localeCompare(a.data);
+      }
+      return bTs - aTs;
+    });
 
   const isLoading = propositionsQuery.isLoading || votesQuery.isLoading;
-  const isError = propositionsQuery.isError || votesQuery.isError;
+  const hasNoData = propositions.length === 0 && votes.length === 0;
+  const isError = propositionsQuery.isError && votesQuery.isError;
 
   if (isLoading) {
     return (
@@ -146,7 +154,7 @@ export function Timeline() {
     );
   }
 
-  if (isError) {
+  if (isError && hasNoData) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[#383838]/60">
         Falha ao carregar a linha do tempo.

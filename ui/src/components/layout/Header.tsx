@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { Menu, User, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
-import { ACCOUNT_URL, JWT_TOKEN_KEY, LOGIN_URL } from '@/components/auth/config';
+import { useAccountModal } from '@/components/auth/useAccountModal';
+import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
 
 const navItems = [
@@ -16,15 +17,18 @@ const navItems = [
 export function Header() {
   const location = useLocation();
   const token = useGhostAuth();
+  const { openLogin } = useLoginModal();
+  const { openAccount } = useAccountModal();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const visibleNavItems = token ? navItems : navItems//.filter((item) => item.path === '/');
 
   const handleAuthClick = () => {
     if (token) {
-      localStorage.removeItem(JWT_TOKEN_KEY);
-      window.location.href = ACCOUNT_URL;
+      closeMobileMenu();
+      openAccount();
     } else {
-      window.location.href = LOGIN_URL;
+      closeMobileMenu();
+      openLogin();
     }
   };
 

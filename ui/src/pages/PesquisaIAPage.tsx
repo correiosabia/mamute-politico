@@ -41,8 +41,10 @@ const PesquisaIAPage = () => {
     },
   ]);
   const [input, setInput] = useState('');
+  const [hueRingBurst, setHueRingBurst] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const prevMessageCountRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>(messages);
   messagesRef.current = messages;
@@ -202,7 +204,10 @@ const PesquisaIAPage = () => {
                 <button
                   key={index}
                   type="button"
-                  onClick={() => setInput(question)}
+                  onClick={() => {
+                    setInput(question);
+                    queueMicrotask(() => messageInputRef.current?.focus());
+                  }}
                   className="mp-card flex min-h-[98px] w-full items-center border border-black/10 bg-white px-5 text-left transition hover:bg-[#f5f5f5]"
                 >
                   <span className="flex w-full items-center justify-between gap-4">
@@ -279,13 +284,22 @@ const PesquisaIAPage = () => {
                 onSubmit={(e) => { e.preventDefault(); void handleSend(); }}
                 className="flex gap-3"
               >
-                <Input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Digite sua pergunta sobre dados legislativos..."
-                  className="flex-1 rounded-full border-0 bg-[#efeeee] text-[13px] text-[#7f7b7b] placeholder:text-[#7f7b7b] focus-visible:ring-0"
-                  minLength={MIN_QUESTION_LEN}
-                />
+                <div className="relative flex min-w-0 flex-1">
+                  <Input
+                    ref={messageInputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => setHueRingBurst((k) => k + 1)}
+                    placeholder="Digite sua pergunta sobre dados legislativos..."
+                    className="peer relative z-[1] w-full rounded-full border-0 bg-[#efeeee] text-[13px] text-[#7f7b7b] placeholder:text-[#7f7b7b] focus-visible:ring-0"
+                    minLength={MIN_QUESTION_LEN}
+                  />
+                  <div
+                    key={hueRingBurst}
+                    aria-hidden
+                    className="pointer-events-none absolute -inset-[4px] z-0 rounded-full border-2 border-[#1b76ff] opacity-0 peer-focus-visible:opacity-100 motion-safe:animate-pesquisa-input-ring-hue motion-reduce:animate-none"
+                  />
+                </div>
                 <button
                   type="submit"
                   disabled={!canSend}

@@ -7,13 +7,16 @@ export type GhostAuthStateWrapper = {
   likelyValidAndParsedToken: JwtPayload | null;
   isLoading: boolean;
   queue: ((token: string) => void)[];
-  subscribers: Array<(token: string) => void>;
+  subscribers: Array<() => void>;
   config: {
     publicKey: null | JWK;
     tokenEndpoint: null | string;
     loginURL: null | string;
     storageKey: null | string;
-    persistenceChoice: Pick<Storage, "setItem" | "getItem"> | null;
+    persistenceChoice: Pick<
+      Storage,
+      "setItem" | "getItem" | "removeItem"
+    > | null;
   };
 };
 
@@ -21,6 +24,6 @@ export type GhostAuthServiceConfig = {
   publicKey: JWK | null;
   tokenEndpoint: string;
   loginURL: string;
-  persistenceChoice: Pick<Storage, "setItem" | "getItem"> | null;
+  persistenceChoice: Pick<Storage, "setItem" | "getItem" | "removeItem"> | null;
   storageKey: string;
 };

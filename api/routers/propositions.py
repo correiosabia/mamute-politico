@@ -50,6 +50,10 @@ class PropositionOut(BaseModel):
 
 
 def _build_proposition_link(proposition: Proposition) -> Optional[str]:
+    # TODO: Implementar a logica do link na fonte ao inves do codigo abaixo
+    if isinstance(proposition.link, str) and "camara.leg.br" in proposition.link:
+        # Proposições da Câmara (deputados) devem apontar para a ficha de tramitação.
+        return proposition.link
     if proposition.proposition_code is not None:
         return f"{SENADO_PROPOSITION_BASE_URL}/{proposition.proposition_code}"
     if isinstance(proposition.link, str) and proposition.link:

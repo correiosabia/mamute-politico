@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,7 +11,9 @@ import DashboardPage from "./pages/DashboardPage";
 import PesquisaIAPage from "./pages/PesquisaIAPage";
 import NotFound from "./pages/NotFound";
 import { useGhostAuth } from "@/components/auth/ghost-auth/react/useGhostAuth";
-import { LOGIN_URL } from "@/components/auth/config";
+import { AccountModalProvider } from "@/components/auth/AccountModalProvider";
+import { LoginModalProvider } from "@/components/auth/LoginModalProvider";
+import { useLoginModal } from "@/components/auth/useLoginModal";
 
 const queryClient = new QueryClient();
 
@@ -59,10 +62,16 @@ function RootRoute() {
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const token = useGhostAuth();
+  const { openLogin } = useLoginModal();
+
+  useEffect(() => {
+    if (!token) {
+      openLogin();
+    }
+  }, [token, openLogin]);
 
   if (!token) {
-    window.location.href = LOGIN_URL;
-    return null;
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -73,45 +82,49 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter basename={routerBasename}>
-        <Routes>
-          <Route path="/" element={<RootRoute />} />
-          <Route
-            path="/selecao"
-            element={
-              <RequireAuth>
-                <SelecaoPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/parlamentar/:id"
-            element={
-              <RequireAuth>
-                <ParlamentarDashboard />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <DashboardPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/pesquisa"
-            element={
-              <RequireAuth>
-                <PesquisaIAPage />
-              </RequireAuth>
-            }
-          />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <LoginModalProvider>
+        <AccountModalProvider>
+          <BrowserRouter basename={routerBasename}>
+            <Routes>
+              <Route path="/" element={<RootRoute />} />
+              <Route
+                path="/selecao"
+                element={
+                  <RequireAuth>
+                    <SelecaoPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/parlamentar/:id"
+                element={
+                  <RequireAuth>
+                    <ParlamentarDashboard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <RequireAuth>
+                    <DashboardPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pesquisa"
+                element={
+                  <RequireAuth>
+                    <PesquisaIAPage />
+                  </RequireAuth>
+                }
+              />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </AccountModalProvider>
+      </LoginModalProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

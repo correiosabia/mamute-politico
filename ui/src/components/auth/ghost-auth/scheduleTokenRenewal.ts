@@ -5,6 +5,13 @@ import type { GhostAuthStateWrapper } from "./types";
 
 let nextRenew: ReturnType<typeof setTimeout> | undefined;
 
+export function clearScheduledTokenRenewal(): void {
+  if (nextRenew !== undefined) {
+    clearTimeout(nextRenew);
+    nextRenew = undefined;
+  }
+}
+
 export async function scheduleTokenRenewal(
   stateWrapper: GhostAuthStateWrapper
 ): Promise<void> {

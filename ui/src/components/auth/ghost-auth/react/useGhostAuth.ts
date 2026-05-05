@@ -11,3 +11,8 @@ export function useGhostAuth(): string | null {
     ghostService.getSnapshot
   );
 }
+
+/** Clears the cached JWT and in-memory auth state so the UI updates without a full reload. */
+export function ghostSignOut(): void {
+  ghostService.signOut();
+}

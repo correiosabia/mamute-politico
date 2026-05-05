@@ -156,14 +156,14 @@ const ParlamentarDashboard = () => {
 
         {/* Bottom: Proposições do Parlamentar with tabs */}
         <div className="mp-card bg-white">
-          <Tabs defaultValue="proposicoes" className="w-full">
+          <Tabs defaultValue="votacoes" className="w-full">
             <div className="flex flex-col gap-4 border-b border-black/[0.06] px-6 pt-6 pb-4">
               <TabsList className="inline-flex h-auto w-fit max-w-full shrink-0 flex-wrap items-center gap-2 bg-transparent p-0">
-                <TabsTrigger value="proposicoes" className={parlamentarSectionTabTriggerClass}>
-                  PROPOSIÇÕES
-                </TabsTrigger>
                 <TabsTrigger value="votacoes" className={parlamentarSectionTabTriggerClass}>
                   VOTAÇÕES
+                </TabsTrigger>
+                <TabsTrigger value="proposicoes" className={parlamentarSectionTabTriggerClass}>
+                  PROPOSIÇÕES
                 </TabsTrigger>
                 <TabsTrigger value="taquigraficas" className={parlamentarSectionTabTriggerClass}>
                   TAQUIGRÁFICAS
@@ -171,11 +171,11 @@ const ParlamentarDashboard = () => {
               </TabsList>
               <h2 className="text-[32px] font-bold text-[#090909]">Atividades do Parlamentar</h2>
             </div>
-            <TabsContent value="proposicoes" className="mt-0 p-6 pt-4">
-              <ProposicoesTable parliamentarianId={id} />
-            </TabsContent>
             <TabsContent value="votacoes" className="mt-0 p-6 pt-4 h-[500px]">
               <VotacoesTable parliamentarianId={numericId} />
+            </TabsContent>
+            <TabsContent value="proposicoes" className="mt-0 p-6 pt-4">
+              <ProposicoesTable parliamentarianId={id} />
             </TabsContent>
             <TabsContent value="taquigraficas" className="mt-0 p-6 pt-4 h-[500px]">
               <TaquigraficasTable parliamentarianId={numericId} />

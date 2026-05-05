@@ -1,5 +1,9 @@
 import { ensureTokenIsValidOrRedirect } from "./ensureTokenIsValidOrRedirect";
-import { scheduleTokenRenewal } from "./scheduleTokenRenewal";
+import { notifySubscribers } from "./notifySubscribers";
+import {
+  clearScheduledTokenRenewal,
+  scheduleTokenRenewal,
+} from "./scheduleTokenRenewal";
 import { setupStateWrapper } from "./setupStateWrapper";
 import type {
   GhostAuthServiceConfig,
@@ -35,7 +39,7 @@ export function createGhostAuthService(config: GhostAuthServiceConfig) {
   }
 
   return {
-    subscribe(fn: (token: string) => void) {
+    subscribe(fn: () => void) {
       if (!stateWrapper.subscribers.includes(fn)) {
         stateWrapper.subscribers.push(fn);
       }
@@ -48,6 +52,22 @@ export function createGhostAuthService(config: GhostAuthServiceConfig) {
         return stateWrapper.token;
       }
       return null;
+    },
+    signOut() {
+      clearScheduledTokenRenewal();
+      stateWrapper.token = null;
+      stateWrapper.likelyValidAndParsedToken = null;
+      stateWrapper.isLoading = false;
+      stateWrapper.queue = [];
+      if (
+        stateWrapper.config.storageKey &&
+        stateWrapper.config.persistenceChoice
+      ) {
+        stateWrapper.config.persistenceChoice.removeItem(
+          stateWrapper.config.storageKey
+        );
+      }
+      notifySubscribers(stateWrapper);
     },
   };
 }

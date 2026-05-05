@@ -105,6 +105,11 @@ export default {
           from: { opacity: "0", transform: "scale(0.95)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
+        /** Decorative focus ring hue cycle (applied to ring-only layers, not text). */
+        "pesquisa-input-ring-hue": {
+          "0%": { filter: "hue-rotate(90deg)" },
+          "100%": { filter: "hue-rotate(0deg)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -112,6 +117,7 @@ export default {
         "fade-in": "fade-in 0.5s ease-out forwards",
         "slide-in-right": "slide-in-right 0.4s ease-out forwards",
         "scale-in": "scale-in 0.3s ease-out forwards",
+        "pesquisa-input-ring-hue": "pesquisa-input-ring-hue 800ms linear 1 forwards",
       },
     },
   },
