@@ -72,11 +72,24 @@ const SENADO_DIRECT_KEYS = [
 ] as const;
 
 function findSenadoLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
+  const values: number[] = [];
   const directCandidates = SENADO_DIRECT_KEYS.map((key) => obj[key]);
 
   for (const candidate of directCandidates) {
     const parsed = toNumberOrUndefined(candidate);
-    if (parsed !== undefined) return parsed;
+    if (parsed !== undefined) values.push(parsed);
+  }
+
+  // Senado payloads often keep current legislatura under mandato branches
+  // such as Primeira/SegundaLegislaturaDoMandato.NumeroLegislatura.
+  for (const [key, value] of Object.entries(obj)) {
+    if (!key.toLowerCase().includes('legislaturadomandato')) continue;
+    const mandatoLegObj = toRecordOrUndefined(value);
+    if (!mandatoLegObj) continue;
+    const numero = toNumberOrUndefined(mandatoLegObj['NumeroLegislatura']);
+    if (numero !== undefined) values.push(numero);
+    const nestedParsed = findSenadoLegislaturaInObject(mandatoLegObj);
+    if (nestedParsed !== undefined) values.push(nestedParsed);
   }
 
   const nestedCandidates: unknown[] = [
@@ -90,7 +103,11 @@ function findSenadoLegislaturaInObject(obj: Record<string, unknown>): number | u
     const nestedObj = toRecordOrUndefined(nested);
     if (!nestedObj) continue;
     const parsed = findSenadoLegislaturaInObject(nestedObj);
-    if (parsed !== undefined) return parsed;
+    if (parsed !== undefined) values.push(parsed);
+  }
+
+  if (values.length > 0) {
+    return Math.max(...values);
   }
 
   return undefined;
