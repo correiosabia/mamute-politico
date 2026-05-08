@@ -45,50 +45,71 @@ function toNumberOrUndefined(value: unknown): number | undefined {
   return undefined;
 }
 
-function findLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
-  const directCandidates = [
-    obj['idLegislatura'],
-    obj['id_legislatura'],
-    obj['legislatura'],
-    obj['Legislatura'],
-    obj['numeroLegislatura'],
-    obj['NumeroLegislatura'],
-    obj['codLegislatura'],
-    obj['CodigoLegislatura'],
-  ];
+function toRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function getCamaraLegislatura(details: Record<string, unknown> | null | undefined): number | undefined {
+  if (!details) return undefined;
+  const ultimoStatus = toRecordOrUndefined(details['ultimoStatus']);
+  const fromUltimoStatus = toNumberOrUndefined(ultimoStatus?.['idLegislatura']);
+  if (fromUltimoStatus !== undefined) return fromUltimoStatus;
+
+  return toNumberOrUndefined(details['idLegislatura']);
+}
+
+const SENADO_DIRECT_KEYS = [
+  'Legislatura',
+  'legislatura',
+  'NumeroLegislatura',
+  'numeroLegislatura',
+  'CodigoLegislatura',
+  'codLegislatura',
+  'idLegislatura',
+  'id_legislatura',
+] as const;
+
+function findSenadoLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
+  const directCandidates = SENADO_DIRECT_KEYS.map((key) => obj[key]);
 
   for (const candidate of directCandidates) {
     const parsed = toNumberOrUndefined(candidate);
     if (parsed !== undefined) return parsed;
   }
 
-  const nestedCandidates = [
+  const nestedCandidates: unknown[] = [
     obj['ultimoStatus'],
     obj['IdentificacaoParlamentar'],
     obj['Mandato'],
     obj['Mandatos'],
-    obj['lista'],
-    obj['detalhe'],
   ];
 
   for (const nested of nestedCandidates) {
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      const parsed = findLegislaturaInObject(nested as Record<string, unknown>);
-      if (parsed !== undefined) return parsed;
-    }
+    const nestedObj = toRecordOrUndefined(nested);
+    if (!nestedObj) continue;
+    const parsed = findSenadoLegislaturaInObject(nestedObj);
+    if (parsed !== undefined) return parsed;
   }
 
   return undefined;
 }
 
 function getLegislatura(o: ParliamentarianOut): number {
-  const rootParsed = findLegislaturaInObject(o as unknown as Record<string, unknown>);
-  if (rootParsed !== undefined) return rootParsed;
+  const casa = casaFromType(o.type);
+  const details = toRecordOrUndefined(o.details);
 
-  const details = o.details;
-  if (details && typeof details === 'object') {
-    const detailsParsed = findLegislaturaInObject(details);
-    if (detailsParsed !== undefined) return detailsParsed;
+  if (casa === 'camara') {
+    const camaraLegislatura = getCamaraLegislatura(details);
+    if (camaraLegislatura !== undefined) return camaraLegislatura;
+  } else {
+    const senadoRoots = [details?.['lista'], details?.['detalhe']];
+    for (const root of senadoRoots) {
+      const rootObj = toRecordOrUndefined(root);
+      if (!rootObj) continue;
+      const parsed = findSenadoLegislaturaInObject(rootObj);
+      if (parsed !== undefined) return parsed;
+    }
   }
 
   // Backward-compatible fallback while APIs/ETL fully expose this consistently.
