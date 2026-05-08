@@ -113,7 +113,7 @@ function getLegislatura(o: ParliamentarianOut): number {
   }
 
   // Backward-compatible fallback while APIs/ETL fully expose this consistently.
-  return 57;
+  return -1;
 }
 
 export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
