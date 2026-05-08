@@ -36,6 +36,86 @@ function casaFromType(type: string | null | undefined): Parlamentar['casa'] {
   return 'camara';
 }
 
+function toNumberOrUndefined(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function toRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function getCamaraLegislatura(details: Record<string, unknown> | null | undefined): number | undefined {
+  if (!details) return undefined;
+  const ultimoStatus = toRecordOrUndefined(details['ultimoStatus']);
+  const fromUltimoStatus = toNumberOrUndefined(ultimoStatus?.['idLegislatura']);
+  if (fromUltimoStatus !== undefined) return fromUltimoStatus;
+
+  return toNumberOrUndefined(details['idLegislatura']);
+}
+
+const SENADO_DIRECT_KEYS = [
+  'Legislatura',
+  'legislatura',
+  'NumeroLegislatura',
+  'numeroLegislatura',
+  'CodigoLegislatura',
+  'codLegislatura',
+  'idLegislatura',
+  'id_legislatura',
+] as const;
+
+function findSenadoLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
+  const directCandidates = SENADO_DIRECT_KEYS.map((key) => obj[key]);
+
+  for (const candidate of directCandidates) {
+    const parsed = toNumberOrUndefined(candidate);
+    if (parsed !== undefined) return parsed;
+  }
+
+  const nestedCandidates: unknown[] = [
+    obj['ultimoStatus'],
+    obj['IdentificacaoParlamentar'],
+    obj['Mandato'],
+    obj['Mandatos'],
+  ];
+
+  for (const nested of nestedCandidates) {
+    const nestedObj = toRecordOrUndefined(nested);
+    if (!nestedObj) continue;
+    const parsed = findSenadoLegislaturaInObject(nestedObj);
+    if (parsed !== undefined) return parsed;
+  }
+
+  return undefined;
+}
+
+function getLegislatura(o: ParliamentarianOut): number {
+  const casa = casaFromType(o.type);
+  const details = toRecordOrUndefined(o.details);
+
+  if (casa === 'camara') {
+    const camaraLegislatura = getCamaraLegislatura(details);
+    if (camaraLegislatura !== undefined) return camaraLegislatura;
+  } else {
+    const senadoRoots = [details?.['lista'], details?.['detalhe']];
+    for (const root of senadoRoots) {
+      const rootObj = toRecordOrUndefined(root);
+      if (!rootObj) continue;
+      const parsed = findSenadoLegislaturaInObject(rootObj);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+
+  // Backward-compatible fallback while APIs/ETL fully expose this consistently.
+  return 57;
+}
+
 export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
   if (!vote) return 'Abstenção';
   const v = vote.toLowerCase();
@@ -53,6 +133,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     .filter(Boolean)
     .join(' ') || undefined;
   const foto = getPhotoUrlFromDetails(o.details) ?? '';
+  const legislatura = getLegislatura(o);
   return {
     id: String(o.id),
     nome: o.name ?? '—',
@@ -61,7 +142,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     partido,
     uf: o.state_elected ?? '—',
     casa: casaFromType(o.type),
-    legislatura: 57,
+    legislatura,
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
