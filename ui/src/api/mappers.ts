@@ -36,6 +36,65 @@ function casaFromType(type: string | null | undefined): Parlamentar['casa'] {
   return 'camara';
 }
 
+function toNumberOrUndefined(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function findLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
+  const directCandidates = [
+    obj['idLegislatura'],
+    obj['id_legislatura'],
+    obj['legislatura'],
+    obj['Legislatura'],
+    obj['numeroLegislatura'],
+    obj['NumeroLegislatura'],
+    obj['codLegislatura'],
+    obj['CodigoLegislatura'],
+  ];
+
+  for (const candidate of directCandidates) {
+    const parsed = toNumberOrUndefined(candidate);
+    if (parsed !== undefined) return parsed;
+  }
+
+  const nestedCandidates = [
+    obj['ultimoStatus'],
+    obj['IdentificacaoParlamentar'],
+    obj['Mandato'],
+    obj['Mandatos'],
+    obj['lista'],
+    obj['detalhe'],
+  ];
+
+  for (const nested of nestedCandidates) {
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const parsed = findLegislaturaInObject(nested as Record<string, unknown>);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+
+  return undefined;
+}
+
+function getLegislatura(o: ParliamentarianOut): number {
+  const rootParsed = findLegislaturaInObject(o as unknown as Record<string, unknown>);
+  if (rootParsed !== undefined) return rootParsed;
+
+  const details = o.details;
+  if (details && typeof details === 'object') {
+    const detailsParsed = findLegislaturaInObject(details);
+    if (detailsParsed !== undefined) return detailsParsed;
+  }
+
+  // Backward-compatible fallback while APIs/ETL fully expose this consistently.
+  return 57;
+}
+
 export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
   if (!vote) return 'Abstenção';
   const v = vote.toLowerCase();
@@ -53,6 +112,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     .filter(Boolean)
     .join(' ') || undefined;
   const foto = getPhotoUrlFromDetails(o.details) ?? '';
+  const legislatura = getLegislatura(o);
   return {
     id: String(o.id),
     nome: o.name ?? '—',
@@ -61,7 +121,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     partido,
     uf: o.state_elected ?? '—',
     casa: casaFromType(o.type),
-    legislatura: 57,
+    legislatura,
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
