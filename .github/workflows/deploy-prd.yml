@@ -23,3 +23,15 @@ jobs:
         REMOTE_HOST: ${{ secrets.HOST_PRD }}
         REMOTE_USER: "deploy"
         TARGET: "/var/www/mamute/"
+
+    - name: Rebuild e restart dos containers Docker
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ secrets.HOST_PRD }}
+        username: deploy
+        key: ${{ secrets.KEY_GH_ACTIONS }}
+        script_stop: true
+        script: |
+          cd /var/www/mamute/environments/production
+          bash up.sh
+          docker image prune -f
