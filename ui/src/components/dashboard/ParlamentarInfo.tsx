@@ -7,7 +7,7 @@ interface ParlamentarInfoProps {
 }
 
 export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
-  const emExercicio = parlamentar.situacao === 'Exercício';
+  const situacaoLabel = parlamentar.situacao === 'Exercício' ? 'Em exercício' : parlamentar.situacao;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -38,7 +38,7 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
         </div>
         <div className="flex items-center gap-2">
           <CircleDot className="h-3.5 w-3.5 text-[#383838]/60" />
-          <span>{emExercicio ? 'Em exercício' : 'Fora de exercício'}</span>
+          <span>{situacaoLabel}</span>
         </div>
         {parlamentar.email && (
           <div className="flex items-center gap-2">

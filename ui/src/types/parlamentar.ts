@@ -18,7 +18,7 @@ export interface Parlamentar {
   email?: string;
   telefone?: string;
   gabinete?: string;
-  situacao: 'Exercício' | 'Afastado' | 'Licenciado';
+  situacao: 'Exercício' | 'Afastado' | 'Licenciado' | 'Fim de mandato';
 }
 
 export interface Proposicao {
