@@ -25,7 +25,8 @@ function situacaoFromStatus(status: string | null | undefined): Parlamentar['sit
   if (!status) return 'Exercício';
   const s = status.toLowerCase();
   if (s.includes('licenciado')) return 'Licenciado';
-  if (s.includes('afastado')) return 'Afastado';
+  if (s.includes('fim de mandato')) return 'Fim de mandato';
+  if (s.includes('afastado') || s.includes('fora de exercicio')) return 'Afastado';
   return 'Exercício';
 }
 
