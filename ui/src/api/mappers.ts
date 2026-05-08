@@ -116,6 +116,70 @@ function getLegislatura(o: ParliamentarianOut): number {
   return -1;
 }
 
+function toStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function getCamaraStatus(details: Record<string, unknown> | undefined, topLevelStatus: string | null | undefined): string | undefined {
+  const fromTopLevel = toStringOrUndefined(topLevelStatus);
+  if (fromTopLevel) return fromTopLevel;
+
+  const ultimoStatus = toRecordOrUndefined(details?.['ultimoStatus']);
+  return toStringOrUndefined(ultimoStatus?.['situacao']);
+}
+
+function findSenadoStatusInObject(obj: Record<string, unknown>): string | undefined {
+  const directCandidates = [
+    obj['status'],
+    obj['situacao'],
+    obj['Situacao'],
+    obj['SituacaoParlamentar'],
+    obj['DescricaoSituacao'],
+    obj['DescricaoStatus'],
+  ];
+
+  for (const candidate of directCandidates) {
+    const parsed = toStringOrUndefined(candidate);
+    if (parsed) return parsed;
+  }
+
+  const nestedCandidates: unknown[] = [
+    obj['IdentificacaoParlamentar'],
+    obj['Mandato'],
+    obj['Mandatos'],
+    obj['DadosBasicosParlamentar'],
+  ];
+
+  for (const nested of nestedCandidates) {
+    const nestedObj = toRecordOrUndefined(nested);
+    if (!nestedObj) continue;
+    const parsed = findSenadoStatusInObject(nestedObj);
+    if (parsed) return parsed;
+  }
+
+  return undefined;
+}
+
+function getSituacao(o: ParliamentarianOut): Parlamentar['situacao'] {
+  const casa = casaFromType(o.type);
+  const details = toRecordOrUndefined(o.details);
+
+  if (casa === 'camara') {
+    return situacaoFromStatus(getCamaraStatus(details, o.status));
+  }
+
+  const senadoRoots = [details?.['lista'], details?.['detalhe']];
+  for (const root of senadoRoots) {
+    const rootObj = toRecordOrUndefined(root);
+    if (!rootObj) continue;
+    const parsed = findSenadoStatusInObject(rootObj);
+    if (parsed) return situacaoFromStatus(parsed);
+  }
+
+  // Senado source list is "ListaParlamentarEmExercicio"; default remains active.
+  return 'Exercício';
+}
+
 export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
   if (!vote) return 'Abstenção';
   const v = vote.toLowerCase();
@@ -146,7 +210,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
-    situacao: situacaoFromStatus(o.status),
+    situacao: getSituacao(o),
   };
 }
 
