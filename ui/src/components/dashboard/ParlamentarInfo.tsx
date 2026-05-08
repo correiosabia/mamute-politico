@@ -1,12 +1,13 @@
 import { Parlamentar } from '@/types/parlamentar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Mail, Phone, Building2, MapPin } from 'lucide-react';
+import { Mail, Phone, Building2, MapPin, CircleDot } from 'lucide-react';
 
 interface ParlamentarInfoProps {
   parlamentar: Parlamentar;
 }
 
 export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
+  const emExercicio = parlamentar.situacao === 'Exercício';
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -34,6 +35,10 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
         <div className="flex items-center gap-2">
           <MapPin className="h-3.5 w-3.5 text-[#383838]/60" />
           <span>{parlamentar.legislatura}ª Legislatura</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <CircleDot className="h-3.5 w-3.5 text-[#383838]/60" />
+          <span>{emExercicio ? 'Em exercício' : 'Fora de exercício'}</span>
         </div>
         {parlamentar.email && (
           <div className="flex items-center gap-2">
