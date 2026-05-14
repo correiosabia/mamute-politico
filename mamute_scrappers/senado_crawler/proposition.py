@@ -615,6 +615,7 @@ def _fetch_propositions_for_parliamentarian(
     parliamentarian_code: int,
     *,
     limit: Optional[int] = None,
+    since_year: Optional[int] = None,
 ) -> Iterable[PropositionPayload]:
     parlamentar_element = _request_authorings_xml(parliamentarian_code)
     entries = _extract_authoring_entries(parlamentar_element)
@@ -629,6 +630,14 @@ def _fetch_propositions_for_parliamentarian(
         ),
         reverse=True,
     )
+
+    if since_year is not None:
+        # Backfill: mantém só proposições apresentadas a partir de since_year.
+        entries = [
+            entry
+            for entry in entries
+            if (entry.get("presentation_date") or date.min).year >= since_year
+        ]
 
     if limit is not None:
         entries = entries[:limit]
@@ -822,6 +831,11 @@ def _iter_target_parliamentarians(
     query = session.query(Parliamentarian)
     if parliamentarian_code is not None:
         query = query.filter(Parliamentarian.parliamentarian_code == parliamentarian_code)
+    else:
+        # Este crawler consulta a API do Senado (/senador/{code}/autorias).
+        # Deputados da Câmara não têm autorias lá e só geram requests inúteis,
+        # então restringe a senadores quando não há um código específico.
+        query = query.filter(Parliamentarian.type == "Senador")
 
     parliamentarians = [
         parliamentarian
@@ -842,14 +856,20 @@ def proposition(
     *,
     parliamentarian_code: Optional[int] = None,
     limit: Optional[int] = 25,
+    since_year: Optional[int] = None,
     persist: bool = True,
     interactive: bool = False,
 ) -> None:
-    """Busca proposições do Senado e opcionalmente salva/atualiza o banco."""
+    """Busca proposições do Senado e opcionalmente salva/atualiza o banco.
+
+    Quando ``since_year`` é informado (backfill), o ``limit`` é ignorado e são
+    sincronizadas todas as proposições apresentadas a partir daquele ano.
+    """
     logger.info(
-        "Iniciando sincronização de proposições do Senado (persist=%s, interactive=%s)",
+        "Iniciando sincronização de proposições do Senado (persist=%s, interactive=%s, since_year=%s)",
         persist,
         interactive,
+        since_year,
     )
 
     _ensure_db_dependencies()
@@ -873,7 +893,11 @@ def proposition(
                     code,
                 )
 
-                payloads = _fetch_propositions_for_parliamentarian(code, limit=limit)
+                payloads = _fetch_propositions_for_parliamentarian(
+                    code,
+                    limit=None if since_year else limit,
+                    since_year=since_year,
+                )
                 if not payloads:
                     logger.debug(
                         "Nenhuma proposição retornada para o parlamentar %s.",
@@ -923,6 +947,12 @@ if __name__ == "__main__":
         help="Quantidade máxima de proposições recentes por parlamentar (padrão: 25).",
     )
     parser.add_argument(
+        "--since-year",
+        type=int,
+        help="Backfill: sincroniza todas as proposições apresentadas a partir deste ano "
+        "(ex.: 2022). Quando definido, --limit é ignorado.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Não persiste no banco; apenas exibe os payloads obtidos.",
@@ -938,6 +968,7 @@ if __name__ == "__main__":
     proposition(
         parliamentarian_code=args.parliamentarian_code,
         limit=args.limit,
+        since_year=args.since_year,
         persist=not args.dry_run,
         interactive=args.interactive,
     )

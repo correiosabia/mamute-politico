@@ -47,6 +47,7 @@ services:
     container_name: prod-mamute-politico-scrappers
     volumes:
       - ../../mamute_scrappers/.env:/app/.env
+      - scrappers_state:/app/state
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -144,3 +145,4 @@ volumes:
   ghost_content:
   ghost_db_data:
   pgvector_db_data:
+  scrappers_state:
