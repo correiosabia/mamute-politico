@@ -10,6 +10,8 @@ services:
     container_name: prod-mamute-politico-api
     volumes:
       - ../../api/.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
       - frontend
@@ -27,6 +29,8 @@ services:
 
     volumes:
       - ../../chatbot_backend/.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
       - frontend
@@ -43,6 +47,8 @@ services:
     container_name: prod-mamute-politico-scrappers
     volumes:
       - ../../mamute_scrappers/.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
     depends_on:
@@ -117,7 +123,7 @@ services:
       POSTGRES_USER: ${PGVECTOR_DB_USER:-mamute}
       POSTGRES_PASSWORD: ${PGVECTOR_DB_PASSWORD:-change_me}
     volumes:
-      - pgvector_db_data:/var/lib/postgresql/data
+      - pgvector_db_data:/var/lib/postgresql
     networks:
       - backend
     healthcheck:
