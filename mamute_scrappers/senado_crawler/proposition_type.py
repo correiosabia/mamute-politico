@@ -127,7 +127,15 @@ def _upsert_proposition_type(session: Session, payload: PropositionTypePayload) 
     if PropositionType is None:
         raise RuntimeError("Dependências de banco não carregadas.")
 
-    record = session.query(PropositionType).filter_by(acronym=acronym).one_or_none()
+    # .first() (ordenado por id) é resiliente a múltiplas linhas com o mesmo
+    # acronym — a constraint é UNIQUE(acronym, type), então acronyms podem se
+    # repetir entre origens. Atualiza sempre o registro mais antigo.
+    record = (
+        session.query(PropositionType)
+        .filter_by(acronym=acronym)
+        .order_by(PropositionType.id.asc())
+        .first()
+    )
     if record is None:
         record = PropositionType(acronym=acronym)
         session.add(record)

@@ -750,7 +750,15 @@ def _assign_type_and_status(
 
     type_acronym = payload.get("proposition_type_acronym")
     if type_acronym:
-        type_record = session.query(PropositionType).filter_by(acronym=type_acronym).one_or_none()
+        # filter_by(acronym).first() (ordenado por id) é resiliente a múltiplas
+        # linhas com o mesmo acronym — a constraint é UNIQUE(acronym, type), então
+        # acronyms podem se repetir entre origens (ex.: Camara vs Senado).
+        type_record = (
+            session.query(PropositionType)
+            .filter_by(acronym=type_acronym)
+            .order_by(PropositionType.id.asc())
+            .first()
+        )
         if type_record is None:
             description = payload.get("proposition_type_description") or type_acronym
             type_record = PropositionType(
