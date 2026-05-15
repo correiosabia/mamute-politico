@@ -245,9 +245,25 @@ jobs:
           key: ${{ secrets.KEY_GH_ACTIONS }}
           script_stop: true
           # Cada endpoint: tenta ate 12x (60s) com 5s entre tentativas.
-          # Curl com -f falha em 4xx/5xx; usamos -o /dev/null + -w pra so checar status code.
-          # /api/ retorna 200 (HTML root), /app/ retorna 200 (SPA), /ghost/ retorna 200 (login page).
+          # Curl com -o /dev/null + -w '%{http_code}' so checa status code.
+          #
+          # NOTA DE PORTA: nginx do host serve :80 (vhosts por hostname);
+          # Caddy docker faz roteamento /api/* /app/* /ghost/* via :${CADDY_HTTP_PORT}.
+          # Pra health check direto sem TLS/DNS, batemos no Caddy docker.
+          # Bug anterior: usavamos :80 (sem hostname) e cai em nginx default = 404.
           script: |
+            set -euo pipefail
+
+            # Le CADDY_HTTP_PORT do .env de prod. Fallback 8800 (valor atual)
+            # so como rede de seguranca — fonte de verdade e o .env.
+            ENV_FILE=/var/www/mamute/environments/production/.env
+            if [ -f "$ENV_FILE" ]; then
+              CADDY_HTTP_PORT=$(grep -E '^CADDY_HTTP_PORT=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+            fi
+            : "${CADDY_HTTP_PORT:=8800}"
+            BASE="http://127.0.0.1:${CADDY_HTTP_PORT}"
+            echo "Health check: $BASE"
+
             check() {
               local url=$1
               local label=$2
@@ -264,8 +280,7 @@ jobs:
               echo "✗ $label ($url) nunca respondeu $expected"
               return 1
             }
-            set -e
-            BASE=http://127.0.0.1
+
             check "$BASE/api/"   "API root"   200
             check "$BASE/app/"   "UI SPA"     200
             check "$BASE/ghost/" "Ghost"      200
