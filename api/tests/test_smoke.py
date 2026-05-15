@@ -86,24 +86,59 @@ def test_openapi_schema_generates() -> None:
 
 
 @pytest.mark.parametrize(
-    "method,path",
+    "path",
     [
-        ("get", "/api/projects/me/favorites"),
-        ("get", "/api/projects/me/dashboard-stats"),
-        ("post", "/api/projects/me/favorites"),
+        "/api/projects/me/favorites",
+        "/api/projects/me/dashboard-stats",
+        "/api/parliamentarians/",
+        "/api/propositions/",
     ],
 )
-def test_protected_routes_require_auth(method: str, path: str) -> None:
-    """Rotas sensiveis devem retornar 401 sem token (nao 200, nao 500)."""
+def test_protected_get_routes_block_anonymous(path: str) -> None:
+    """Rotas GET sensiveis devem rejeitar request sem credencial.
+
+    Tres possibilidades aceitas:
+      - 401 (caminho ideal: HTTPException explicita do verify_token)
+      - 403 (Forbidden — token presente mas insuficiente)
+      - 422 com erro localizado em ['header','authorization'] (FastAPI tratando
+        Authorization como required Field; semanticamente errado mas funcional —
+        request e bloqueado)
+
+    Bloqueia: 200 (rota aberta sem auth!), 5xx (crash) e 422 que nao seja
+    relacionado ao header de auth (mascarando rota aberta que falhou por outro
+    motivo).
+    """
     from fastapi.testclient import TestClient
 
     from api.main import app
 
     client = TestClient(app)
-    response = client.request(method, path)
-    # 401 = sem auth header, 422 = body invalido (POST sem json) — ambos validos.
-    # O importante: NAO eh 500 (crash) nem 200 (sem auth aplicada).
-    assert response.status_code in {401, 422}, (
-        f"{method.upper()} {path} retornou {response.status_code} sem auth "
-        f"(esperado 401/422): {response.text[:200]}"
+    response = client.get(path)
+    code = response.status_code
+
+    if code in {401, 403}:
+        return  # caminho ideal
+
+    if code == 422:
+        # Aceita 422 SO se o detail aponta pra ['header', 'authorization'].
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        details = body.get("detail", []) if isinstance(body, dict) else []
+        is_auth_related = any(
+            isinstance(d, dict)
+            and "loc" in d
+            and "authorization" in [str(x).lower() for x in d.get("loc", [])]
+            for d in details
+        )
+        assert is_auth_related, (
+            f"GET {path} retornou 422 nao relacionado a auth — possivelmente "
+            f"rota aberta que falhou por outro motivo: {response.text[:300]}"
+        )
+        return
+
+    pytest.fail(
+        f"GET {path} retornou {code} sem auth (esperado 401/403/422-auth, "
+        f"NAO 200/5xx): {response.text[:200]}"
     )

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Falha se o bundle UI compilado tiver URLs hardcoded apontando pra dev/loopback.
+# Verifica integridade do bundle UI compilado em duas dimensoes:
 #
-# Regressao concreta: em 2026-05-15 a UI em prod chamava http://127.0.0.1:8000
-# porque o codigo tinha fallback hardcoded e o build nao recebia VITE_BASE_URL.
-# Esse smoke garante que o pattern nao volta.
+# (a) NEGATIVO: bundle nao deve ter URLs loopback hardcoded
+#     (regressao do bug de 2026-05-15: UI chamava http://127.0.0.1:8000 em prod
+#     por fallback hardcoded + VITE_BASE_URL ausente no build).
+#
+# (b) POSITIVO: bundle DEVE conter as chamadas de API esperadas
+#     (regressao tipo tree-shake bug onde codigo cliente foi removido por engano,
+#     ou import nao reachable. Sem isso, a UI compila mas nenhuma tela funciona).
 #
 # Uso: bash scripts/check_bundle_no_local_urls.sh <dist-dir>
 #      (default: ui/dist/assets)
@@ -17,20 +21,52 @@ if [ ! -d "$ASSETS_DIR" ]; then
   exit 2
 fi
 
-# Pattern de loopback com porta (ex: 127.0.0.1:8000, localhost:8001, localhost:5173).
-# Aceita 127.0.0.1 e localhost. NAO bloqueia hostnames de schema/spec (w3.org etc).
-PATTERN='127\.0\.0\.1:[0-9]+|localhost:[0-9]+'
+FAIL=0
 
-HITS=$(grep -rhoE "$PATTERN" "$ASSETS_DIR" 2>/dev/null | sort -u || true)
-
-if [ -z "$HITS" ]; then
-  echo "✓ Bundle limpo: nenhuma URL loopback hardcoded em $ASSETS_DIR"
-  exit 0
+# (a) NEGATIVO — loopback hardcoded
+NEG_PATTERN='127\.0\.0\.1:[0-9]+|localhost:[0-9]+'
+HITS=$(grep -rhoE "$NEG_PATTERN" "$ASSETS_DIR" 2>/dev/null | sort -u || true)
+if [ -n "$HITS" ]; then
+  FAIL=1
+  echo "✗ Bundle contem URL(s) loopback hardcoded:" >&2
+  echo "$HITS" | sed 's/^/  /' >&2
+  echo >&2
+  echo "  Origem provavel: fallback hardcoded em src/ ou VITE_BASE_URL nao passado no build." >&2
+  echo "  Veja ui/src/api/client.ts e Dockerfile ARG VITE_BASE_URL." >&2
+  echo >&2
+else
+  echo "✓ Sem URLs loopback hardcoded"
 fi
 
-echo "✗ Bundle contem URL(s) loopback hardcoded:" >&2
-echo "$HITS" | sed 's/^/  /' >&2
-echo >&2
-echo "Origem provavel: fallback hardcoded em src/ ou VITE_BASE_URL nao passado no build." >&2
-echo "Veja ui/src/api/client.ts e Dockerfile ARG VITE_BASE_URL." >&2
-exit 1
+# (b) POSITIVO — chamadas de API que DEVEM estar presentes
+# Cobre tanto REST API (/api via Caddy + client.ts) quanto chatbot stream.
+# Se algum sumir, e regressao seria (ex: tree-shake removeu modulo do bundle,
+# rename de path quebrou client, refactor zerou uso de uma feature).
+declare -a EXPECTED=(
+  "/parliamentarians"
+  "/projects/me/favorites"
+  "/projects/me/dashboard-stats"
+  "/chat/chatbot/stream"
+)
+
+MISSING=()
+for needle in "${EXPECTED[@]}"; do
+  if ! grep -rq -- "$needle" "$ASSETS_DIR" 2>/dev/null; then
+    MISSING+=("$needle")
+  fi
+done
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+  FAIL=1
+  echo "✗ Bundle nao contem chamadas esperadas (regressao de tree-shake?):" >&2
+  for m in "${MISSING[@]}"; do
+    echo "  $m" >&2
+  done
+  echo >&2
+  echo "  Verifique se ui/src/api/endpoints.ts ainda exporta as funcoes correspondentes" >&2
+  echo "  e se elas sao chamadas em alguma tela (uso = bundle inclui)." >&2
+else
+  echo "✓ Bundle inclui todas as chamadas esperadas (${#EXPECTED[@]} verificadas)"
+fi
+
+exit $FAIL

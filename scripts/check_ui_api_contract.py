@@ -49,6 +49,7 @@ PY_PREFIX_RE = re.compile(
 class Call:
     file: str
     line: int
+    method: str  # GET por default; detectado em RequestInit { method: 'POST' | ... }
     raw: str
     norm: str
 
@@ -62,9 +63,10 @@ class Route:
     norm: str
 
 
-def extract_first_string_arg(text: str, start: int) -> str | None:
+def extract_first_string_arg(text: str, start: int) -> tuple[str, int] | None:
     """A partir de `start` (posicao logo apos `(`), extrai a primeira string
-    literal/template literal. Lida com `${...}` aninhados em template literals.
+    literal/template literal e retorna (valor, indice_apos_quote_de_fechamento).
+    Lida com `${...}` aninhados em template literals.
     Retorna None se o primeiro arg nao for string."""
     i = start
     while i < len(text) and text[i].isspace():
@@ -102,10 +104,14 @@ def extract_first_string_arg(text: str, start: int) -> str | None:
                 i += 1
             continue
         if c == quote:
-            return "".join(out)
+            return "".join(out), i + 1
         out.append(c)
         i += 1
     return None
+
+
+# Pattern do RequestInit: { method: 'POST' | "PUT" | `DELETE` | ... }
+METHOD_RE = re.compile(r"method\s*:\s*['\"`](\w+)['\"`]")
 
 
 def normalize_path(path: str) -> str:
@@ -168,18 +174,29 @@ def find_ui_calls(ui_src: Path) -> list[Call]:
         except (OSError, UnicodeDecodeError):
             continue
         for m in TS_REQUEST_START.finditer(content):
-            raw = extract_first_string_arg(content, m.end())
-            if raw is None:
+            extracted = extract_first_string_arg(content, m.end())
+            if extracted is None:
                 continue
+            raw, after_quote = extracted
             if raw.startswith(("http://", "https://")):
                 continue
             if not raw.startswith("/"):
                 continue
             line = content[: m.start()].count("\n") + 1
+            # Procura method no segundo arg (RequestInit), ate o proximo `;` ou
+            # 500 chars — ambos delimitam a chamada com folga.
+            tail_end = min(len(content), after_quote + 500)
+            tail = content[after_quote:tail_end]
+            semi = tail.find(";")
+            if semi >= 0:
+                tail = tail[:semi]
+            method_m = METHOD_RE.search(tail)
+            method = method_m.group(1).upper() if method_m else "GET"
             calls.append(
                 Call(
                     file=str(ts.relative_to(REPO)),
                     line=line,
+                    method=method,
                     raw=raw,
                     norm=normalize_path(raw),
                 )
@@ -228,33 +245,59 @@ def main() -> int:
 
     calls = find_ui_calls(ui_src)
     routes = find_api_routes(api_dir)
+
+    # Match exato (method, path). Path mismatch e method mismatch sao reportados
+    # separadamente pra dar diagnostico melhor.
+    api_keys = {(r.method, r.norm) for r in routes}
     api_paths = {r.norm for r in routes}
 
-    missing = [c for c in calls if c.norm not in api_paths]
+    method_mismatch: list[tuple[Call, list[str]]] = []
+    path_missing: list[Call] = []
+    for c in calls:
+        if (c.method, c.norm) in api_keys:
+            continue
+        if c.norm in api_paths:
+            # path existe, metodo errado — pega verbos disponiveis no path
+            available = sorted({r.method for r in routes if r.norm == c.norm})
+            method_mismatch.append((c, available))
+        else:
+            path_missing.append(c)
 
-    print(f"UI: {len(calls)} chamada(s) request<>() | API: {len(routes)} rota(s) registrada(s)")
+    print(
+        f"UI: {len(calls)} chamada(s) request<>() | "
+        f"API: {len(routes)} rota(s) registrada(s)"
+    )
 
-    if not missing:
-        print("✓ Contract OK: toda chamada da UI tem rota correspondente na API.")
+    if not method_mismatch and not path_missing:
+        print("✓ Contract OK: toda chamada da UI casa em (method, path) com a API.")
         return 0
 
-    # Reporte sucinto + reverso (rotas API que ninguem chama — nao bloqueia, so info)
-    seen = set()
-    unique_missing = []
-    for c in missing:
-        key = (c.file, c.line, c.norm)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_missing.append(c)
+    if path_missing:
+        seen: set[tuple[str, int, str, str]] = set()
+        unique = [
+            c
+            for c in path_missing
+            if (c.file, c.line, c.method, c.norm) not in seen
+            and not seen.add((c.file, c.line, c.method, c.norm))
+        ]
+        print(f"\n✗ {len(unique)} chamada(s) UI sem rota correspondente (path missing):")
+        for c in unique:
+            print(
+                f"  {c.file}:{c.line}  →  {c.method} {c.raw}    "
+                f"(normalizado: {c.norm})"
+            )
 
-    print(f"\n✗ {len(unique_missing)} chamada(s) UI sem rota correspondente:")
-    for c in unique_missing:
-        print(f"  {c.file}:{c.line}  →  {c.raw}    (normalizado: {c.norm})")
+    if method_mismatch:
+        print(f"\n✗ {len(method_mismatch)} chamada(s) UI com metodo errado (path existe):")
+        for c, available in method_mismatch:
+            print(
+                f"  {c.file}:{c.line}  →  {c.method} {c.raw}    "
+                f"(API tem: {', '.join(available)})"
+            )
 
     print("\nRotas API conhecidas (para comparacao):")
-    for p in sorted(api_paths):
-        print(f"  {p}")
+    for r in sorted(routes, key=lambda x: (x.norm, x.method)):
+        print(f"  {r.method:6} {r.norm}")
 
     return 1
 
