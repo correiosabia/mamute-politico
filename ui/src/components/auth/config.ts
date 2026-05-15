@@ -1,7 +1,10 @@
 import { publicKey } from "./publicKey";
 
+// Default '' = same-origin: navegador resolve /members/... contra a origem da app.
+// Em prod e dev (com Caddy) o reverse proxy roteia /members/* pro Ghost. Override via VITE_BASE_URL
+// quando UI e Ghost rodam em hosts diferentes.
 export const AUTH_API_ROOT =
-  (import.meta.env.VITE_BASE_URL as string | undefined) ?? "http://localhost";
+  (import.meta.env.VITE_BASE_URL as string | undefined) ?? "";
 export const TOKEN_ENDPOINT = `${AUTH_API_ROOT}/members/api/session/`;
 export const MEMBER_ENDPOINT = `${AUTH_API_ROOT}/members/api/member/`;
 export const INTEGRITY_TOKEN_ENDPOINT = `${AUTH_API_ROOT}/members/api/integrity-token/`;

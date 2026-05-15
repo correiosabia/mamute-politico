@@ -122,6 +122,12 @@ services:
     build:
       context: ../../ui
       dockerfile: Dockerfile
+      # Vite inlina VITE_* em build time. Aqui ficam vazios por padrao -> codigo cai no
+      # fallback same-origin (/api, /members) que Caddy ja roteia. Setar so se for
+      # separar UI da API em hosts diferentes.
+      args:
+        VITE_BASE_URL: ${VITE_BASE_URL:-}
+        VITE_GHOST_JWKS: ${VITE_GHOST_JWKS:-}
     networks:
       - frontend
     restart: unless-stopped
