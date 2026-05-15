@@ -5,8 +5,15 @@ PYTHONPATH=/app
 # Sync Ghost -> projetos (a cada 2 min)
 */2 * * * * cd /app && /usr/local/bin/python -m mamute_scrappers.scripts.create_users >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Novas proposições/projetos (a cada 6h)
+# Novas proposições do Senado — incremental (a cada 6h)
 0 */6 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Novas proposições da Câmara — incremental, ano corrente (a cada 6h)
+15 */6 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.camara_crawler.proposition --year $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Backfill histórico de proposições (Câmara + Senado, em fatias — a cada 1h).
+# Auto-encerra quando termina; pode remover esta linha depois disso.
+0 * * * * cd /app && /usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Atualização de trâmites/status (diário às 03h)
 0 3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2

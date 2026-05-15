@@ -287,16 +287,18 @@ def _iter_propositions_paginated(
     year_start: int,
     force_full: bool = False,
     data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     session: Optional[Session] = None,
 ) -> Generator[Tuple[Dict[str, Any], bool], None, None]:
     """Itera sobre proposições da Câmara com paginação automática.
-    
+
     Args:
         year_start: Ano inicial para buscar
         force_full: Se True, ignora busca incremental
         data_inicio: Data inicial YYYY-MM-DD (sobrescreve busca incremental)
+        data_fim: Data final YYYY-MM-DD (limita o período — útil para backfill em fatias)
         session: Sessão do banco (para busca incremental)
-        
+
     Yields:
         Tupla (dados_basicos, is_new)
     """
@@ -327,6 +329,9 @@ def _iter_propositions_paginated(
         "ordenarPor": "id",
         "itens": PAGE_SIZE,
     }
+    if data_fim:
+        base_params["dataFim"] = data_fim
+        logger.info("Limitando período até: %s", data_fim)
     
     page = 1
     total_pages = None
@@ -657,6 +662,7 @@ def proposition(
     year_start: int = 2025,
     force_full: bool = False,
     data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     persist: bool = True,
     interactive: bool = False,
 ) -> None:
@@ -666,15 +672,18 @@ def proposition(
         year_start: Ano inicial para buscar proposições (padrão: 2025)
         force_full: Ignora busca incremental e reprocessa tudo
         data_inicio: Data inicial no formato YYYY-MM-DD (default: últimos 30 dias)
+        data_fim: Data final YYYY-MM-DD — limita o período (backfill em fatias)
         persist: Se False, apenas exibe payloads (dry-run)
         interactive: Pausa após cada proposição
     """
-    print(f"DEBUG: data_inicio recebido = {data_inicio!r}")
     logger.info(
-        "Iniciando sincronização de proposições da Câmara (persist=%s, year=%s, force_full=%s)",
+        "Iniciando sincronização de proposições da Câmara "
+        "(persist=%s, year=%s, force_full=%s, data_inicio=%s, data_fim=%s)",
         persist,
         year_start,
         force_full,
+        data_inicio,
+        data_fim,
     )
 
     _ensure_db_dependencies()
@@ -692,6 +701,7 @@ def proposition(
                 year_start,
                 force_full=force_full,
                 data_inicio=data_inicio,
+                data_fim=data_fim,
                 session=session if persist else None,
             )
 
@@ -785,6 +795,11 @@ if __name__ == "__main__":
         help="Data inicial no formato YYYY-MM-DD (sobrescreve busca incremental).",
     )
     parser.add_argument(
+        "--data-fim",
+        type=str,
+        help="Data final no formato YYYY-MM-DD (limita o período — backfill em fatias).",
+    )
+    parser.add_argument(
         "--force-full",
         action="store_true",
         help="Ignora busca incremental e reprocessa todas as proposições com detalhes.",
@@ -805,6 +820,7 @@ if __name__ == "__main__":
     proposition(
         year_start=args.year,
         data_inicio=args.data_inicio,
+        data_fim=args.data_fim,
         force_full=args.force_full,
         persist=not args.dry_run,
         interactive=args.interactive,
