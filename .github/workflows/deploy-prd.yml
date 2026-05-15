@@ -1,37 +1,124 @@
 name: Deploy Mamute Politico
+
+# Roda em push em main (deploy) e em PRs (so validate, sem deploy).
+# Deploy depende de TODOS os checks passarem — gate obrigatorio pre-prod.
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+
 jobs:
-  deploy:
-    name: Inicio
+  ui-validate:
+    name: UI — build, tests, bundle smoke
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout arquivos
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
-    - name: Ajusta permissões
-      run: sudo chown -R root:root .
+      - name: Install deps
+        working-directory: ui
+        run: npm ci
 
-    - name: Copiando arquivos via SSH
-      uses: easingthemes/ssh-deploy@main
-      with:
-        SSH_PRIVATE_KEY: ${{ secrets.KEY_GH_ACTIONS }}
-        ARGS: "-rltgoDzvO"
-        SOURCE: "./"
-        REMOTE_HOST: ${{ secrets.HOST_PRD }}
-        REMOTE_USER: "deploy"
-        TARGET: "/var/www/mamute/"
+      - name: Tests (vitest)
+        working-directory: ui
+        run: npm test
 
-    - name: Rebuild e restart dos containers Docker
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: ${{ secrets.HOST_PRD }}
-        username: deploy
-        key: ${{ secrets.KEY_GH_ACTIONS }}
-        script_stop: true
-        script: |
-          cd /var/www/mamute/environments/production
-          bash up.sh
-          docker image prune -f
+      - name: Build (vite + tsc)
+        working-directory: ui
+        run: npm run build
+        env:
+          # Default vazio = mesmo comportamento de prod (fallback same-origin).
+          VITE_BASE_URL: ''
+
+      - name: Bundle smoke — sem URLs loopback hardcoded
+        run: bash scripts/check_bundle_no_local_urls.sh ui/dist/assets
+
+  api-smoke:
+    name: API — pytest smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Install deps
+        working-directory: api
+        run: pip install -r requirements-dev.txt
+
+      - name: Pytest
+        run: pytest api/tests/ -v
+
+  contract-check:
+    name: Contract UI ↔ API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verifica que toda chamada da UI tem rota na API
+        run: python3 scripts/check_ui_api_contract.py
+
+  compose-validate:
+    name: Compose — sintaxe e refs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config (sintaxe + variaveis)
+        working-directory: environments/production
+        env:
+          # Mock vars exigidas pelo compose pra ele nao avisar — sao so pra validar
+          # sintaxe, nao pra deploy. Valores reais ficam no .env do servidor.
+          PUBLIC_URL: 'https://example.com'
+          GHOST_DB_PASSWORD: 'placeholder'
+          CADDY_HTTP_PORT: '80'
+          MAILGUN_SMTP_USER: 'placeholder'
+          MAILGUN_SMTP_PASS: 'placeholder'
+        run: docker compose config -q
+
+  deploy:
+    name: Deploy producao
+    runs-on: ubuntu-latest
+    # So roda em push em main + se TODOS os validates passaram. PRs nao deployam.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ui-validate, api-smoke, contract-check, compose-validate]
+    steps:
+      - name: Checkout arquivos
+        uses: actions/checkout@v4
+
+      - name: Ajusta permissões
+        run: sudo chown -R root:root .
+
+      - name: Copiando arquivos via SSH
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.KEY_GH_ACTIONS }}
+          ARGS: "-rltgoDzvO"
+          SOURCE: "./"
+          REMOTE_HOST: ${{ secrets.HOST_PRD }}
+          REMOTE_USER: "deploy"
+          TARGET: "/var/www/mamute/"
+
+      - name: Rebuild e restart dos containers Docker
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOST_PRD }}
+          username: deploy
+          key: ${{ secrets.KEY_GH_ACTIONS }}
+          script_stop: true
+          script: |
+            cd /var/www/mamute/environments/production
+            bash up.sh
+            docker image prune -f
