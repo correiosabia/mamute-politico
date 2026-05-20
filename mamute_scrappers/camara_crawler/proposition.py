@@ -414,7 +414,10 @@ def _build_payload_from_data(
     presentation_date = _parse_date(basic_data.get("dataApresentacao"))
     presentation_year = _parse_int(basic_data.get("ano"))
 
-    if presentation_year is None and presentation_date is not None:
+    # A API da Câmara devolve "ano": 0 (não null) em vários tipos de tramitação
+    # (PRL, RPD, PAR, SBT, ...). Tratamos 0 como ausente e derivamos o ano da
+    # data de apresentação, que nesses casos vem preenchida.
+    if not presentation_year and presentation_date is not None:
         presentation_year = presentation_date.year
 
     # Código do tipo de proposição
