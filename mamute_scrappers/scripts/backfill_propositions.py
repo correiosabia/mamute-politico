@@ -2,16 +2,24 @@
 
 Roda em fatias ("fracionadinho"): cada execução processa um número pequeno de
 chunks e registra o progresso em um arquivo de estado. Pensado para rodar de
-hora em hora via cron — o backfill completo acontece ao longo de ~1 dia sem
-sobrecarregar o servidor nem a API de origem.
+hora em hora via cron — o backfill completo acontece ao longo de alguns dias
+sem sobrecarregar o servidor nem a API de origem. É "deixa rodando e esquece":
+quando termina, ele apenas avisa que não há mais nada a fazer.
 
 Cada chunk é executado como um subprocesso separado, ou seja, uma transação de
 banco isolada: se um chunk falha, os já concluídos permanecem salvos e o que
 falhou é tentado de novo na próxima execução.
 
+Garantias para rodar sozinho:
+  - Trava de arquivo (flock): se um backfill ainda está rodando quando o cron
+    dispara de novo, a nova execução sai na hora — nunca há dois batendo na
+    mesma API ao mesmo tempo.
+  - Timeout por chunk só como rede de segurança (processo genuinamente travado).
+
 Chunks:
-  - Câmara: um por mês, de SINCE_YEAR até BACKFILL_END_YEAR (inclusive).
-            Usa --data-inicio/--data-fim/--force-full.
+  - Câmara: uma janela de ~7 dias, de SINCE_YEAR até BACKFILL_END_YEAR.
+            Usa --data-inicio/--data-fim (sem --force-full: proposições novas
+            já trazem os detalhes; reprocessar tudo seria lento e inútil).
   - Senado: um por senador. Usa --parliamentarian-code/--since-year.
 
 Uso:
@@ -23,26 +31,30 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import calendar
+import fcntl
 import json
 import logging
 import os
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 logger = logging.getLogger("backfill_propositions")
 
 # --- Configuração -----------------------------------------------------------
-SINCE_YEAR = 2022          # ano mais antigo a buscar
+SINCE_YEAR = 2018          # ano mais antigo a buscar
 BACKFILL_END_YEAR = 2024   # último ano do backfill (2025+ já está coberto e é
                            # mantido pelo cron incremental da Câmara)
+CHUNK_DAYS = 7             # tamanho da janela de cada chunk da Câmara (dias)
 CHUNKS_PER_RUN = 5         # chunks processados por execução do cron
-CHUNK_TIMEOUT_SECONDS = 1800  # teto por chunk (30 min)
+CHUNK_TIMEOUT_SECONDS = 7200  # rede de segurança por chunk (2h) — uma janela
+                              # semanal termina muito antes disso; só pega
+                              # processo realmente travado.
 
 STATE_FILE = Path(os.getenv("BACKFILL_STATE_FILE", "/app/state/backfill.json"))
+LOCK_FILE = STATE_FILE.with_name("backfill.lock")
 
 
 # --- Estado -----------------------------------------------------------------
@@ -81,35 +93,40 @@ def _senator_codes() -> List[int]:
     return sorted({int(code) for (code,) in rows})
 
 
-def _camara_month_chunks() -> List[Dict[str, Any]]:
-    """Um chunk por mês, do mais recente para o mais antigo."""
-    today = date.today()
+def _camara_week_chunks() -> List[Dict[str, Any]]:
+    """Janelas de ~7 dias, do período mais recente para o mais antigo.
+
+    Janelas pequenas garantem que cada chunk termina (e portanto faz commit)
+    bem dentro do timeout — diferente das janelas mensais, que estouravam o
+    tempo e perdiam todo o trabalho da transação.
+    """
+    floor = date(SINCE_YEAR, 1, 1)
+    cursor = min(date(BACKFILL_END_YEAR, 12, 31), date.today())
     chunks: List[Dict[str, Any]] = []
-    for year in range(BACKFILL_END_YEAR, SINCE_YEAR - 1, -1):
-        for month in range(12, 0, -1):
-            start = date(year, month, 1)
-            if start > today:
-                continue
-            last_day = calendar.monthrange(year, month)[1]
-            end = min(date(year, month, last_day), today)
-            chunks.append(
-                {
-                    "id": f"camara-{year}-{month:02d}",
-                    "kind": "camara",
-                    "data_inicio": start.isoformat(),
-                    "data_fim": end.isoformat(),
-                    "year": year,
-                }
-            )
+    while cursor >= floor:
+        start = max(cursor - timedelta(days=CHUNK_DAYS - 1), floor)
+        chunks.append(
+            {
+                "id": f"camara-{start.isoformat()}",
+                "kind": "camara",
+                "data_inicio": start.isoformat(),
+                "data_fim": cursor.isoformat(),
+                "year": start.year,
+            }
+        )
+        cursor = start - timedelta(days=1)
     return chunks
 
 
 def _build_chunks() -> List[Dict[str, Any]]:
     """Lista completa de chunks, intercalando Câmara e Senado para que os dois
     avancem em paralelo ao longo das execuções."""
-    camara = _camara_month_chunks()
+    camara = _camara_week_chunks()
     senado = [
-        {"id": f"senado-{code}", "kind": "senado", "code": code}
+        # since-year embutido no id: mudar SINCE_YEAR invalida os chunks antigos
+        # do Senado e força o re-backfill a partir do novo piso (ex.: 2022 -> 2018).
+        # (Os chunks da Câmara já têm a data no id, então se ajustam sozinhos.)
+        {"id": f"senado-{code}-since{SINCE_YEAR}", "kind": "senado", "code": code}
         for code in _senator_codes()
     ]
     ordered: List[Dict[str, Any]] = []
@@ -124,12 +141,15 @@ def _build_chunks() -> List[Dict[str, Any]]:
 # --- Execução de um chunk ---------------------------------------------------
 def _chunk_command(chunk: Dict[str, Any]) -> List[str]:
     if chunk["kind"] == "camara":
+        # Sem --force-full: proposições inéditas já trazem detalhes+autores na
+        # primeira passada; reprocessar as existentes seria lento e inútil num
+        # backfill, e ainda torna re-execuções de um chunk rápidas (pula o que
+        # já está salvo).
         return [
             sys.executable, "-m", "mamute_scrappers.camara_crawler.proposition",
             "--year", str(chunk["year"]),
             "--data-inicio", chunk["data_inicio"],
             "--data-fim", chunk["data_fim"],
-            "--force-full",
         ]
     if chunk["kind"] == "senado":
         return [
@@ -159,11 +179,30 @@ def _run_chunk(chunk: Dict[str, Any]) -> bool:
         logger.error("Chunk %s: falhou (rc=%s). Fim do log:\n%s",
                      chunk["id"], result.returncode, "\n".join(tail))
         return False
-    logger.info("Chunk %s: concluído.", chunk["id"])
+    # Surfaça a linha de resumo do crawler, se houver, pra dar visibilidade.
+    summary = next(
+        (ln for ln in reversed((result.stdout or "").splitlines())
+         if "concluíd" in ln.lower() or "sucesso" in ln.lower()),
+        "",
+    )
+    logger.info("Chunk %s: concluído.%s", chunk["id"],
+                f" {summary.strip()}" if summary else "")
     return True
 
 
 # --- Main -------------------------------------------------------------------
+def _acquire_lock():
+    """Trava exclusiva não-bloqueante. Retorna o fd se conseguir, senão None."""
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fd.close()
+        return None
+    return fd
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill histórico de proposições em fatias.")
     parser.add_argument("--chunks-per-run", type=int, default=CHUNKS_PER_RUN,
@@ -189,17 +228,28 @@ def main() -> None:
         logger.info("Backfill completo — nada a fazer. (Pode remover o cron de backfill.)")
         return
 
-    processed = 0
-    for chunk in pending[: args.chunks_per_run]:
-        if _run_chunk(chunk):
-            done.add(chunk["id"])
-            state["done"] = sorted(done)
-            _save_state(state)
-            processed += 1
-        # Em caso de falha, o chunk continua pendente e é tentado na próxima execução.
+    # Trava: se outro backfill ainda está rodando, sai sem fazer nada. Evita
+    # dois processos batendo na mesma API ao mesmo tempo.
+    lock_fd = _acquire_lock()
+    if lock_fd is None:
+        logger.info("Outro backfill já está em execução; saindo sem fazer nada.")
+        return
 
-    logger.info("Execução concluída: %s chunk(s) processado(s) nesta rodada. "
-                "Restam %s pendentes.", processed, len(pending) - processed)
+    try:
+        processed = 0
+        for chunk in pending[: args.chunks_per_run]:
+            if _run_chunk(chunk):
+                done.add(chunk["id"])
+                state["done"] = sorted(done)
+                _save_state(state)
+                processed += 1
+            # Em caso de falha, o chunk continua pendente e é tentado na próxima execução.
+
+        logger.info("Execução concluída: %s chunk(s) processado(s) nesta rodada. "
+                    "Restam %s pendentes.", processed, len(pending) - processed)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
 
 
 if __name__ == "__main__":
