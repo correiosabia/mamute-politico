@@ -1,3 +1,13 @@
+# Confia nos proxies da rede privada (o nginx do host chega via gateway do Docker).
+# Sem isto, o Caddy descarta o X-Forwarded-For do nginx e o Ghost vê todas as
+# requisições como vindas de 172.19.0.1 — o que dispara o rate limit de
+# "muitas tentativas de login de IPs diferentes" para todos os usuários.
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
 :80 {
 	@appBare path_regexp ^/app$
 	redir @appBare /app/ 308
