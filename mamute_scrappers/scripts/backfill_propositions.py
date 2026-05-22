@@ -45,8 +45,11 @@ logger = logging.getLogger("backfill_propositions")
 
 # --- Configuração -----------------------------------------------------------
 SINCE_YEAR = 2018          # ano mais antigo a buscar
-BACKFILL_END_YEAR = 2024   # último ano do backfill (2025+ já está coberto e é
-                           # mantido pelo cron incremental da Câmara)
+# Último ano do backfill = ano corrente. O cron incremental da Câmara só roda
+# `--year <ano atual>`, o que NÃO garante cobertura completa de anos passados
+# recentes (ex.: 2025 ficou com ~30% do real). Estender o backfill até o ano
+# corrente fecha esse buraco — o incremental segue mantendo o dia a dia.
+BACKFILL_END_YEAR = date.today().year
 CHUNK_DAYS = 7             # tamanho da janela de cada chunk da Câmara (dias)
 CHUNKS_PER_RUN = 5         # chunks processados por execução do cron
 CHUNK_TIMEOUT_SECONDS = 7200  # rede de segurança por chunk (2h) — uma janela

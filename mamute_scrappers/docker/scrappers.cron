@@ -15,17 +15,31 @@ PYTHONPATH=/app
 # Auto-encerra quando termina; pode remover esta linha depois disso.
 0 * * * * cd /app && /usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions >> /proc/1/fd/1 2>> /proc/1/fd/2
 
+# Backfill histórico de votações + discursos (Câmara + Senado, em fatias — a cada 1h,
+# no minuto 40 para não coincidir com o backfill de proposições do minuto 0).
+# Auto-encerra quando termina; pode remover esta linha depois disso.
+40 * * * * cd /app && /usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # Atualização de trâmites/status (diário às 03h)
 0 3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Tipos de proposição (diário às 04h)
 0 4 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_type >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Votações nominais (a cada 3h)
+# Votações nominais do Senado (a cada 3h)
 0 */3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Discursos/taquigrafias (a cada 2h)
+# Votações nominais da Câmara (a cada 3h, no minuto 30 para não coincidir com o Senado)
+30 */3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.camara_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Discursos/taquigrafias do Senado (a cada 2h)
 0 */2 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.speechs_transcipts >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Discursos da Câmara (a cada 2h, no minuto 30 para não coincidir com o Senado)
+30 */2 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.camara_crawler.speeches_transcripts >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Parlamentares da Câmara (diário às 05h30)
 30 5 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.camara_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Parlamentares do Senado (diário às 05h45)
+45 5 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
