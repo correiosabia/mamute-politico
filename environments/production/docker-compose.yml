@@ -107,6 +107,10 @@ services:
       mail__options__auth__user: ${MAILGUN_SMTP_USER}
       mail__options__auth__pass: ${MAILGUN_SMTP_PASS}
       mail__from: ${GHOST_MAIL_FROM:-Mamute Politico <noreply@mamutepolitico.com.br>}
+      # Desliga a verificação de dispositivo novo no login de staff/admin do Ghost.
+      # Não tem relação com o magic link de membro — sobrescreve o staffDeviceVerification:true
+      # do config.production.json (env > file no nconf do Ghost).
+      security__staffDeviceVerification: "false"
     volumes:
       - ghost_content:/var/lib/ghost/content
     networks:
