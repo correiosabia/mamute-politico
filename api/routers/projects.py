@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, time, timedelta
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo
@@ -58,7 +59,7 @@ class ProjectFavoriteCreate(BaseModel):
 
 
 class ProjectDashboardStatsOut(BaseModel):
-    """Estatísticas semanais do dashboard do projeto autenticado."""
+    """Estatísticas dos últimos 3 meses do dashboard do projeto autenticado."""
 
     propositions_this_week: int
     attendance_avg_percent: Optional[int] = None
@@ -83,18 +84,28 @@ def _is_present_status(value: Optional[str]) -> bool:
     return True
 
 
-def _current_week_range_sao_paulo() -> tuple[date, date, datetime, datetime]:
+def _subtract_months(value: date, months: int) -> date:
+    target_year = value.year
+    target_month = value.month - months
+    while target_month <= 0:
+        target_month += 12
+        target_year -= 1
+    target_day = min(value.day, calendar.monthrange(target_year, target_month)[1])
+    return date(target_year, target_month, target_day)
+
+
+def _last_three_months_range_sao_paulo() -> tuple[date, date, datetime, datetime]:
     tz = ZoneInfo("America/Sao_Paulo")
     now_local = datetime.now(tz)
-    week_start_date = (now_local - timedelta(days=now_local.weekday())).date()
-    week_end_date = week_start_date + timedelta(days=6)
-    week_start_dt = datetime.combine(week_start_date, time.min, tzinfo=tz)
-    week_end_dt_exclusive = datetime.combine(
-        week_end_date + timedelta(days=1),
+    range_start_date = _subtract_months(now_local.date(), 3)
+    range_end_date = now_local.date()
+    range_start_dt = datetime.combine(range_start_date, time.min, tzinfo=tz)
+    range_end_dt_exclusive = datetime.combine(
+        range_end_date + timedelta(days=1),
         time.min,
         tzinfo=tz,
     )
-    return week_start_date, week_end_date, week_start_dt, week_end_dt_exclusive
+    return range_start_date, range_end_date, range_start_dt, range_end_dt_exclusive
 
 
 def _get_project_favorite_ids(db: Session, project_id: int) -> List[int]:
@@ -104,8 +115,8 @@ def _get_project_favorite_ids(db: Session, project_id: int) -> List[int]:
     return [int(item) for item in db.execute(stmt).scalars().all()]
 
 
-def _count_propositions_this_week(
-    db: Session, parliamentarian_ids: List[int], week_start: date, week_end: date
+def _count_propositions_in_range(
+    db: Session, parliamentarian_ids: List[int], range_start: date, range_end: date
 ) -> int:
     stmt = (
         select(func.count(func.distinct(Proposition.id)))
@@ -113,8 +124,8 @@ def _count_propositions_this_week(
         .join(Proposition, Proposition.id == AuthorsProposition.proposition_id)
         .where(AuthorsProposition.parliamentarian_id.in_(parliamentarian_ids))
         .where(Proposition.presentation_date.is_not(None))
-        .where(Proposition.presentation_date >= week_start)
-        .where(Proposition.presentation_date <= week_end)
+        .where(Proposition.presentation_date >= range_start)
+        .where(Proposition.presentation_date <= range_end)
     )
     return int(db.execute(stmt).scalar_one() or 0)
 
@@ -122,31 +133,31 @@ def _count_propositions_this_week(
 def _count_recent_votes(
     db: Session,
     parliamentarian_ids: List[int],
-    week_start_dt: datetime,
-    week_end_dt_exclusive: datetime,
+    range_start_dt: datetime,
+    range_end_dt_exclusive: datetime,
 ) -> int:
     stmt = select(func.count(RollCallVote.id)).where(
         RollCallVote.parliamentarian_id.in_(parliamentarian_ids),
-        RollCallVote.created_at >= week_start_dt,
-        RollCallVote.created_at < week_end_dt_exclusive,
+        RollCallVote.created_at >= range_start_dt,
+        RollCallVote.created_at < range_end_dt_exclusive,
     )
     return int(db.execute(stmt).scalar_one() or 0)
 
 
-def _count_speeches_this_week(
-    db: Session, parliamentarian_ids: List[int], week_start: date, week_end: date
+def _count_speeches_in_range(
+    db: Session, parliamentarian_ids: List[int], range_start: date, range_end: date
 ) -> int:
     stmt = select(func.count(SpeechesTranscript.id)).where(
         SpeechesTranscript.parliamentarian_id.in_(parliamentarian_ids),
         SpeechesTranscript.date.is_not(None),
-        SpeechesTranscript.date >= week_start,
-        SpeechesTranscript.date <= week_end,
+        SpeechesTranscript.date >= range_start,
+        SpeechesTranscript.date <= range_end,
     )
     return int(db.execute(stmt).scalar_one() or 0)
 
 
 def _calculate_attendance_avg_percent(
-    db: Session, parliamentarian_ids: List[int], week_start: date, week_end: date
+    db: Session, parliamentarian_ids: List[int], range_start: date, range_end: date
 ) -> Optional[int]:
     plenary_stmt = select(
         PlenaryAttendance.session_attendance,
@@ -154,14 +165,14 @@ def _calculate_attendance_avg_percent(
     ).where(
         PlenaryAttendance.parliamentarian_id.in_(parliamentarian_ids),
         PlenaryAttendance.date.is_not(None),
-        PlenaryAttendance.date >= week_start,
-        PlenaryAttendance.date <= week_end,
+        PlenaryAttendance.date >= range_start,
+        PlenaryAttendance.date <= range_end,
     )
     committee_stmt = select(CommitteeAttendance.frequency).where(
         CommitteeAttendance.parliamentarian_id.in_(parliamentarian_ids),
         CommitteeAttendance.date.is_not(None),
-        CommitteeAttendance.date >= week_start,
-        CommitteeAttendance.date <= week_end,
+        CommitteeAttendance.date >= range_start,
+        CommitteeAttendance.date <= range_end,
     )
 
     presence_scores: List[int] = []
@@ -445,13 +456,13 @@ def remove_project_favorite(
 @router.get(
     "/me/dashboard-stats",
     response_model=ProjectDashboardStatsOut,
-    summary="Estatísticas semanais do dashboard do projeto autenticado",
+    summary="Estatísticas dos últimos 3 meses do dashboard do projeto autenticado",
 )
 def get_my_dashboard_stats(
     request: Request,
     db: Session = Depends(get_db),
 ) -> ProjectDashboardStatsOut:
-    """Retorna estatísticas da semana atual para parlamentares favoritados no projeto."""
+    """Retorna estatísticas dos últimos 3 meses para parlamentares favoritados no projeto."""
     project = _get_project_from_token_email(request, db)
     parliamentarian_ids = _get_project_favorite_ids(db, project.id)
     if not parliamentarian_ids:
@@ -462,33 +473,33 @@ def get_my_dashboard_stats(
             speeches_count=0,
         )
 
-    week_start, week_end, week_start_dt, week_end_dt_exclusive = (
-        _current_week_range_sao_paulo()
+    range_start, range_end, range_start_dt, range_end_dt_exclusive = (
+        _last_three_months_range_sao_paulo()
     )
     return ProjectDashboardStatsOut(
-        propositions_this_week=_count_propositions_this_week(
+        propositions_this_week=_count_propositions_in_range(
             db,
             parliamentarian_ids,
-            week_start,
-            week_end,
+            range_start,
+            range_end,
         ),
         attendance_avg_percent=_calculate_attendance_avg_percent(
             db,
             parliamentarian_ids,
-            week_start,
-            week_end,
+            range_start,
+            range_end,
         ),
         recent_votes_count=_count_recent_votes(
             db,
             parliamentarian_ids,
-            week_start_dt,
-            week_end_dt_exclusive,
+            range_start_dt,
+            range_end_dt_exclusive,
         ),
-        speeches_count=_count_speeches_this_week(
+        speeches_count=_count_speeches_in_range(
             db,
             parliamentarian_ids,
-            week_start,
-            week_end,
+            range_start,
+            range_end,
         ),
     )
 

@@ -291,7 +291,7 @@ export function removeMyProjectFavorite(parliamentarianId: number): Promise<void
   });
 }
 
-/** Estatísticas da semana atual para parlamentares favoritados no projeto autenticado. */
+/** Estatísticas dos últimos 3 meses para parlamentares favoritados no projeto autenticado. */
 export function getMyDashboardStats(): Promise<DashboardStatsOut> {
   return request<DashboardStatsOut>('/projects/me/dashboard-stats');
 }
