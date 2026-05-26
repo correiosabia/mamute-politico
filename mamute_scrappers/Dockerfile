@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # (from mamute_scrappers.db ...) e os jobs `python -m mamute_scrappers.*` resolvam.
 COPY . /app/mamute_scrappers
 
-RUN chmod +x /app/mamute_scrappers/docker/entrypoint.sh
+RUN chmod +x \
+    /app/mamute_scrappers/docker/entrypoint.sh \
+    /app/mamute_scrappers/docker/run-cron-job.sh
 
 ENTRYPOINT ["/app/mamute_scrappers/docker/entrypoint.sh"]
