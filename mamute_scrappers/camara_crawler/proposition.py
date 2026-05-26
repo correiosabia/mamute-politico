@@ -538,7 +538,8 @@ def _assign_type(session: Session, record: Any, payload: PropositionPayload) -> 
     type_record = (
         session.query(PropositionType)
         .filter_by(proposition_type_code=proposition_type_code, type="Camara")
-        .one_or_none()
+        .order_by(PropositionType.id.asc())
+        .first()
     )
 
     if type_record is None:

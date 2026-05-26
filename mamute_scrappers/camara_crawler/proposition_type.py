@@ -154,12 +154,14 @@ def _upsert_proposition_type(session: Session, payload: PropositionTypePayload) 
     if PropositionType is None:
         raise RuntimeError("Dependências de banco não carregadas.")
 
-    # Buscar por acronym + type (pois pode haver mesmo acrônimo em Senado e Câmara)
-    record = (
-        session.query(PropositionType)
-        .filter_by(acronym=acronym, type="Camara")
-        .one_or_none()
-    )
+    proposition_type_code = payload.get("proposition_type_code")
+    query = session.query(PropositionType).filter_by(type="Camara")
+    if proposition_type_code:
+        query = query.filter_by(proposition_type_code=proposition_type_code)
+    else:
+        query = query.filter_by(acronym=acronym)
+
+    record = query.order_by(PropositionType.id.asc()).first()
     if record is None:
         record = PropositionType(acronym=acronym, type="Camara")
         session.add(record)

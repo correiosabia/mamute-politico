@@ -97,7 +97,7 @@ const DashboardPage = () => {
   const statsItems = [
     {
       value: dashboardStats != null ? String(dashboardStats.propositions_this_week) : '--',
-      label: 'Projetos\nessa semana',
+      label: 'Projetos\n3 meses',
     },
     {
       value:

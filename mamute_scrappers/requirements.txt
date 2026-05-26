@@ -14,6 +14,7 @@ python-dotenv==1.0.1
 requests==2.32.4
 soupsieve==2.7
 spacy==3.7.4
+https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.7.0/pt_core_news_sm-3.7.0-py3-none-any.whl
 openai==1.12.0
 SQLAlchemy==2.0.44
 typing_extensions==4.13.2

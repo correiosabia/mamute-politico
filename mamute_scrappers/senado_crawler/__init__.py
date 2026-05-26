@@ -1,12 +1,26 @@
 """Coleção de tarefas de raspagem do Senado."""
 
-from .parliamentarian import parliamentarian
-from .proposition import proposition
-from .roll_call_votes import roll_call_votes
-from .proposition_status import proposition_status
-from .proposition_type import proposition_type
-from .speechs_transcipts import speechs_transcipts
+from __future__ import annotations
 
-__all__ = ["parliamentarian", "proposition", "proposition_status", "proposition_type", "roll_call_votes", "speechs_transcipts"]
+from importlib import import_module
+from typing import Any
 
+_EXPORTS = {
+    "parliamentarian": ".parliamentarian",
+    "proposition": ".proposition",
+    "proposition_status": ".proposition_status",
+    "proposition_type": ".proposition_type",
+    "roll_call_votes": ".roll_call_votes",
+    "speechs_transcipts": ".speechs_transcipts",
+}
+
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+
+    module = import_module(_EXPORTS[name], __name__)
+    return getattr(module, name)
 
