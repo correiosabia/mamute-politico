@@ -27,3 +27,5 @@ dist-ssr
 .env
 
 .artifacts
+.storybook-visual
+storybook-static
