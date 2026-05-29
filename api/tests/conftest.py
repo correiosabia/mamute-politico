@@ -1,0 +1,24 @@
+"""Configuracao compartilhada de pytest para api/tests/.
+
+Garante que:
+1. `api` seja importavel como pacote (sys.path).
+2. `DATABASE_URL` exista em ambiente de teste — `api/db/engine.py` exige no
+   import. Smoke tests nao tocam DB; SQLAlchemy `create_engine(url)` so valida
+   a URL, conexao real e lazy. URL placeholder e suficiente.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+# Raiz do repositorio = parent de api/
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Placeholder valido pra parser do SQLAlchemy. setdefault preserva valor real
+# se o dev rodar pytest com DATABASE_URL ja exportada.
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+psycopg2://test:test@localhost:5432/test_db"
+)

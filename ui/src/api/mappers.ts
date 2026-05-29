@@ -268,7 +268,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut | Parli
   const gabinete = [o.office_building, o.office_name, o.office_number]
     .filter(Boolean)
     .join(' ') || undefined;
-  const foto = getPhotoUrlFromDetails(o.details) ?? '';
+  const foto = o.photo_url ?? getPhotoUrlFromDetails(o.details) ?? '';
   const legislatura = getLegislatura(o);
   const gabineteDetalhes = buildGabineteDetalhes(o);
   const redesSociais = 'social_networks' in o ? mapSocialNetworks(o) : undefined;

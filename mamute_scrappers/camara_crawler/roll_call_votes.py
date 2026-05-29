@@ -190,6 +190,7 @@ def _get_last_vote_date(session: Session) -> Optional[date]:
 def _fetch_votacoes_list(
     data_inicio: str,
     page: int = 1,
+    data_fim: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Busca lista paginada de votações."""
     params = {
@@ -199,8 +200,15 @@ def _fetch_votacoes_list(
         "pagina": page,
         "itens": PAGE_SIZE,
     }
+    if data_fim:
+        params["dataFim"] = data_fim
 
-    logger.debug("Buscando votações (dataInicio=%s, página=%s)", data_inicio, page)
+    logger.debug(
+        "Buscando votações (dataInicio=%s, dataFim=%s, página=%s)",
+        data_inicio,
+        data_fim,
+        page,
+    )
     return _request_json(CAMARA_VOTACOES_ENDPOINT, params=params)
 
 
@@ -241,6 +249,7 @@ def _fetch_votacao_votos(votacao_id: str) -> List[Dict[str, Any]]:
 
 def _iter_votacoes_paginated(
     data_inicio: str,
+    data_fim: Optional[str] = None,
 ) -> Iterable[Tuple[str, Dict[str, Any], List[Dict[str, Any]]]]:
     """Itera sobre votações com paginação.
 
@@ -251,7 +260,7 @@ def _iter_votacoes_paginated(
     total_fetched = 0
 
     while True:
-        data = _fetch_votacoes_list(data_inicio, page)
+        data = _fetch_votacoes_list(data_inicio, page, data_fim=data_fim)
 
         if data is None:
             logger.warning("Falha ao buscar página %s", page)
@@ -472,6 +481,7 @@ def _upsert_roll_call_vote(
 def roll_call_votes(
     *,
     data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     persist: bool = True,
     interactive: bool = False,
 ) -> None:
@@ -479,6 +489,8 @@ def roll_call_votes(
 
     Args:
         data_inicio: Data inicial no formato YYYY-MM-DD (default: últimos 30 dias)
+        data_fim: Data final no formato YYYY-MM-DD (opcional; permite fatiar o
+            backfill por janelas e evitar transações gigantes)
         persist: Se False, apenas exibe payloads (dry-run)
         interactive: Pausa após cada voto
     """
@@ -515,7 +527,9 @@ def roll_call_votes(
 
     try:
         with _SESSION_SCOPE() as session:
-            for votacao_id, detail, votos in _iter_votacoes_paginated(data_inicio):
+            for votacao_id, detail, votos in _iter_votacoes_paginated(
+                data_inicio, data_fim=data_fim
+            ):
                 payloads = _build_vote_payloads(votacao_id, detail, votos)
 
                 logger.info(
@@ -576,6 +590,11 @@ if __name__ == "__main__":
         help="Data inicial no formato YYYY-MM-DD (default: últimos 30 dias ou última votação)",
     )
     parser.add_argument(
+        "--data-fim",
+        type=str,
+        help="Data final no formato YYYY-MM-DD (opcional; usado no backfill por janelas)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Não persiste no banco; apenas exibe os payloads.",
@@ -590,6 +609,7 @@ if __name__ == "__main__":
 
     roll_call_votes(
         data_inicio=args.data_inicio,
+        data_fim=args.data_fim,
         persist=not args.dry_run,
         interactive=args.interactive,
     )

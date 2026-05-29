@@ -24,6 +24,90 @@ except (ImportError, ValueError):
 router = APIRouter(prefix="/parliamentarians", tags=["parliamentarians"])
 
 
+def _extract_photo_url_from_details(details: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Extrai URL da foto a partir de details (Senado ou Câmara)."""
+    if not details or not isinstance(details, dict):
+        return None
+
+    direct = details.get("UrlFotoParlamentar")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+
+    lista = details.get("lista")
+    if isinstance(lista, dict):
+        ident = lista.get("IdentificacaoParlamentar")
+        if isinstance(ident, dict):
+            url = ident.get("UrlFotoParlamentar")
+            if isinstance(url, str) and url.strip():
+                return url.strip()
+
+    detalhe = details.get("detalhe")
+    if isinstance(detalhe, dict):
+        ident = detalhe.get("IdentificacaoParlamentar")
+        if isinstance(ident, dict):
+            url = ident.get("UrlFotoParlamentar")
+            if isinstance(url, str) and url.strip():
+                return url.strip()
+
+    ultimo_status = details.get("ultimoStatus")
+    if isinstance(ultimo_status, dict):
+        url = ultimo_status.get("urlFoto")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+
+    return None
+
+
+def _enrich_details_with_photo_url(details: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Garante UrlFotoParlamentar em details para consumo uniforme (ex.: deputados da Câmara)."""
+    if not details or not isinstance(details, dict):
+        return details
+
+    photo_url = _extract_photo_url_from_details(details)
+    if not photo_url:
+        return details
+
+    if details.get("UrlFotoParlamentar"):
+        return details
+
+    enriched = dict(details)
+    enriched["UrlFotoParlamentar"] = photo_url
+    return enriched
+
+
+def _serialize_parliamentarian(parliamentarian: Parliamentarian) -> "ParliamentarianOut":
+    details = _enrich_details_with_photo_url(parliamentarian.details)
+    photo_url = _extract_photo_url_from_details(details)
+    return ParliamentarianOut(
+        id=parliamentarian.id,
+        type=parliamentarian.type,
+        parliamentarian_code=parliamentarian.parliamentarian_code,
+        name=parliamentarian.name,
+        full_name=parliamentarian.full_name,
+        email=parliamentarian.email,
+        telephone=parliamentarian.telephone,
+        cpf=parliamentarian.cpf,
+        status=parliamentarian.status,
+        party=parliamentarian.party,
+        state_of_birth=parliamentarian.state_of_birth,
+        city_of_birth=parliamentarian.city_of_birth,
+        state_elected=parliamentarian.state_elected,
+        site=parliamentarian.site,
+        education=parliamentarian.education,
+        office_name=parliamentarian.office_name,
+        office_building=parliamentarian.office_building,
+        office_number=parliamentarian.office_number,
+        office_floor=parliamentarian.office_floor,
+        office_email=parliamentarian.office_email,
+        biography_link=parliamentarian.biography_link,
+        biography_text=parliamentarian.biography_text,
+        details=details,
+        photo_url=photo_url,
+        created_at=parliamentarian.created_at,
+        updated_at=parliamentarian.updated_at,
+    )
+
+
 class ParliamentarianOut(BaseModel):
     """Representação serializada de um parlamentar."""
 
@@ -50,6 +134,7 @@ class ParliamentarianOut(BaseModel):
     biography_link: Optional[str] = None
     biography_text: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
+    photo_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -160,7 +245,7 @@ def list_parliamentarians(
         default="desc",
         description="Direção da ordenação.",
     ),
-) -> List[Parliamentarian]:
+) -> List[ParliamentarianOut]:
     """Retorna uma lista paginada de parlamentares."""
     stmt = select(Parliamentarian).offset(offset).limit(limit)
 
@@ -201,7 +286,7 @@ def list_parliamentarians(
     stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
 
     result = db.execute(stmt)
-    return result.scalars().all()
+    return [_serialize_parliamentarian(p) for p in result.scalars().all()]
 
 
 @router.get("/{parliamentarian_id}", response_model=ParliamentarianDetailOut)

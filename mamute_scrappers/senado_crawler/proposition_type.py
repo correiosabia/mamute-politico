@@ -127,7 +127,12 @@ def _upsert_proposition_type(session: Session, payload: PropositionTypePayload) 
     if PropositionType is None:
         raise RuntimeError("Dependências de banco não carregadas.")
 
-    record = session.query(PropositionType).filter_by(acronym=acronym).one_or_none()
+    record = (
+        session.query(PropositionType)
+        .filter_by(acronym=acronym, type="Senado")
+        .order_by(PropositionType.id.asc())
+        .first()
+    )
     if record is None:
         record = PropositionType(acronym=acronym)
         session.add(record)
@@ -200,5 +205,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     proposition_type(persist=not args.dry_run, interactive=args.interactive)
-
 

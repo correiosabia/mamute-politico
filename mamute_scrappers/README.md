@@ -52,6 +52,27 @@ Projeto pai: [README raiz](../README.md)
 python -m mamute_scrappers.senado_crawler.speechs_transcipts --help
 ```
 
+### Coleta de discursos/transcrições da Câmara
+
+Execute a partir da raiz do projeto (`mamute-politico`):
+
+```bash
+python -m mamute_scrappers.camara_crawler.speeches_transcripts --help
+```
+
+Exemplos:
+
+```bash
+# todos os deputados (persistindo no banco)
+python -m mamute_scrappers.camara_crawler.speeches_transcripts
+
+# deputado específico a partir de uma data
+python -m mamute_scrappers.camara_crawler.speeches_transcripts --deputado-id 1234 --data-inicio 2026-01-01
+
+# teste sem persistir no banco
+python -m mamute_scrappers.camara_crawler.speeches_transcripts --dry-run
+```
+
 ### Reprocessar análise de texto de pronunciamentos
 
 ```bash

@@ -38,6 +38,9 @@ CAMARA_PROPOSICAO_WEB_URL = "https://www.camara.leg.br/proposicoesWeb/fichadetra
 
 REQUEST_DELAY = 0.5  # Delay entre requests de detalhes (segundos)
 PAGE_SIZE = 100
+HTTP_TIMEOUT_SECONDS = 30
+REQUEST_MAX_RETRIES = 4
+REQUEST_RETRY_BASE_DELAY = 2.0
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
     from mamute_scrappers.db.models import (
@@ -85,6 +88,9 @@ class PropositionPayload(TypedDict, total=False):
     agency_code: Optional[int]
     proposition_type_code: Optional[str]
     author_codes: List[int]
+
+
+AUTO_SYNC_MISSING_AUTHORS_DEFAULT = False
 
 
 PROPOSITION_MUTABLE_FIELDS = [
@@ -177,12 +183,46 @@ def _ensure_list(value: Any) -> List[Any]:
 
 def _request_json(url: str, *, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     headers = {"Accept": "application/json"}
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("Falha ao consultar %s: %s", url, exc)
-        return None
+    for attempt in range(1, REQUEST_MAX_RETRIES + 1):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=HTTP_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            response = getattr(exc, "response", None)
+            status_code = getattr(response, "status_code", None)
+            is_retryable = (
+                isinstance(
+                    exc,
+                    (
+                        requests.Timeout,
+                        requests.ConnectionError,
+                    ),
+                )
+                or status_code == 429
+                or (status_code is not None and 500 <= status_code < 600)
+            )
+            if is_retryable and attempt < REQUEST_MAX_RETRIES:
+                delay_seconds = REQUEST_RETRY_BASE_DELAY * attempt
+                logger.warning(
+                    "Falha temporária ao consultar %s (tentativa %s/%s, status=%s). "
+                    "Aguardando %.1fs para tentar novamente.",
+                    url,
+                    attempt,
+                    REQUEST_MAX_RETRIES,
+                    status_code,
+                    delay_seconds,
+                )
+                time.sleep(delay_seconds)
+                continue
+
+            logger.error("Falha ao consultar %s: %s", url, exc)
+            return None
 
     try:
         data = response.json()
@@ -283,20 +323,95 @@ def _fetch_proposition_authors(proposition_id: int) -> List[int]:
     
     return author_codes
 
+
+def _fetch_deputado_detail(deputado_id: int) -> Optional[Dict[str, Any]]:
+    """Busca detalhes de um deputado específico na API da Câmara."""
+    url = f"{CAMARA_API_BASE_URL}/deputados/{deputado_id}"
+    data = _request_json(url)
+    if data is None:
+        return None
+    dados = data.get("dados")
+    if not isinstance(dados, dict):
+        return None
+    return dados
+
+
+def _ensure_author_parliamentarian(session: Session, author_code: int) -> Optional[Any]:
+    """Garante que o autor exista em parliamentarian; tenta sincronizar da API quando faltar."""
+    if Parliamentarian is None:
+        raise RuntimeError("Dependências de banco não carregadas.")
+
+    parliamentarian = (
+        session.query(Parliamentarian)
+        .filter_by(parliamentarian_code=author_code)
+        .one_or_none()
+    )
+    if parliamentarian is not None:
+        return parliamentarian
+
+    missing_cache = session.info.setdefault("missing_author_codes", set())
+    synced_cache = session.info.setdefault("synced_author_codes", set())
+    if author_code in missing_cache:
+        return None
+    if author_code in synced_cache:
+        return (
+            session.query(Parliamentarian)
+            .filter_by(parliamentarian_code=author_code)
+            .one_or_none()
+        )
+
+    detail = _fetch_deputado_detail(author_code)
+    if detail is None:
+        missing_cache.add(author_code)
+        logger.info(
+            "Autor %s não está disponível no endpoint de deputados da Câmara; "
+            "novas tentativas automáticas serão ignoradas nesta execução.",
+            author_code,
+        )
+        return None
+
+    ultimo_status = detail.get("ultimoStatus")
+    if not isinstance(ultimo_status, dict):
+        ultimo_status = {}
+
+    parliamentarian = Parliamentarian(
+        type="Deputado",
+        parliamentarian_code=author_code,
+        name=_coerce_text(ultimo_status.get("nome")) or _coerce_text(detail.get("nomeCivil")),
+        full_name=_coerce_text(detail.get("nomeCivil")),
+        email=_coerce_text(ultimo_status.get("email")),
+        status=_coerce_text(ultimo_status.get("situacao")),
+        party=_coerce_text(ultimo_status.get("siglaPartido")),
+        state_of_birth=_coerce_text(detail.get("ufNascimento")),
+        city_of_birth=_coerce_text(detail.get("municipioNascimento")),
+        state_elected=_coerce_text(ultimo_status.get("siglaUf")),
+        site=_coerce_text(detail.get("urlWebsite")),
+        details=detail,
+    )
+    session.add(parliamentarian)
+    session.flush()
+    synced_cache.add(author_code)
+    logger.info("Autor %s sincronizado automaticamente via API da Câmara", author_code)
+    return parliamentarian
+
 def _iter_propositions_paginated(
     year_start: int,
     force_full: bool = False,
     data_inicio: Optional[str] = None,
+    pagina_inicial: int = 1,
+    data_fim: Optional[str] = None,
     session: Optional[Session] = None,
 ) -> Generator[Tuple[Dict[str, Any], bool], None, None]:
     """Itera sobre proposições da Câmara com paginação automática.
-    
+
     Args:
         year_start: Ano inicial para buscar
         force_full: Se True, ignora busca incremental
         data_inicio: Data inicial YYYY-MM-DD (sobrescreve busca incremental)
+        pagina_inicial: Página inicial da paginação (padrão: 1)
+        data_fim: Data final YYYY-MM-DD (limita o período — útil para backfill em fatias)
         session: Sessão do banco (para busca incremental)
-        
+
     Yields:
         Tupla (dados_basicos, is_new)
     """
@@ -327,8 +442,11 @@ def _iter_propositions_paginated(
         "ordenarPor": "id",
         "itens": PAGE_SIZE,
     }
+    if data_fim:
+        base_params["dataFim"] = data_fim
+        logger.info("Limitando período até: %s", data_fim)
     
-    page = 1
+    page = max(1, pagina_inicial)
     total_pages = None
     total_items = None
     
@@ -357,8 +475,8 @@ def _iter_propositions_paginated(
         items = data.get("dados", [])
         links = data.get("links", [])
         
-        # Na primeira página, extrair total de páginas
-        if page == 1:
+        # Na primeira resposta processada, extrair total de páginas
+        if total_pages is None:
             for link in links:
                 if link.get("rel") == "last":
                     href = link.get("href", "")
@@ -409,7 +527,10 @@ def _build_payload_from_data(
     presentation_date = _parse_date(basic_data.get("dataApresentacao"))
     presentation_year = _parse_int(basic_data.get("ano"))
 
-    if presentation_year is None and presentation_date is not None:
+    # A API da Câmara devolve "ano": 0 (não null) em vários tipos de tramitação
+    # (PRL, RPD, PAR, SBT, ...). Tratamos 0 como ausente e derivamos o ano da
+    # data de apresentação, que nesses casos vem preenchida.
+    if not presentation_year and presentation_date is not None:
         presentation_year = presentation_date.year
 
     # Código do tipo de proposição
@@ -484,7 +605,12 @@ def _proposition_exists(session: Session, proposition_code: int) -> bool:
     ) > 0
 
 
-def _upsert_proposition(session: Session, payload: PropositionPayload) -> Tuple[Any, bool]:
+def _upsert_proposition(
+    session: Session,
+    payload: PropositionPayload,
+    *,
+    auto_sync_missing_authors: bool = AUTO_SYNC_MISSING_AUTHORS_DEFAULT,
+) -> Tuple[Any, bool]:
     """Atualiza ou cria uma proposição conforme o payload informado.
     
     Returns:
@@ -512,7 +638,12 @@ def _upsert_proposition(session: Session, payload: PropositionPayload) -> Tuple[
 
     _assign_type(session, record, payload)
     _assign_agency(session, record, payload)
-    _sync_authors(session, record, payload.get("author_codes", []))
+    _sync_authors(
+        session,
+        record,
+        payload.get("author_codes", []),
+        auto_sync_missing_authors=auto_sync_missing_authors,
+    )
     _assign_status(session, record, payload)
 
     return record, created
@@ -530,7 +661,8 @@ def _assign_type(session: Session, record: Any, payload: PropositionPayload) -> 
     type_record = (
         session.query(PropositionType)
         .filter_by(proposition_type_code=proposition_type_code, type="Camara")
-        .one_or_none()
+        .order_by(PropositionType.id.asc())
+        .first()
     )
 
     if type_record is None:
@@ -604,7 +736,13 @@ def _assign_status(session: Session, record: Any, payload: PropositionPayload) -
     record.proposition_status = status_record
 
 
-def _sync_authors(session: Session, record: Any, author_codes: List[int]) -> None:
+def _sync_authors(
+    session: Session,
+    record: Any,
+    author_codes: List[int],
+    *,
+    auto_sync_missing_authors: bool = AUTO_SYNC_MISSING_AUTHORS_DEFAULT,
+) -> None:
     """Sincroniza autores (M2M via authors_proposition)."""
     if Parliamentarian is None or AuthorsProposition is None:
         raise RuntimeError("Dependências de banco não carregadas.")
@@ -631,9 +769,9 @@ def _sync_authors(session: Session, record: Any, author_codes: List[int]) -> Non
             continue
 
         parliamentarian = (
-            session.query(Parliamentarian)
-            .filter_by(parliamentarian_code=code)
-            .one_or_none()
+            _ensure_author_parliamentarian(session, code)
+            if auto_sync_missing_authors
+            else session.query(Parliamentarian).filter_by(parliamentarian_code=code).one_or_none()
         )
 
         if parliamentarian is None:
@@ -657,6 +795,9 @@ def proposition(
     year_start: int = 2025,
     force_full: bool = False,
     data_inicio: Optional[str] = None,
+    pagina_inicial: int = 1,
+    data_fim: Optional[str] = None,
+    auto_sync_missing_authors: bool = AUTO_SYNC_MISSING_AUTHORS_DEFAULT,
     persist: bool = True,
     interactive: bool = False,
 ) -> None:
@@ -666,15 +807,20 @@ def proposition(
         year_start: Ano inicial para buscar proposições (padrão: 2025)
         force_full: Ignora busca incremental e reprocessa tudo
         data_inicio: Data inicial no formato YYYY-MM-DD (default: últimos 30 dias)
+        pagina_inicial: Página inicial para retomada da paginação (padrão: 1)
+        data_fim: Data final YYYY-MM-DD — limita o período (backfill em fatias)
+        auto_sync_missing_authors: Busca/cadastra autores ausentes automaticamente
         persist: Se False, apenas exibe payloads (dry-run)
         interactive: Pausa após cada proposição
     """
-    print(f"DEBUG: data_inicio recebido = {data_inicio!r}")
     logger.info(
-        "Iniciando sincronização de proposições da Câmara (persist=%s, year=%s, force_full=%s)",
+        "Iniciando sincronização de proposições da Câmara "
+        "(persist=%s, year=%s, force_full=%s, data_inicio=%s, data_fim=%s)",
         persist,
         year_start,
         force_full,
+        data_inicio,
+        data_fim,
     )
 
     _ensure_db_dependencies()
@@ -692,6 +838,8 @@ def proposition(
                 year_start,
                 force_full=force_full,
                 data_inicio=data_inicio,
+                pagina_inicial=pagina_inicial,
+                data_fim=data_fim,
                 session=session if persist else None,
             )
 
@@ -741,7 +889,11 @@ def proposition(
                         logger.debug("Proposição %s já existe, pulando detalhes", proposition_id)
                         continue
 
-                    record, created = _upsert_proposition(session, payload)
+                    record, created = _upsert_proposition(
+                        session,
+                        payload,
+                        auto_sync_missing_authors=auto_sync_missing_authors,
+                    )
                     if created:
                         inserted += 1
                         logger.info("Proposição %s inserida", proposition_id)
@@ -785,9 +937,28 @@ if __name__ == "__main__":
         help="Data inicial no formato YYYY-MM-DD (sobrescreve busca incremental).",
     )
     parser.add_argument(
+        "--data-fim",
+        type=str,
+        help="Data final no formato YYYY-MM-DD (limita o período — backfill em fatias).",
+    )
+    parser.add_argument(
         "--force-full",
         action="store_true",
         help="Ignora busca incremental e reprocessa todas as proposições com detalhes.",
+    )
+    parser.add_argument(
+        "--pagina-inicial",
+        type=int,
+        default=1,
+        help="Página inicial para retomar a paginação (padrão: 1).",
+    )
+    parser.add_argument(
+        "--auto-sync-missing-authors",
+        action="store_true",
+        help=(
+            "Quando um autor não existir no banco, tenta buscá-lo na API da Câmara e "
+            "cadastrá-lo automaticamente."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -805,7 +976,10 @@ if __name__ == "__main__":
     proposition(
         year_start=args.year,
         data_inicio=args.data_inicio,
+        data_fim=args.data_fim,
         force_full=args.force_full,
+        pagina_inicial=args.pagina_inicial,
+        auto_sync_missing_authors=args.auto_sync_missing_authors,
         persist=not args.dry_run,
         interactive=args.interactive,
     )
