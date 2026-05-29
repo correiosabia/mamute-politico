@@ -21,7 +21,7 @@ function PartnerColumn({
   return (
     <div
       className={cn(
-        'flex min-w-0 flex-col items-center gap-1.5 text-center md:items-start md:gap-2 md:text-left',
+        'flex min-w-0 flex-col items-center gap-1.5 text-center md:gap-2 lg:items-start lg:text-left',
         className,
       )}
     >
@@ -35,23 +35,23 @@ export function InicioFooter() {
   return (
     <footer className="overflow-x-hidden bg-white py-10 md:py-12">
       <div className="container flex min-w-0 flex-col gap-8 md:gap-10">
-        <div className="flex min-w-0 flex-col gap-8 md:flex-row md:items-end md:justify-between">
-          <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 flex-col items-center gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 flex-col items-center gap-2 lg:items-start">
             <span className={partnerLabelClass}>Concepção</span>
             <img
               src={logoSabia}
               alt="Correio Sabiá"
-              className="h-[46px] w-auto max-w-full object-contain object-left"
+              className="h-[46px] w-auto max-w-full object-contain"
             />
           </div>
-          <p className="mp-footer-note min-w-0 max-w-[442px] text-black md:text-right">
+          <p className="mp-footer-note min-w-0 max-w-[442px] text-center text-black lg:text-right">
             2026 Mamute Político. Dados obtidos via API aberta do Congresso Nacional.
           </p>
         </div>
 
         <div className="flex min-w-0 flex-col gap-10 lg:flex-row lg:items-end lg:justify-between">
           {/* Below md: 2+1 grid (centered); md+: three icons in a row; lg+: Mamute beside partners */}
-          <div className="grid min-w-0 w-full grid-cols-2 gap-3 md:flex md:w-auto md:shrink-0 md:justify-start md:gap-x-8 lg:gap-x-[45px] xl:gap-x-[54px]">
+          <div className="grid min-w-0 w-full grid-cols-2 gap-3 md:flex md:w-full md:shrink-0 md:justify-center md:gap-x-8 lg:w-auto lg:justify-start lg:gap-x-[45px] xl:gap-x-[54px]">
             <PartnerColumn label="Programa">
               <img
                 src={logoCodesinfo}
