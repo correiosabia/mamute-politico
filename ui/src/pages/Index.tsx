@@ -1,10 +1,10 @@
 import { useRef, useState, type MouseEventHandler } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
+import { InicioFooter } from '@/components/layout/InicioFooter';
 import texturaBackground from '@/assets/textura.png';
 import congressoForeground from '@/assets/banner1-semfundo.png';
 import mammothImage from '@/assets/figma-mamute.png';
-import logoMamute from '@/assets/logo-mamute.png';
 import iconFuncionalidades from '@/assets/icon-funcionalidades.svg';
 import iconDeputados from '@/assets/icon-deputados.svg';
 import iconSenadores from '@/assets/icon-senadores.svg';
@@ -213,14 +213,7 @@ const Index = () => {
         </div>
       </section>
 
-      <footer className="bg-white py-8">
-        <div className="container flex flex-col items-center justify-between gap-[45px] md:flex-row">
-          <img src={logoMamute} alt="Mamute Político" className="h-[47px] w-auto" />
-          <p className="mp-footer-note text-black">
-            2026 Mamute Político. Dados obtidos via API aberta do Congresso Nacional.
-          </p>
-        </div>
-      </footer>
+      <InicioFooter />
     </div>
   );
 };
