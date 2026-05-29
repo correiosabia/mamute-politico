@@ -25,6 +25,30 @@ import {
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
+
+const SITUACAO_FILTER_LABELS: Record<SituacaoFilter, string> = {
+  exercicio: 'Em exercício',
+  afastado: 'Afastado',
+  licenciado: 'Licenciado',
+  fim_de_mandato: 'Fim de mandato',
+  todos: 'Todas as situações',
+};
+
+const SITUACAO_FILTER_TO_SITUACAO: Record<
+  Exclude<SituacaoFilter, 'todos'>,
+  Parlamentar['situacao']
+> = {
+  exercicio: 'Exercício',
+  afastado: 'Afastado',
+  licenciado: 'Licenciado',
+  fim_de_mandato: 'Fim de mandato',
+};
+
+function getSituacaoLabel(situacao: Parlamentar['situacao']): string {
+  return situacao === 'Exercício' ? 'Em exercício' : situacao;
+}
+
 interface ParlamentarSelectorProps {
   casaSelecionada: CasaLegislativa;
   parlamentaresSelecionados: Parlamentar[];
@@ -52,6 +76,7 @@ export function ParlamentarSelector({
   const [partidoFilter, setPartidoFilter] = useState<string>('todos');
   const [ufFilter, setUfFilter] = useState<string>('todos');
   const [legislaturaFilter, setLegislaturaFilter] = useState<string>('todos');
+  const [situacaoFilter, setSituacaoFilter] = useState<SituacaoFilter>('exercicio');
 
   const typeFilter = useMemo<Array<'deputado' | 'senado'>>(() => {
     if (casaSelecionada === 'camara') return ['deputado'];
@@ -60,13 +85,14 @@ export function ParlamentarSelector({
   }, [casaSelecionada]);
 
   const { data: rawList, isLoading, isError, error } = useQuery({
-    queryKey: ['parliamentarians', partidoFilter, typeFilter.join(',')],
+    queryKey: ['parliamentarians', partidoFilter, typeFilter.join(','), situacaoFilter],
     queryFn: () =>
       listParliamentarians({
         limit: 1000,
         offset: 0,
         party: partidoFilter !== 'todos' ? partidoFilter : undefined,
         type: typeFilter,
+        situacao: situacaoFilter !== 'todos' ? situacaoFilter : undefined,
       }),
   });
 
@@ -97,6 +123,14 @@ export function ParlamentarSelector({
         return false;
       }
 
+      // Filter by situacao (client-side consistency when showing all)
+      if (
+        situacaoFilter !== 'todos' &&
+        p.situacao !== SITUACAO_FILTER_TO_SITUACAO[situacaoFilter]
+      ) {
+        return false;
+      }
+
       // Exclude already selected
       if (parlamentaresSelecionados.find((s) => s.id === p.id)) {
         return false;
@@ -104,7 +138,7 @@ export function ParlamentarSelector({
 
       return true;
     });
-  }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, parlamentaresSelecionados]);
+  }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, situacaoFilter, parlamentaresSelecionados]);
 
   const partidosOptions = useMemo(() => {
     const siglas = new Set((rawList ?? []).map((p) => p.party).filter(Boolean) as string[]);
@@ -126,6 +160,7 @@ export function ParlamentarSelector({
     setPartidoFilter('todos');
     setUfFilter('todos');
     setLegislaturaFilter('todos');
+    setSituacaoFilter('exercicio');
   };
 
   return (
@@ -160,6 +195,25 @@ export function ParlamentarSelector({
                 </PopoverTrigger>
                 <PopoverContent className="w-80 bg-popover" align="start">
                   <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Situação</label>
+                      <Select
+                        value={situacaoFilter}
+                        onValueChange={(value) => setSituacaoFilter(value as SituacaoFilter)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Em exercício" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover">
+                          {(Object.keys(SITUACAO_FILTER_LABELS) as SituacaoFilter[]).map((key) => (
+                            <SelectItem key={key} value={key}>
+                              {SITUACAO_FILTER_LABELS[key]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Partido</label>
                       <Select value={partidoFilter} onValueChange={setPartidoFilter}>
@@ -219,6 +273,12 @@ export function ParlamentarSelector({
               </Popover>
 
               {/* Active filter badges */}
+              {situacaoFilter !== 'exercicio' && (
+                <Badge variant="secondary" className="gap-1">
+                  {SITUACAO_FILTER_LABELS[situacaoFilter]}
+                  <X className="h-3 w-3 cursor-pointer" onClick={() => setSituacaoFilter('exercicio')} />
+                </Badge>
+              )}
               {partidoFilter !== 'todos' && (
                 <Badge variant="secondary" className="gap-1">
                   {partidoFilter}
@@ -273,9 +333,12 @@ export function ParlamentarSelector({
                     </Avatar>
                     <div>
                       <p className="font-medium text-sm">{parlamentar.nome}</p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant={parlamentar.casa === 'camara' ? 'camara' : 'senado'} className="text-[10px] px-1.5 py-0">
                           {parlamentar.casa === 'camara' ? 'Câmara' : 'Senado'}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {getSituacaoLabel(parlamentar.situacao)}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
                           {parlamentar.partido.sigla} - {parlamentar.uf}

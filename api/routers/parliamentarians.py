@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, or_, select
+from sqlalchemy import and_, asc, desc, or_, select
 from sqlalchemy.orm import Session
 
 try:
@@ -54,6 +54,44 @@ class ParliamentarianOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _apply_situacao_filter(stmt, situacao: str):
+    """Aplica filtro de situação parlamentar com base na coluna status."""
+    is_deputado = Parliamentarian.type.ilike("%Deput%")
+    is_senador = Parliamentarian.type.ilike("%Senad%")
+
+    if situacao == "exercicio":
+        return stmt.where(
+            or_(
+                and_(is_deputado, Parliamentarian.status.ilike("%exerc%")),
+                is_senador,
+            )
+        )
+    if situacao == "afastado":
+        return stmt.where(
+            or_(
+                Parliamentarian.status.ilike("%afast%"),
+                Parliamentarian.status.ilike("%fora de exerc%"),
+            )
+        )
+    if situacao == "licenciado":
+        return stmt.where(Parliamentarian.status.ilike("%licenc%"))
+    if situacao == "fim_de_mandato":
+        return stmt.where(
+            or_(
+                Parliamentarian.status.ilike("%fim de mandato%"),
+                and_(
+                    is_deputado,
+                    or_(
+                        Parliamentarian.status.is_(None),
+                        Parliamentarian.name.is_(None),
+                        Parliamentarian.party.is_(None),
+                    ),
+                ),
+            )
+        )
+    return stmt
+
+
 @router.get("/", response_model=List[ParliamentarianOut])
 def list_parliamentarians(
     *,
@@ -64,6 +102,10 @@ def list_parliamentarians(
     type: Optional[List[Literal["deputado", "senado"]]] = Query(
         default=None,
         description="Filtrar por tipo de parlamentar: deputado, senado (pode repetir para ambos).",
+    ),
+    situacao: Optional[Literal["exercicio", "afastado", "licenciado", "fim_de_mandato"]] = Query(
+        default=None,
+        description="Filtrar por situação do mandato: exercicio, afastado, licenciado, fim_de_mandato.",
     ),
     created_from: Optional[datetime] = Query(
         default=None,
@@ -106,6 +148,9 @@ def list_parliamentarians(
             type_filters.append(Parliamentarian.type.ilike("%Senad%"))
         if type_filters:
             stmt = stmt.where(or_(*type_filters))
+
+    if situacao is not None:
+        stmt = _apply_situacao_filter(stmt, situacao)
 
     if created_from is not None:
         stmt = stmt.where(Parliamentarian.created_at >= created_from)

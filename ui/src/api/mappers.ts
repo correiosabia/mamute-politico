@@ -21,13 +21,20 @@ function partidoFromSigla(sigla: string | null | undefined): { sigla: string; no
   return { sigla, nome: sigla };
 }
 
-function situacaoFromStatus(status: string | null | undefined): Parlamentar['situacao'] {
-  if (!status) return 'Exercício';
+function situacaoFromStatus(
+  status: string | null | undefined,
+  options?: { defaultWhenMissing?: Parlamentar['situacao'] },
+): Parlamentar['situacao'] {
+  if (!status) return options?.defaultWhenMissing ?? 'Exercício';
   const s = status.toLowerCase();
   if (s.includes('licenciado')) return 'Licenciado';
   if (s.includes('fim de mandato')) return 'Fim de mandato';
   if (s.includes('afastado') || s.includes('fora de exercicio')) return 'Afastado';
   return 'Exercício';
+}
+
+export function isEmExercicio(situacao: Parlamentar['situacao']): boolean {
+  return situacao === 'Exercício';
 }
 
 function casaFromType(type: string | null | undefined): Parlamentar['casa'] {
@@ -183,7 +190,10 @@ function getSituacao(o: ParliamentarianOut): Parlamentar['situacao'] {
   const details = toRecordOrUndefined(o.details);
 
   if (casa === 'camara') {
-    return situacaoFromStatus(getCamaraStatus(details, o.status));
+    const status = getCamaraStatus(details, o.status);
+    const missingData = !o.name?.trim() || !o.party?.trim();
+    const defaultWhenMissing = missingData && !status ? 'Fim de mandato' : 'Exercício';
+    return situacaoFromStatus(status, { defaultWhenMissing });
   }
 
   const senadoRoots = [details?.['lista'], details?.['detalhe']];

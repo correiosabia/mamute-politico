@@ -16,6 +16,7 @@ export interface ListParliamentariansParams {
   offset?: number;
   party?: string;
   type?: Array<'deputado' | 'senado'>;
+  situacao?: 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato';
 }
 
 export function listParliamentarians(
@@ -28,6 +29,7 @@ export function listParliamentarians(
   if (params.type?.length) {
     params.type.forEach((t) => sp.append('type', t));
   }
+  if (params.situacao) sp.set('situacao', params.situacao);
   const q = sp.toString();
   return request<ParliamentarianOut[]>(`/parliamentarians/${q ? `?${q}` : ''}`);
 }
