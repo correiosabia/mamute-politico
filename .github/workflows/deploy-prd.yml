@@ -237,6 +237,51 @@ jobs:
             bash up.sh
             docker image prune -f
 
+      - name: Aplica migrations (alembic upgrade head)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOST_PRD }}
+          username: deploy
+          key: ${{ secrets.KEY_GH_ACTIONS }}
+          script_stop: true
+          # Roda alembic dentro do container scrappers, onde alembic.ini + migrations
+          # vivem e a env do DB ja esta wired. Idempotente: se ja esta no head, e no-op.
+          # script_stop garante que falha aqui interrompe o deploy e dispara o handler
+          # de issue automatico — evita API/UI servirem com schema desalinhado do codigo.
+          # As migrations em si sao validadas no job migration-smoke (gate de PR);
+          # este passo so aplica em prod o que ja foi testado.
+          script: |
+            set -euo pipefail
+            CONTAINER=prod-mamute-politico-scrappers
+
+            # docker compose up -d ja retorna com os containers em "started", mas
+            # guard extra contra race (ate ~30s) ao bater no exec logo apos.
+            for i in $(seq 1 6); do
+              if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ]; then
+                break
+              fi
+              echo "  aguardando $CONTAINER ficar Running... ($i/6)"
+              sleep 5
+            done
+
+            run_alembic() {
+              # -e SQLALCHEMY_ECHO=0 silencia o ruido do .env do container.
+              docker exec -e SQLALCHEMY_ECHO=0 "$CONTAINER" \
+                sh -lc "cd /app/mamute_scrappers && alembic $*"
+            }
+
+            echo "::group::alembic current (antes)"
+            run_alembic current
+            echo "::endgroup::"
+
+            echo "::group::alembic upgrade head"
+            run_alembic upgrade head
+            echo "::endgroup::"
+
+            echo "::group::alembic current (depois)"
+            run_alembic current
+            echo "::endgroup::"
+
       - name: Health check pos-deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
