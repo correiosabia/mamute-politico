@@ -24,6 +24,7 @@ export interface ParliamentarianOut {
   biography_link?: string | null;
   biography_text?: string | null;
   details?: Record<string, unknown> | null;
+  photo_url?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -13,6 +13,9 @@ function getPhotoUrlFromDetails(details: Record<string, unknown> | null | undefi
   const detalheIdent = detalhe?.['IdentificacaoParlamentar'] as Record<string, unknown> | undefined;
   const urlDetalhe = detalheIdent?.['UrlFotoParlamentar'];
   if (typeof urlDetalhe === 'string' && urlDetalhe) return urlDetalhe;
+  const ultimoStatus = details['ultimoStatus'] as Record<string, unknown> | undefined;
+  const urlCamara = ultimoStatus?.['urlFoto'];
+  if (typeof urlCamara === 'string' && urlCamara) return urlCamara;
   return undefined;
 }
 
@@ -52,7 +55,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
   const gabinete = [o.office_building, o.office_name, o.office_number]
     .filter(Boolean)
     .join(' ') || undefined;
-  const foto = getPhotoUrlFromDetails(o.details) ?? '';
+  const foto = o.photo_url ?? getPhotoUrlFromDetails(o.details) ?? '';
   return {
     id: String(o.id),
     nome: o.name ?? '—',
