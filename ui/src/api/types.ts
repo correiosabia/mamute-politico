@@ -29,6 +29,15 @@ export interface ParliamentarianOut {
   updated_at: string;
 }
 
+export interface SocialNetworkLinkOut {
+  name?: string | null;
+  profile_url?: string | null;
+}
+
+export interface ParliamentarianDetailOut extends ParliamentarianOut {
+  social_networks?: SocialNetworkLinkOut[];
+}
+
 export interface PropositionOut {
   id: number;
   proposition_code?: number | null;

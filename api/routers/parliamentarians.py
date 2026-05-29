@@ -6,17 +6,19 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, or_, select
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import and_, asc, desc, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 try:
     # Execução como pacote (api.routers.parliamentarians).
     from ..db.models.parliamentarian import Parliamentarian
+    from ..db.models.social_network import ParliamentarianSocialNetwork
     from ..dependencies import get_db
 except (ImportError, ValueError):
     # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.parliamentarian import Parliamentarian
+    from db.models.social_network import ParliamentarianSocialNetwork
     from dependencies import get_db
 
 router = APIRouter(prefix="/parliamentarians", tags=["parliamentarians"])
@@ -274,6 +276,71 @@ class ParliamentarianOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SocialNetworkLinkOut(BaseModel):
+    """Rede social vinculada a um parlamentar."""
+
+    name: Optional[str] = None
+    profile_url: Optional[str] = None
+
+
+class ParliamentarianDetailOut(ParliamentarianOut):
+    """Representação detalhada de um parlamentar, incluindo redes sociais."""
+
+    social_networks: List[SocialNetworkLinkOut] = Field(default_factory=list)
+
+
+def _serialize_parliamentarian_detail(parliamentarian: Parliamentarian) -> ParliamentarianDetailOut:
+    """Serializa um parlamentar com suas redes sociais."""
+    base = ParliamentarianOut.model_validate(parliamentarian)
+    social_networks = [
+        SocialNetworkLinkOut(
+            name=link.social_network.name if link.social_network else None,
+            profile_url=link.profile_url,
+        )
+        for link in parliamentarian.social_networks
+        if link.profile_url or (link.social_network and link.social_network.name)
+    ]
+    return ParliamentarianDetailOut(**base.model_dump(), social_networks=social_networks)
+
+
+def _apply_situacao_filter(stmt, situacao: str):
+    """Aplica filtro de situação parlamentar com base na coluna status."""
+    is_deputado = Parliamentarian.type.ilike("%Deput%")
+    is_senador = Parliamentarian.type.ilike("%Senad%")
+
+    if situacao == "exercicio":
+        return stmt.where(
+            or_(
+                and_(is_deputado, Parliamentarian.status.ilike("%exerc%")),
+                is_senador,
+            )
+        )
+    if situacao == "afastado":
+        return stmt.where(
+            or_(
+                Parliamentarian.status.ilike("%afast%"),
+                Parliamentarian.status.ilike("%fora de exerc%"),
+            )
+        )
+    if situacao == "licenciado":
+        return stmt.where(Parliamentarian.status.ilike("%licenc%"))
+    if situacao == "fim_de_mandato":
+        return stmt.where(
+            or_(
+                Parliamentarian.status.ilike("%fim de mandato%"),
+                and_(
+                    is_deputado,
+                    or_(
+                        Parliamentarian.status.is_(None),
+                        Parliamentarian.name.is_(None),
+                        Parliamentarian.party.is_(None),
+                    ),
+                ),
+            )
+        )
+    return stmt
+
+
 @router.get("/", response_model=List[ParliamentarianOut])
 def list_parliamentarians(
     *,
@@ -284,6 +351,10 @@ def list_parliamentarians(
     type: Optional[List[Literal["deputado", "senado"]]] = Query(
         default=None,
         description="Filtrar por tipo de parlamentar: deputado, senado (pode repetir para ambos).",
+    ),
+    situacao: Optional[Literal["exercicio", "afastado", "licenciado", "fim_de_mandato"]] = Query(
+        default=None,
+        description="Filtrar por situação do mandato: exercicio, afastado, licenciado, fim_de_mandato.",
     ),
     created_from: Optional[datetime] = Query(
         default=None,
@@ -327,6 +398,9 @@ def list_parliamentarians(
         if type_filters:
             stmt = stmt.where(or_(*type_filters))
 
+    if situacao is not None:
+        stmt = _apply_situacao_filter(stmt, situacao)
+
     if created_from is not None:
         stmt = stmt.where(Parliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -350,19 +424,27 @@ def list_parliamentarians(
     return [_serialize_parliamentarian(p) for p in result.scalars().all()]
 
 
-@router.get("/{parliamentarian_id}", response_model=ParliamentarianOut)
+@router.get("/{parliamentarian_id}", response_model=ParliamentarianDetailOut)
 def get_parliamentarian(
     parliamentarian_id: int,
     db: Session = Depends(get_db),
-) -> ParliamentarianOut:
+) -> ParliamentarianDetailOut:
     """Busca um parlamentar específico pelo identificador."""
-    stmt = select(Parliamentarian).where(Parliamentarian.id == parliamentarian_id)
+    stmt = (
+        select(Parliamentarian)
+        .where(Parliamentarian.id == parliamentarian_id)
+        .options(
+            selectinload(Parliamentarian.social_networks).selectinload(
+                ParliamentarianSocialNetwork.social_network
+            )
+        )
+    )
     result = db.execute(stmt).scalar_one_or_none()
 
     if result is None:
         raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
 
-    return _serialize_parliamentarian(result)
+    return _serialize_parliamentarian_detail(result)
 
 
 __all__ = ["router"]

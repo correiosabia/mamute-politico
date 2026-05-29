@@ -1,21 +1,37 @@
-import type { ParliamentarianOut, PropositionOut, RollCallVoteOut, SpeechesTranscriptOut } from './types';
-import type { Parlamentar, Proposicao, Votacao, Discurso } from '@/types/parlamentar';
+import type { ParliamentarianOut, ParliamentarianDetailOut, PropositionOut, RollCallVoteOut, SpeechesTranscriptOut } from './types';
+import type { GabineteDetalhes, Parlamentar, Proposicao, RedeSocial, Votacao, Discurso } from '@/types/parlamentar';
+
+function pickPhotoUrl(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
 
 function getPhotoUrlFromDetails(details: Record<string, unknown> | null | undefined): string | undefined {
   if (!details || typeof details !== 'object') return undefined;
-  const direct = details['UrlFotoParlamentar'];
-  if (typeof direct === 'string' && direct) return direct;
-  const lista = details['lista'] as Record<string, unknown> | undefined;
-  const listaIdent = lista?.['IdentificacaoParlamentar'] as Record<string, unknown> | undefined;
-  const urlLista = listaIdent?.['UrlFotoParlamentar'];
-  if (typeof urlLista === 'string' && urlLista) return urlLista;
-  const detalhe = details['detalhe'] as Record<string, unknown> | undefined;
-  const detalheIdent = detalhe?.['IdentificacaoParlamentar'] as Record<string, unknown> | undefined;
-  const urlDetalhe = detalheIdent?.['UrlFotoParlamentar'];
-  if (typeof urlDetalhe === 'string' && urlDetalhe) return urlDetalhe;
-  const ultimoStatus = details['ultimoStatus'] as Record<string, unknown> | undefined;
-  const urlCamara = ultimoStatus?.['urlFoto'];
-  if (typeof urlCamara === 'string' && urlCamara) return urlCamara;
+
+  const direct = pickPhotoUrl(details['UrlFotoParlamentar']);
+  if (direct) return direct;
+
+  const topLevelFoto = pickPhotoUrl(details['urlFoto']);
+  if (topLevelFoto) return topLevelFoto;
+
+  const ultimoStatus = toRecordOrUndefined(details['ultimoStatus']);
+  const camaraFoto = pickPhotoUrl(ultimoStatus?.['urlFoto']);
+  if (camaraFoto) return camaraFoto;
+
+  const identificacao = toRecordOrUndefined(details['IdentificacaoParlamentar']);
+  const identificacaoFoto = pickPhotoUrl(identificacao?.['UrlFotoParlamentar']);
+  if (identificacaoFoto) return identificacaoFoto;
+
+  const lista = toRecordOrUndefined(details['lista']);
+  const listaIdent = toRecordOrUndefined(lista?.['IdentificacaoParlamentar']);
+  const urlLista = pickPhotoUrl(listaIdent?.['UrlFotoParlamentar']);
+  if (urlLista) return urlLista;
+
+  const detalhe = toRecordOrUndefined(details['detalhe']);
+  const detalheIdent = toRecordOrUndefined(detalhe?.['IdentificacaoParlamentar']);
+  const urlDetalhe = pickPhotoUrl(detalheIdent?.['UrlFotoParlamentar']);
+  if (urlDetalhe) return urlDetalhe;
+
   return undefined;
 }
 
@@ -24,13 +40,20 @@ function partidoFromSigla(sigla: string | null | undefined): { sigla: string; no
   return { sigla, nome: sigla };
 }
 
-function situacaoFromStatus(status: string | null | undefined): Parlamentar['situacao'] {
-  if (!status) return 'Exercício';
+function situacaoFromStatus(
+  status: string | null | undefined,
+  options?: { defaultWhenMissing?: Parlamentar['situacao'] },
+): Parlamentar['situacao'] {
+  if (!status) return options?.defaultWhenMissing ?? 'Exercício';
   const s = status.toLowerCase();
   if (s.includes('licenciado')) return 'Licenciado';
   if (s.includes('fim de mandato')) return 'Fim de mandato';
   if (s.includes('afastado') || s.includes('fora de exercicio')) return 'Afastado';
   return 'Exercício';
+}
+
+export function isEmExercicio(situacao: Parlamentar['situacao']): boolean {
+  return situacao === 'Exercício';
 }
 
 function casaFromType(type: string | null | undefined): Parlamentar['casa'] {
@@ -186,7 +209,10 @@ function getSituacao(o: ParliamentarianOut): Parlamentar['situacao'] {
   const details = toRecordOrUndefined(o.details);
 
   if (casa === 'camara') {
-    return situacaoFromStatus(getCamaraStatus(details, o.status));
+    const status = getCamaraStatus(details, o.status);
+    const missingData = !o.name?.trim() || !o.party?.trim();
+    const defaultWhenMissing = missingData && !status ? 'Fim de mandato' : 'Exercício';
+    return situacaoFromStatus(status, { defaultWhenMissing });
   }
 
   const senadoRoots = [details?.['lista'], details?.['detalhe']];
@@ -212,13 +238,41 @@ export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
   return 'Abstenção';
 }
 
-export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parlamentar {
+function formatNaturalidade(city?: string | null, state?: string | null): string | undefined {
+  const parts = [city, state].filter((value): value is string => Boolean(value?.trim()));
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function buildGabineteDetalhes(o: ParliamentarianOut): GabineteDetalhes | undefined {
+  const detalhes: GabineteDetalhes = {
+    predio: o.office_building?.trim() || undefined,
+    sala: o.office_number?.trim() || undefined,
+    andar: o.office_floor?.trim() || undefined,
+    nome: o.office_name?.trim() || undefined,
+  };
+  return Object.values(detalhes).some(Boolean) ? detalhes : undefined;
+}
+
+function mapSocialNetworks(o: ParliamentarianDetailOut): RedeSocial[] | undefined {
+  const redes = (o.social_networks ?? [])
+    .map((rede) => ({
+      name: rede.name?.trim() || 'Rede social',
+      profileUrl: rede.profile_url?.trim() || undefined,
+    }))
+    .filter((rede) => rede.profileUrl);
+  return redes.length > 0 ? redes : undefined;
+}
+
+export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut | ParliamentarianDetailOut): Parlamentar {
   const partido = partidoFromSigla(o.party ?? undefined);
   const gabinete = [o.office_building, o.office_name, o.office_number]
     .filter(Boolean)
     .join(' ') || undefined;
   const foto = o.photo_url ?? getPhotoUrlFromDetails(o.details) ?? '';
   const legislatura = getLegislatura(o);
+  const gabineteDetalhes = buildGabineteDetalhes(o);
+  const redesSociais = 'social_networks' in o ? mapSocialNetworks(o) : undefined;
+
   return {
     id: String(o.id),
     nome: o.name ?? '—',
@@ -231,6 +285,14 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
+    gabineteDetalhes,
+    naturalidade: formatNaturalidade(o.city_of_birth, o.state_of_birth),
+    escolaridade: o.education?.trim() || undefined,
+    site: o.site?.trim() || undefined,
+    emailGabinete: o.office_email?.trim() || undefined,
+    biografiaLink: o.biography_link?.trim() || undefined,
+    biografiaTexto: o.biography_text?.trim() || undefined,
+    redesSociais,
     situacao: getSituacao(o),
   };
 }
