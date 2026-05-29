@@ -7,11 +7,18 @@ import { useAccountModal } from '@/components/auth/useAccountModal';
 import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
 
-const navItems = [
-  { path: '/', label: 'Início' },
-  { path: '/selecao', label: 'Selecionar Parlamentares' },
-  { path: '/dashboard', label: 'Dashboard Geral' },
-  { path: '/pesquisa', label: 'Pesquisa IA' },
+const siteRootUrl = '/';
+
+type NavItem =
+  | { id: string; label: string; path: string }
+  | { id: string; label: string; href: string; external: true };
+
+const navItems: NavItem[] = [
+  { id: 'home', path: '/', label: 'Início' },
+  { id: 'selecao', path: '/selecao', label: 'Selecionar Parlamentares' },
+  { id: 'dashboard', path: '/dashboard', label: 'Dashboard Geral' },
+  { id: 'pesquisa', path: '/pesquisa', label: 'Pesquisa IA' },
+  { id: 'blog', href: siteRootUrl, label: 'Blog', external: true },
 ];
 
 export function Header() {
@@ -90,16 +97,30 @@ export function Header() {
 
         <nav className="flex flex-col gap-2">
           {visibleNavItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            const linkClassName = cn(
+              'rounded-lg px-2 py-2 text-[16px] font-medium text-[#393939] transition-colors',
+              'external' in item ? 'hover:bg-black/5' : location.pathname === item.path ? 'bg-black/5' : 'hover:bg-black/5'
+            );
+
+            if ('external' in item) {
+              return (
+                <a
+                  key={item.id}
+                  href={item.href}
+                  onClick={closeMobileMenu}
+                  className={linkClassName}
+                >
+                  {item.label}
+                </a>
+              );
+            }
+
             return (
               <Link
-                key={item.path}
+                key={item.id}
                 to={item.path}
                 onClick={closeMobileMenu}
-                className={cn(
-                  'rounded-lg px-2 py-2 text-[16px] font-medium text-[#393939] transition-colors',
-                  isActive ? 'bg-black/5' : 'hover:bg-black/5'
-                )}
+                className={linkClassName}
               >
                 {item.label}
               </Link>
@@ -134,16 +155,25 @@ export function Header() {
 
           <nav className="hidden md:flex items-center gap-3">
             {visibleNavItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const linkClassName = cn(
+                'px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
+                'external' in item
+                  ? 'opacity-85 hover:opacity-100'
+                  : location.pathname === item.path
+                    ? 'underline underline-offset-4'
+                    : 'opacity-85 hover:opacity-100'
+              );
+
+              if ('external' in item) {
+                return (
+                  <a key={item.id} href={item.href} className={linkClassName}>
+                    {item.label}
+                  </a>
+                );
+              }
+
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={cn(
-                    'px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
-                    isActive ? 'underline underline-offset-4' : 'opacity-85 hover:opacity-100'
-                  )}
-                >
+                <Link key={item.id} to={item.path} className={linkClassName}>
                   {item.label}
                 </Link>
               );
