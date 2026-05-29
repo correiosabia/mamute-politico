@@ -27,7 +27,7 @@ export function InicioFooter() {
   return (
     <footer className="bg-white py-10 md:py-12">
       <div className="container flex flex-col gap-8 md:gap-10">
-        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <div className="flex flex-col gap-2">
             <span className={partnerLabelClass}>Concepção</span>
             <img
@@ -36,7 +36,7 @@ export function InicioFooter() {
               className="h-[46px] w-auto max-w-[212px] object-contain object-left"
             />
           </div>
-          <p className="mp-footer-note max-w-[442px] text-black md:text-right">
+          <p className="mp-footer-note max-w-[442px] shrink-0 text-black md:text-right">
             2026 Mamute Político. Dados obtidos via API aberta do Congresso Nacional.
           </p>
         </div>
