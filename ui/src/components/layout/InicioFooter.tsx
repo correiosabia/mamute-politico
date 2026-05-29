@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import logoMamute from '@/assets/logo-mamute.png';
 import logoSabia from '@/assets/footer-logo-sabia.png';
 import logoCodesinfo from '@/assets/footer-logo-codesinfo.png';
@@ -11,12 +12,14 @@ const partnerLabelClass =
 function PartnerColumn({
   label,
   children,
+  className,
 }: {
   label: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 sm:gap-2">
+    <div className={cn('flex min-w-0 flex-col gap-1.5 sm:gap-2', className)}>
       <span className={`${partnerLabelClass} text-[10px] sm:text-[12px]`}>{label}</span>
       {children}
     </div>
@@ -42,26 +45,26 @@ export function InicioFooter() {
         </div>
 
         <div className="flex flex-col gap-10 md:flex-row md:items-end md:justify-between">
-          <div className="grid w-full grid-cols-3 gap-3 sm:gap-6">
+          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6">
             <PartnerColumn label="Programa">
               <img
                 src={logoCodesinfo}
                 alt="Codesinfo"
-                className="h-[28px] w-full max-w-[176px] object-contain object-left sm:h-[44px]"
+                className="h-[36px] w-full max-w-[176px] object-contain object-left sm:h-[44px]"
               />
             </PartnerColumn>
             <PartnerColumn label="Apoio">
               <img
                 src={logoProjor}
                 alt="Projor"
-                className="h-[24px] w-full max-w-[161px] object-contain object-left sm:h-[39px]"
+                className="h-[32px] w-full max-w-[161px] object-contain object-left sm:h-[39px]"
               />
             </PartnerColumn>
-            <PartnerColumn label="Financiamento">
+            <PartnerColumn label="Financiamento" className="col-span-2 sm:col-span-1">
               <img
                 src={logoGni}
                 alt="Google News Initiative"
-                className="h-[20px] w-full max-w-[215px] object-contain object-left sm:h-[31px]"
+                className="h-[28px] w-full max-w-[215px] object-contain object-left sm:h-[31px]"
               />
             </PartnerColumn>
           </div>
