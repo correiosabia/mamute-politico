@@ -162,7 +162,7 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
                 rel="noopener noreferrer"
                 className="truncate text-[#1b76ff] hover:underline"
               >
-                {parlamentar.site}
+                Ver site oficial
               </a>
             </InfoRow>
           )}
