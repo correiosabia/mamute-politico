@@ -6,6 +6,18 @@ export interface Partido {
   cor?: string;
 }
 
+export interface GabineteDetalhes {
+  predio?: string;
+  sala?: string;
+  andar?: string;
+  nome?: string;
+}
+
+export interface RedeSocial {
+  name: string;
+  profileUrl?: string;
+}
+
 export interface Parlamentar {
   id: string;
   nome: string;
@@ -18,6 +30,14 @@ export interface Parlamentar {
   email?: string;
   telefone?: string;
   gabinete?: string;
+  gabineteDetalhes?: GabineteDetalhes;
+  naturalidade?: string;
+  escolaridade?: string;
+  site?: string;
+  emailGabinete?: string;
+  biografiaLink?: string;
+  biografiaTexto?: string;
+  redesSociais?: RedeSocial[];
   situacao: 'Exercício' | 'Afastado' | 'Licenciado' | 'Fim de mandato';
 }
 

@@ -1,5 +1,5 @@
-import type { ParliamentarianOut, PropositionOut, RollCallVoteOut, SpeechesTranscriptOut } from './types';
-import type { Parlamentar, Proposicao, Votacao, Discurso } from '@/types/parlamentar';
+import type { ParliamentarianOut, ParliamentarianDetailOut, PropositionOut, RollCallVoteOut, SpeechesTranscriptOut } from './types';
+import type { GabineteDetalhes, Parlamentar, Proposicao, RedeSocial, Votacao, Discurso } from '@/types/parlamentar';
 
 function pickPhotoUrl(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
@@ -238,13 +238,41 @@ export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
   return 'Abstenção';
 }
 
-export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parlamentar {
+function formatNaturalidade(city?: string | null, state?: string | null): string | undefined {
+  const parts = [city, state].filter((value): value is string => Boolean(value?.trim()));
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function buildGabineteDetalhes(o: ParliamentarianOut): GabineteDetalhes | undefined {
+  const detalhes: GabineteDetalhes = {
+    predio: o.office_building?.trim() || undefined,
+    sala: o.office_number?.trim() || undefined,
+    andar: o.office_floor?.trim() || undefined,
+    nome: o.office_name?.trim() || undefined,
+  };
+  return Object.values(detalhes).some(Boolean) ? detalhes : undefined;
+}
+
+function mapSocialNetworks(o: ParliamentarianDetailOut): RedeSocial[] | undefined {
+  const redes = (o.social_networks ?? [])
+    .map((rede) => ({
+      name: rede.name?.trim() || 'Rede social',
+      profileUrl: rede.profile_url?.trim() || undefined,
+    }))
+    .filter((rede) => rede.profileUrl);
+  return redes.length > 0 ? redes : undefined;
+}
+
+export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut | ParliamentarianDetailOut): Parlamentar {
   const partido = partidoFromSigla(o.party ?? undefined);
   const gabinete = [o.office_building, o.office_name, o.office_number]
     .filter(Boolean)
     .join(' ') || undefined;
   const foto = getPhotoUrlFromDetails(o.details) ?? '';
   const legislatura = getLegislatura(o);
+  const gabineteDetalhes = buildGabineteDetalhes(o);
+  const redesSociais = 'social_networks' in o ? mapSocialNetworks(o) : undefined;
+
   return {
     id: String(o.id),
     nome: o.name ?? '—',
@@ -257,6 +285,14 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
+    gabineteDetalhes,
+    naturalidade: formatNaturalidade(o.city_of_birth, o.state_of_birth),
+    escolaridade: o.education?.trim() || undefined,
+    site: o.site?.trim() || undefined,
+    emailGabinete: o.office_email?.trim() || undefined,
+    biografiaLink: o.biography_link?.trim() || undefined,
+    biografiaTexto: o.biography_text?.trim() || undefined,
+    redesSociais,
     situacao: getSituacao(o),
   };
 }

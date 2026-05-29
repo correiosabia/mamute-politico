@@ -1,6 +1,7 @@
 import { request } from './client';
 import type {
   ParliamentarianOut,
+  ParliamentarianDetailOut,
   PropositionOut,
   RollCallVoteOut,
   SpeechesTranscriptOut,
@@ -34,8 +35,8 @@ export function listParliamentarians(
   return request<ParliamentarianOut[]>(`/parliamentarians/${q ? `?${q}` : ''}`);
 }
 
-export function getParliamentarian(id: number): Promise<ParliamentarianOut> {
-  return request<ParliamentarianOut>(`/parliamentarians/${id}`);
+export function getParliamentarian(id: number): Promise<ParliamentarianDetailOut> {
+  return request<ParliamentarianDetailOut>(`/parliamentarians/${id}`);
 }
 
 export type PropositionSortBy =
