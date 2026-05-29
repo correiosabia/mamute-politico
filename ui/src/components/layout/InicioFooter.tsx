@@ -19,7 +19,12 @@ function PartnerColumn({
   className?: string;
 }) {
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5 sm:gap-2', className)}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-col items-center gap-1.5 text-center sm:items-start sm:gap-2 sm:text-left',
+        className,
+      )}
+    >
       <span className={`${partnerLabelClass} text-[10px] sm:text-[12px]`}>{label}</span>
       {children}
     </div>
@@ -50,21 +55,21 @@ export function InicioFooter() {
               <img
                 src={logoCodesinfo}
                 alt="Codesinfo"
-                className="h-[36px] w-full max-w-[176px] object-contain object-left sm:h-[44px]"
+                className="h-[36px] w-auto max-w-full object-contain sm:h-[44px]"
               />
             </PartnerColumn>
             <PartnerColumn label="Apoio">
               <img
                 src={logoProjor}
                 alt="Projor"
-                className="h-[32px] w-full max-w-[161px] object-contain object-left sm:h-[39px]"
+                className="h-[32px] w-auto max-w-full object-contain sm:h-[39px]"
               />
             </PartnerColumn>
             <PartnerColumn label="Financiamento" className="col-span-2 sm:col-span-1">
               <img
                 src={logoGni}
                 alt="Google News Initiative"
-                className="h-[28px] w-full max-w-[215px] object-contain object-left sm:h-[31px]"
+                className="h-[28px] w-auto max-w-full object-contain sm:h-[31px]"
               />
             </PartnerColumn>
           </div>
