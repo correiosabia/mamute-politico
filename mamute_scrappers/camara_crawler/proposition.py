@@ -399,17 +399,19 @@ def _iter_propositions_paginated(
     force_full: bool = False,
     data_inicio: Optional[str] = None,
     pagina_inicial: int = 1,
+    data_fim: Optional[str] = None,
     session: Optional[Session] = None,
 ) -> Generator[Tuple[Dict[str, Any], bool], None, None]:
     """Itera sobre proposições da Câmara com paginação automática.
-    
+
     Args:
         year_start: Ano inicial para buscar
         force_full: Se True, ignora busca incremental
         data_inicio: Data inicial YYYY-MM-DD (sobrescreve busca incremental)
         pagina_inicial: Página inicial da paginação (padrão: 1)
+        data_fim: Data final YYYY-MM-DD (limita o período — útil para backfill em fatias)
         session: Sessão do banco (para busca incremental)
-        
+
     Yields:
         Tupla (dados_basicos, is_new)
     """
@@ -440,6 +442,9 @@ def _iter_propositions_paginated(
         "ordenarPor": "id",
         "itens": PAGE_SIZE,
     }
+    if data_fim:
+        base_params["dataFim"] = data_fim
+        logger.info("Limitando período até: %s", data_fim)
     
     page = max(1, pagina_inicial)
     total_pages = None
@@ -522,7 +527,10 @@ def _build_payload_from_data(
     presentation_date = _parse_date(basic_data.get("dataApresentacao"))
     presentation_year = _parse_int(basic_data.get("ano"))
 
-    if presentation_year is None and presentation_date is not None:
+    # A API da Câmara devolve "ano": 0 (não null) em vários tipos de tramitação
+    # (PRL, RPD, PAR, SBT, ...). Tratamos 0 como ausente e derivamos o ano da
+    # data de apresentação, que nesses casos vem preenchida.
+    if not presentation_year and presentation_date is not None:
         presentation_year = presentation_date.year
 
     # Código do tipo de proposição
@@ -653,7 +661,8 @@ def _assign_type(session: Session, record: Any, payload: PropositionPayload) -> 
     type_record = (
         session.query(PropositionType)
         .filter_by(proposition_type_code=proposition_type_code, type="Camara")
-        .one_or_none()
+        .order_by(PropositionType.id.asc())
+        .first()
     )
 
     if type_record is None:
@@ -787,6 +796,7 @@ def proposition(
     force_full: bool = False,
     data_inicio: Optional[str] = None,
     pagina_inicial: int = 1,
+    data_fim: Optional[str] = None,
     auto_sync_missing_authors: bool = AUTO_SYNC_MISSING_AUTHORS_DEFAULT,
     persist: bool = True,
     interactive: bool = False,
@@ -798,16 +808,19 @@ def proposition(
         force_full: Ignora busca incremental e reprocessa tudo
         data_inicio: Data inicial no formato YYYY-MM-DD (default: últimos 30 dias)
         pagina_inicial: Página inicial para retomada da paginação (padrão: 1)
+        data_fim: Data final YYYY-MM-DD — limita o período (backfill em fatias)
         auto_sync_missing_authors: Busca/cadastra autores ausentes automaticamente
         persist: Se False, apenas exibe payloads (dry-run)
         interactive: Pausa após cada proposição
     """
-    print(f"DEBUG: data_inicio recebido = {data_inicio!r}")
     logger.info(
-        "Iniciando sincronização de proposições da Câmara (persist=%s, year=%s, force_full=%s)",
+        "Iniciando sincronização de proposições da Câmara "
+        "(persist=%s, year=%s, force_full=%s, data_inicio=%s, data_fim=%s)",
         persist,
         year_start,
         force_full,
+        data_inicio,
+        data_fim,
     )
 
     _ensure_db_dependencies()
@@ -826,6 +839,7 @@ def proposition(
                 force_full=force_full,
                 data_inicio=data_inicio,
                 pagina_inicial=pagina_inicial,
+                data_fim=data_fim,
                 session=session if persist else None,
             )
 
@@ -923,6 +937,11 @@ if __name__ == "__main__":
         help="Data inicial no formato YYYY-MM-DD (sobrescreve busca incremental).",
     )
     parser.add_argument(
+        "--data-fim",
+        type=str,
+        help="Data final no formato YYYY-MM-DD (limita o período — backfill em fatias).",
+    )
+    parser.add_argument(
         "--force-full",
         action="store_true",
         help="Ignora busca incremental e reprocessa todas as proposições com detalhes.",
@@ -957,6 +976,7 @@ if __name__ == "__main__":
     proposition(
         year_start=args.year,
         data_inicio=args.data_inicio,
+        data_fim=args.data_fim,
         force_full=args.force_full,
         pagina_inicial=args.pagina_inicial,
         auto_sync_missing_authors=args.auto_sync_missing_authors,

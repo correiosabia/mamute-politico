@@ -12,6 +12,8 @@ import { Loader2, Pencil, Users } from 'lucide-react';
 import banner3 from '@/assets/banner3-semfundo.png';
 import logoMamute from '@/assets/logo-mamute.png';
 
+const MONITORADOS_AMBAS_CASAS_LINK = '/selecao#ambas-casas';
+
 const DashboardPage = () => {
   const MOBILE_BREAKPOINT_PX = 768;
   const FOOTER_PERSPECTIVE_PX = 1200;
@@ -95,7 +97,7 @@ const DashboardPage = () => {
   const statsItems = [
     {
       value: dashboardStats != null ? String(dashboardStats.propositions_this_week) : '--',
-      label: 'Projetos\nessa semana',
+      label: 'Projetos\n3 meses',
     },
     {
       value:
@@ -122,7 +124,7 @@ const DashboardPage = () => {
         {/* Page header */}
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1 className="text-[48px] font-bold leading-none text-[#393939]">
+            <h1 className="text-[36px] md:text-[48px] font-bold leading-none text-[#393939]">
               Dashboard Geral
             </h1>
             <p className="mt-1 text-[18px] font-normal text-[#383838]">
@@ -130,7 +132,7 @@ const DashboardPage = () => {
             </p>
           </div>
           <Link
-            to="/selecao#selector-ambas-casas"
+            to={MONITORADOS_AMBAS_CASAS_LINK}
             className="group flex items-center gap-2 self-start rounded-full bg-[#1b76ff] px-5 py-2 text-[13px] font-semibold text-white no-underline transition-opacity hover:opacity-90"
           >
             <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
@@ -144,13 +146,13 @@ const DashboardPage = () => {
         {/* Parlamentares monitorados */}
         <div className="mp-card bg-white p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-[32px] font-bold text-[#090909]">
-              <Link to="/selecao#selector-ambas-casas" className="underline-offset-4 transition hover:underline">
+            <h2 className="text-[32px] leading-none font-bold text-[#090909]">
+              <Link to={MONITORADOS_AMBAS_CASAS_LINK} className="underline-offset-4 transition hover:underline">
                 Parlamentares monitorados
               </Link>
             </h2>
             <Link
-              to="/selecao#selector-ambas-casas"
+              to={MONITORADOS_AMBAS_CASAS_LINK}
               className="rounded-full border border-[#383838]/20 px-3 py-1 text-[12px] font-semibold text-[#383838] transition-colors hover:bg-[#383838]/10"
             >
               Editar
@@ -169,12 +171,12 @@ const DashboardPage = () => {
               )}
             </div>
           ) : (
-            <div className="flex flex-wrap gap-[27px]">
+            <div className="flex flex-col gap-[27px] md:flex-row md:flex-wrap">
               {monitorados.map((parlamentar) => (
                 <Link
                   key={parlamentar.id}
                   to={`/parlamentar/${parlamentar.id}`}
-                  className="flex items-center gap-3 rounded-[28px] bg-white px-4 py-3 shadow-[0_4px_4px_rgba(0,0,0,0.25)] hover:opacity-90 transition-opacity min-w-[200px]"
+                  className="flex min-w-0 w-full items-center gap-3 rounded-[28px] bg-white px-4 py-3 shadow-[0_4px_4px_rgba(0,0,0,0.25)] transition-[transform,background-color] duration-200 ease-out hover:-translate-y-1 hover:bg-[#f9f9f9] md:w-auto md:min-w-[200px]"
                 >
                   <Avatar className="h-[50px] w-[50px] shrink-0">
                     <AvatarImage src={parlamentar.foto} alt={parlamentar.nome} />
@@ -208,7 +210,7 @@ const DashboardPage = () => {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Linha do tempo — 2 cols */}
           <div className="mp-card lg:col-span-2 bg-white p-6">
-            <h2 className="mb-4 truncate text-[32px] font-bold text-[#090909]">Linha do tempo</h2>
+            <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Linha do tempo</h2>
             <div className="h-[560px]">
               <Timeline />
             </div>
@@ -218,13 +220,13 @@ const DashboardPage = () => {
           <div className="space-y-6">
             {/* Últimos projetos */}
             <div className="mp-card bg-white p-6">
-              <h2 className="mb-4 truncate text-[32px] font-bold text-[#090909]">Últimos projetos</h2>
+              <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimos projetos</h2>
               <ProposicoesList limit={2} />
             </div>
 
             {/* Estatísticas */}
             <div className="mp-card bg-white p-6">
-              <h2 className="mb-4 text-[32px] font-bold text-[#090909]">Estatísticas</h2>
+              <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Estatísticas</h2>
               <div className="flex items-start justify-between gap-2">
                 {statsItems.map((stat) => (
                   <div key={stat.label} className="flex flex-col items-center gap-2">

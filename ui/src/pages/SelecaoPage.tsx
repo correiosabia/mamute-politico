@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -17,9 +16,20 @@ import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
+const CASA_HASH: Record<CasaLegislativa, string> = {
+  senado: '#senado-federal',
+  ambas: '#ambas-casas',
+  camara: '#camara-dos-deputados',
+};
+
+const getCasaFromHash = (hash: string): CasaLegislativa | null =>
+  (Object.entries(CASA_HASH).find(([, casaHash]) => casaHash === hash)?.[0] as CasaLegislativa | undefined) ?? null;
+
 const SelecaoPage = () => {
   const queryClient = useQueryClient();
-  const [casaSelecionada, setCasaSelecionada] = useState<CasaLegislativa | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const casaSelecionada = getCasaFromHash(location.hash);
 
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
@@ -82,7 +92,7 @@ const SelecaoPage = () => {
   });
 
   const handleSelectCasa = (casa: CasaLegislativa) => {
-    setCasaSelecionada(casa);
+    navigate({ pathname: '/selecao', hash: CASA_HASH[casa] });
   };
 
   const handleAddParlamentar = (parlamentar: Parlamentar) => {
@@ -94,7 +104,7 @@ const SelecaoPage = () => {
   };
 
   const handleBack = () => {
-    setCasaSelecionada(null);
+    navigate('/selecao');
   };
 
   const favoritosMutating = addMutation.isPending || removeMutation.isPending;
@@ -117,25 +127,25 @@ const SelecaoPage = () => {
           {/* Yellow top section with title */}
           <div className="bg-textura-gold px-6 py-10">
             <div className="container">
-              <h1 className="text-center text-[56px] font-bold text-[#393939]">{casaLabel}</h1>
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-center text-[36px] md:text-[48px] leading-none font-bold text-[#393939]">{casaLabel}</h1>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-[16px] md:justify-between">
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="flex items-center gap-2 rounded-[76px] bg-white px-6 py-2 text-[13px] font-semibold text-[#383838] shadow-sm transition hover:opacity-90"
+                  className="flex items-center min-w-[250px] gap-2 rounded-[76px] bg-white px-6 py-2 text-[13px] font-semibold text-[#383838] shadow-sm transition hover:opacity-90"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   VOLTAR À SELEÇÃO DE CASA
                 </button>
-                {parlamentaresMonitorados.length > 0 && (
-                  <Link
-                    to="/dashboard"
-                    className="flex items-center gap-2 rounded-[76px] bg-[#393939] px-6 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:opacity-90"
-                  >
-                    VER DASHBOARD GERAL
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                )}
+                
+                <Link
+                  to="/dashboard"
+                  className="flex items-center min-w-[250px] gap-2 rounded-[76px] bg-[#393939] px-6 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:opacity-90"
+                >
+                  VER DASHBOARD GERAL
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                
               </div>
             </div>
           </div>

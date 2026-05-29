@@ -34,6 +34,11 @@ export function CongressoSelector({ onSelect, selected }: CongressoSelectorProps
     { key: 'ambas', label: 'AMBAS AS CASAS' },
     { key: 'camara', label: 'CÂMARA DOS DEPUTADOS' },
   ];
+  const optionIdMap: Record<CasaLegislativa, string> = {
+    senado: 'senado-federal',
+    ambas: 'ambas-casas',
+    camara: 'camara-dos-deputados',
+  };
 
   return (
     <>
@@ -83,7 +88,7 @@ export function CongressoSelector({ onSelect, selected }: CongressoSelectorProps
 
       <div className="relative flex min-h-[calc(100vh-88px)] flex-col py-14 px-6">
         <div className="space-y-3 text-center">
-          <h2 className="text-[56px] font-bold text-[#393939]">
+          <h2 className="text-[36px] md:text-[48px] leading-none font-bold text-[#393939]">
             Selecione a Casa Legislativa
           </h2>
           <p className="mx-auto max-w-2xl text-[18px] font-normal text-[#383838]">
@@ -93,24 +98,18 @@ export function CongressoSelector({ onSelect, selected }: CongressoSelectorProps
           </p>
         </div>
 
-        <div className="mx-auto mt-14 flex w-fit flex-wrap items-center justify-center gap-3">
+        <div className="mx-auto mt-14 flex w-fit max-w-full flex-col items-center justify-center gap-3 md:flex-row md:flex-wrap">
           {options.map((option) => {
             const isActive = selected === option.key;
-            const responsiveOrder =
-              option.key === 'camara'
-                ? 'order-2 md:order-3'
-                : option.key === 'ambas'
-                  ? 'order-3 md:order-2'
-                  : 'order-1 md:order-1';
             return (
               <button
                 key={option.key}
-                id={option.key === 'ambas' ? 'selector-ambas-casas' : undefined}
+                id={optionIdMap[option.key]}
                 type="button"
                 onClick={() => onSelect(option.key)}
                 onMouseEnter={() => { setTilt(tiltMap[option.key]); setIsHovering(true); }}
                 onMouseLeave={() => { setTilt(0); setIsHovering(false); }}
-                className={`${responsiveOrder} w-[194px] rounded-[76px] py-2.5 text-[13px] font-semibold uppercase tracking-wide shadow-sm transition ${
+                className={`w-[194px] shrink-0 rounded-[76px] py-2.5 text-[13px] font-semibold uppercase tracking-wide shadow-sm transition ${
                   isActive ? 'bg-[#1b76ff] text-white' : 'bg-white text-[#383838] hover:bg-[#1b76ff] hover:text-white'
                 }`}
               >

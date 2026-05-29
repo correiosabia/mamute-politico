@@ -10,6 +10,8 @@ services:
     container_name: prod-mamute-politico-api
     volumes:
       - ../../api/.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
       - frontend
@@ -27,6 +29,8 @@ services:
 
     volumes:
       - ../../chatbot_backend/.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
       - frontend
@@ -43,6 +47,9 @@ services:
     container_name: prod-mamute-politico-scrappers
     volumes:
       - ../../mamute_scrappers/.env:/app/.env
+      - scrappers_state:/app/state
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
     depends_on:
@@ -90,6 +97,20 @@ services:
       database__connection__user: root
       database__connection__password: ${GHOST_DB_PASSWORD}
       database__connection__database: ghost
+      # Transactional email (magic links, staff invites, password reset) via Mailgun SMTP.
+      # Bulk newsletters continuam pelo Mailgun HTTP API configurado em Settings > Email Newsletter (DB).
+      mail__transport: SMTP
+      mail__options__service: Mailgun
+      mail__options__host: smtp.mailgun.org
+      mail__options__port: "587"
+      mail__options__secure: "false"
+      mail__options__auth__user: ${MAILGUN_SMTP_USER}
+      mail__options__auth__pass: ${MAILGUN_SMTP_PASS}
+      mail__from: ${GHOST_MAIL_FROM:-Mamute Politico <noreply@mamutepolitico.com.br>}
+      # Desliga a verificação de dispositivo novo no login de staff/admin do Ghost.
+      # Não tem relação com o magic link de membro — sobrescreve o staffDeviceVerification:true
+      # do config.production.json (env > file no nconf do Ghost).
+      security__staffDeviceVerification: "false"
     volumes:
       - ghost_content:/var/lib/ghost/content
     networks:
@@ -105,6 +126,12 @@ services:
     build:
       context: ../../ui
       dockerfile: Dockerfile
+      # Vite inlina VITE_* em build time. Aqui ficam vazios por padrao -> codigo cai no
+      # fallback same-origin (/api, /members) que Caddy ja roteia. Setar so se for
+      # separar UI da API em hosts diferentes.
+      args:
+        VITE_BASE_URL: ${VITE_BASE_URL:-}
+        VITE_GHOST_JWKS: ${VITE_GHOST_JWKS:-}
     networks:
       - frontend
     restart: unless-stopped
@@ -117,7 +144,7 @@ services:
       POSTGRES_USER: ${PGVECTOR_DB_USER:-mamute}
       POSTGRES_PASSWORD: ${PGVECTOR_DB_PASSWORD:-change_me}
     volumes:
-      - pgvector_db_data:/var/lib/postgresql/data
+      - pgvector_db_data:/var/lib/postgresql
     networks:
       - backend
     healthcheck:
@@ -138,3 +165,4 @@ volumes:
   ghost_content:
   ghost_db_data:
   pgvector_db_data:
+  scrappers_state:

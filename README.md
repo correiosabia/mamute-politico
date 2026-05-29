@@ -52,6 +52,106 @@ O ficheiro [`environments/production/docker-compose.yml`](environments/productio
 
 **Nota:** os composes de **produção** e **desenvolvimento** incluem o serviço `mamute-politico-api`, e os Caddyfiles de ambos ambientes encaminham `/api*` para esse serviço.
 
+### Variáveis de Ambiente
+
+Favor substituir `mamute.voltdata.info` com o endereço desejado
+
+- `mamute-api`
+
+```
+GHOST_BASE_URL=https://mamute.voltdata.info/
+GHOST_MEMBERS_API_AUDIENCE=https://mamute.voltdata.info/members/api
+GHOST_MEMBERS_API_ISSUER=https://mamute.voltdata.info/members/api
+GHOST_JWKS_PATH=members/.well-known/jwks.json
+DATABASE_URL=postgresql://user:senha@host:porta/banco-db
+SQLALCHEMY_ECHO=0
+APPLICATION_NAME=MAMUTE_POLITICO_API
+GHOST_API_KEY=[[Criar uma API key nas integrações do Ghost e postar aqui]]
+GHOST_ADMIN_URL=https://mamute.voltdata.info/ghost/api/admin
+```
+
+- `mamute-chatbot`
+
+```
+APP_ENV=local
+APPLICATION_NAME=mamute_chatbot_backend
+OPENAI_API_KEY=[[chave da OpenAI aqui]]
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_TEMPERATURE=0.2
+OPENAI_MAX_TOKENS=1024
+OPENAI_EMBEDDINGS_MODEL=text-embedding-3-large
+DATABASE_URL=postgresql://user:senha@host:porta/banco-db
+PGVECTOR_CONNECTION=postgresql+psycopg://user:senha@host:porta/banco-do-pgvector
+PGVECTOR_COLLECTION=mamute_chatbot_transcripts
+RETRIEVER_K=6
+RETRIEVER_SCORE_THRESHOLD=0.35
+RERANK_TOP_K=5
+SQL_CONTEXT_LIMIT=5
+SQL_MIN_KEYWORD_LENGTH=4
+SQL_FREQUENCY_LIMIT=5
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_PROJECT=mamute-chatbot
+```
+
+- `mamute-ghost`
+
+```
+database__client=mysql
+database__connection__host=[[host para conectar com db do ghost]]
+database__connection__port=3306
+database__connection__database=ghost
+database__connection__user=ghost
+database__connection__password=[[senha do db ghost aqui]]
+database__connection__ssl=false
+database__pool__min=0
+server__port=2368
+server__host=0.0.0.0
+mail__from=Mamute Político <email-do-remetente@aqui.com.br>
+mail__transport=SMTP
+mail__options__host=[[host do mailgun]]
+mail__options__port=2465
+mail__options__service=SES
+mail__options__auth__user=[[user do mailgun]]
+mail__options__auth__pass=[[password do mailgun]]
+url=https://mamute.voltdata.info
+security__staffDeviceVerification=false
+```
+
+- `mamute-ghost-db`
+
+```
+MYSQL_ROOT_PASSWORD=[[senha do root do banco]]
+MYSQL_USER=ghost
+MYSQL_PASSWORD=[[senha do banco]]
+MYSQL_DATABASE=ghost
+```
+
+- `mamute-pgvector`
+
+```
+POSTGRES_USER=pgvector
+POSTGRES_DB=pgvector
+POSTGRES_PASSWORD=[[senha do pgvector]]
+```
+
+- `mamute-politico-db`
+
+```
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=[[senha]]
+POSTGRES_DB=postgres
+POSTGRES_INITDB_ARGS=
+```
+
+- `mamute-proxy`
+Nenhuma env necessária
+
+- `mamute-ui`
+
+```
+VITE_BASE_URL=https://mamute.voltdata.info
+```
+
 ## Inicialização rápida (local)
 
 1. Clone o repositório e entre na pasta raiz.
@@ -67,12 +167,19 @@ O ficheiro [`environments/production/docker-compose.yml`](environments/productio
 3. `chatbot_backend` → indexação vetorial + serviço de chat.
 4. `ui` → front-end (após API e, se usar o chat na interface, o chatbot).
 
+## Configurar o Ghost
+
+Após subir a stack, configure o Ghost para redirecionar a home para a aplicação e aplicar os ajustes visuais recomendados.
+
+- Guia completo: [`environments/ghost.md`](environments/ghost.md)
+- Inclui: script de redirecionamento no Code Injection
 ## Links rápidos
 
 - [README dos Scrappers](mamute_scrappers/README.md)
 - [README da API](api/README.md)
 - [README do Chatbot Backend](chatbot_backend/README.md)
 - [README da interface (UI)](ui/README.md)
+- [Configuração do Ghost](environments/ghost.md)
 - [Compose de produção](environments/production/docker-compose.yml) · [Compose de desenvolvimento](environments/development/docker-compose.yml)
 
 ## Diagrama

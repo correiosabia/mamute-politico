@@ -187,9 +187,9 @@ const PesquisaIAPage = () => {
 
       <main className="container py-8">
         {/* Page title */}
-        <div className="mb-8">
-          <h1 className="text-[48px] font-bold text-[#383838]">Pesquisa IA</h1>
-          <p className="mt-2 max-w-4xl text-[18px] font-normal leading-snug text-[#383838]">
+        <div className="mb-8 flex flex-col w-full gap-[28px]">
+          <h1 className="text-center md:text-left text-[36px] md:text-[48px] leading-none font-bold text-[#383838]">Pesquisa IA</h1>
+          <p className="text-center md:text-left mt-2 max-w-4xl text-[18px] font-normal leading-snug text-[#383838]">
             Consulte dados legislativos em linguagem natural. Acesse um banco de dados com as proposições, votações e discursos.
             Combine SQL + processamento de linguagem natural para uma abordagem híbrida.
           </p>
@@ -225,7 +225,7 @@ const PesquisaIAPage = () => {
           <div className="mp-card flex flex-col bg-white lg:h-[564px]">
             <div className="flex items-center gap-4 border-b px-8 py-6">
               <Bot className="h-12 w-12 shrink-0 text-[#090909]" />
-              <h2 className="text-[32px] font-bold text-[#090909]">Chat Bot</h2>
+              <h2 className="text-[32px] leading-none font-bold text-[#090909]">Chat Bot</h2>
             </div>
 
             <ScrollArea className="min-h-[240px] flex-1 px-8 py-4">
@@ -303,10 +303,10 @@ const PesquisaIAPage = () => {
                 <button
                   type="submit"
                   disabled={!canSend}
-                  className="flex items-center gap-2 rounded-full bg-[#1b76ff] px-6 py-2 text-[13px] font-bold uppercase text-white transition hover:opacity-90 disabled:opacity-50"
+                  className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#1b76ff] px-4 md:px-3 py-2 text-[13px] font-bold uppercase text-white transition hover:opacity-90 disabled:opacity-50 sm:px-6"
                 >
-                  ENVIAR
-                  <Send className="h-3.5 w-3.5" />
+                  <span className="sr-only sm:not-sr-only sm:inline">ENVIAR</span>
+                  <Send className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 </button>
               </form>
             </div>

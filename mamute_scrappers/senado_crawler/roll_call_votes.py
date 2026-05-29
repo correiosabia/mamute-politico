@@ -353,7 +353,12 @@ def _assign_type(
     if not acronym:
         return
 
-    type_record = session.query(PropositionTypeModel).filter_by(acronym=acronym).one_or_none()
+    type_record = (
+        session.query(PropositionTypeModel)
+        .filter_by(acronym=acronym, type="Senado")
+        .order_by(PropositionTypeModel.id.asc())
+        .first()
+    )
     if type_record is None:
         type_record = PropositionTypeModel(
             acronym=acronym,
@@ -595,4 +600,3 @@ if __name__ == "__main__":
         persist=not args.dry_run,
         dry_run_limit=args.dry_run_limit,
     )
-

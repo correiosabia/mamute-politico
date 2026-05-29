@@ -28,7 +28,8 @@ function situacaoFromStatus(status: string | null | undefined): Parlamentar['sit
   if (!status) return 'Exercício';
   const s = status.toLowerCase();
   if (s.includes('licenciado')) return 'Licenciado';
-  if (s.includes('afastado')) return 'Afastado';
+  if (s.includes('fim de mandato')) return 'Fim de mandato';
+  if (s.includes('afastado') || s.includes('fora de exercicio')) return 'Afastado';
   return 'Exercício';
 }
 
@@ -37,6 +38,167 @@ function casaFromType(type: string | null | undefined): Parlamentar['casa'] {
   const t = type.toLowerCase();
   if (t.includes('senador') || t.includes('senado')) return 'senado';
   return 'camara';
+}
+
+function toNumberOrUndefined(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function toRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function getCamaraLegislatura(details: Record<string, unknown> | null | undefined): number | undefined {
+  if (!details) return undefined;
+  const ultimoStatus = toRecordOrUndefined(details['ultimoStatus']);
+  const fromUltimoStatus = toNumberOrUndefined(ultimoStatus?.['idLegislatura']);
+  if (fromUltimoStatus !== undefined) return fromUltimoStatus;
+
+  return toNumberOrUndefined(details['idLegislatura']);
+}
+
+const SENADO_DIRECT_KEYS = [
+  'Legislatura',
+  'legislatura',
+  'NumeroLegislatura',
+  'numeroLegislatura',
+  'CodigoLegislatura',
+  'codLegislatura',
+  'idLegislatura',
+  'id_legislatura',
+] as const;
+
+function findSenadoLegislaturaInObject(obj: Record<string, unknown>): number | undefined {
+  const values: number[] = [];
+  const directCandidates = SENADO_DIRECT_KEYS.map((key) => obj[key]);
+
+  for (const candidate of directCandidates) {
+    const parsed = toNumberOrUndefined(candidate);
+    if (parsed !== undefined) values.push(parsed);
+  }
+
+  // Senado payloads often keep current legislatura under mandato branches
+  // such as Primeira/SegundaLegislaturaDoMandato.NumeroLegislatura.
+  for (const [key, value] of Object.entries(obj)) {
+    if (!key.toLowerCase().includes('legislaturadomandato')) continue;
+    const mandatoLegObj = toRecordOrUndefined(value);
+    if (!mandatoLegObj) continue;
+    const numero = toNumberOrUndefined(mandatoLegObj['NumeroLegislatura']);
+    if (numero !== undefined) values.push(numero);
+    const nestedParsed = findSenadoLegislaturaInObject(mandatoLegObj);
+    if (nestedParsed !== undefined) values.push(nestedParsed);
+  }
+
+  const nestedCandidates: unknown[] = [
+    obj['ultimoStatus'],
+    obj['IdentificacaoParlamentar'],
+    obj['Mandato'],
+    obj['Mandatos'],
+  ];
+
+  for (const nested of nestedCandidates) {
+    const nestedObj = toRecordOrUndefined(nested);
+    if (!nestedObj) continue;
+    const parsed = findSenadoLegislaturaInObject(nestedObj);
+    if (parsed !== undefined) values.push(parsed);
+  }
+
+  if (values.length > 0) {
+    return Math.max(...values);
+  }
+
+  return undefined;
+}
+
+function getLegislatura(o: ParliamentarianOut): number {
+  const casa = casaFromType(o.type);
+  const details = toRecordOrUndefined(o.details);
+
+  if (casa === 'camara') {
+    const camaraLegislatura = getCamaraLegislatura(details);
+    if (camaraLegislatura !== undefined) return camaraLegislatura;
+  } else {
+    const senadoRoots = [details?.['lista'], details?.['detalhe']];
+    for (const root of senadoRoots) {
+      const rootObj = toRecordOrUndefined(root);
+      if (!rootObj) continue;
+      const parsed = findSenadoLegislaturaInObject(rootObj);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+
+  // Backward-compatible fallback while APIs/ETL fully expose this consistently.
+  return -1;
+}
+
+function toStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function getCamaraStatus(details: Record<string, unknown> | undefined, topLevelStatus: string | null | undefined): string | undefined {
+  const fromTopLevel = toStringOrUndefined(topLevelStatus);
+  if (fromTopLevel) return fromTopLevel;
+
+  const ultimoStatus = toRecordOrUndefined(details?.['ultimoStatus']);
+  return toStringOrUndefined(ultimoStatus?.['situacao']);
+}
+
+function findSenadoStatusInObject(obj: Record<string, unknown>): string | undefined {
+  const directCandidates = [
+    obj['status'],
+    obj['situacao'],
+    obj['Situacao'],
+    obj['SituacaoParlamentar'],
+    obj['DescricaoSituacao'],
+    obj['DescricaoStatus'],
+  ];
+
+  for (const candidate of directCandidates) {
+    const parsed = toStringOrUndefined(candidate);
+    if (parsed) return parsed;
+  }
+
+  const nestedCandidates: unknown[] = [
+    obj['IdentificacaoParlamentar'],
+    obj['Mandato'],
+    obj['Mandatos'],
+    obj['DadosBasicosParlamentar'],
+  ];
+
+  for (const nested of nestedCandidates) {
+    const nestedObj = toRecordOrUndefined(nested);
+    if (!nestedObj) continue;
+    const parsed = findSenadoStatusInObject(nestedObj);
+    if (parsed) return parsed;
+  }
+
+  return undefined;
+}
+
+function getSituacao(o: ParliamentarianOut): Parlamentar['situacao'] {
+  const casa = casaFromType(o.type);
+  const details = toRecordOrUndefined(o.details);
+
+  if (casa === 'camara') {
+    return situacaoFromStatus(getCamaraStatus(details, o.status));
+  }
+
+  const senadoRoots = [details?.['lista'], details?.['detalhe']];
+  for (const root of senadoRoots) {
+    const rootObj = toRecordOrUndefined(root);
+    if (!rootObj) continue;
+    const parsed = findSenadoStatusInObject(rootObj);
+    if (parsed) return situacaoFromStatus(parsed);
+  }
+
+  // Senado source list is "ListaParlamentarEmExercicio"; default remains active.
+  return 'Exercício';
 }
 
 export function votoFromApi(vote: string | null | undefined): Votacao['voto'] {
@@ -56,6 +218,7 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     .filter(Boolean)
     .join(' ') || undefined;
   const foto = o.photo_url ?? getPhotoUrlFromDetails(o.details) ?? '';
+  const legislatura = getLegislatura(o);
   return {
     id: String(o.id),
     nome: o.name ?? '—',
@@ -64,11 +227,11 @@ export function mapParliamentarianOutToParlamentar(o: ParliamentarianOut): Parla
     partido,
     uf: o.state_elected ?? '—',
     casa: casaFromType(o.type),
-    legislatura: 57,
+    legislatura,
     email: o.email ?? undefined,
     telefone: o.telephone ?? undefined,
     gabinete: gabinete || undefined,
-    situacao: situacaoFromStatus(o.status),
+    situacao: getSituacao(o),
   };
 }
 

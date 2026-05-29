@@ -1,14 +1,23 @@
 """Scrapers para a Câmara dos Deputados."""
 
-from .parliamentarian import parliamentarian
-from .proposition import proposition
-from .agency import agency
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "agency": ".agency",
+    "parliamentarian": ".parliamentarian",
+    "proposition": ".proposition",
+    "speeches_transcripts": ".speeches_transcripts",
+}
+
+__all__ = sorted(_EXPORTS)
 
 
-def speeches_transcripts(*args, **kwargs):
-    """Import lazily to avoid runpy warning when executing this module with -m."""
-    from .speeches_transcripts import speeches_transcripts as _speeches_transcripts
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(name)
 
-    return _speeches_transcripts(*args, **kwargs)
-
-__all__ = ["parliamentarian", "proposition", "agency", "speeches_transcripts"]
+    module = import_module(_EXPORTS[name], __name__)
+    return getattr(module, name)

@@ -31,7 +31,7 @@ export function ProposicoesList({ limit = 5, parliamentarianId }: ProposicoesLis
     queryKey: ['propositions', isParliamentarianScope ? 'by-parliamentarian' : 'list', numericId, limit],
     queryFn: () =>
       isParliamentarianScope
-        ? listPropositionsByParliamentarian(numericId, limit)
+        ? listPropositionsByParliamentarian(numericId, { limit })
         : listPropositions({ limit, offset: 0 }),
   });
 

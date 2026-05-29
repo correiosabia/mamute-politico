@@ -24,7 +24,7 @@ except ImportError:  # pragma: no cover - depende de pacotes opcionais
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_CANDIDATES: Tuple[str, ...] = ("pt_core_news_md", "pt_core_news_sm")
+DEFAULT_MODEL_CANDIDATES: Tuple[str, ...] = ("pt_core_news_sm", "pt_core_news_md")
 DEFAULT_CHATGPT_MODEL = "gpt-4o-mini"
 DEFAULT_CHATGPT_ENTITY_LIMIT = 20
 

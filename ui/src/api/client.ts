@@ -3,7 +3,9 @@ const getBaseUrl = (): string => {
   if (root && typeof root === 'string') {
     return `${root.replace(/\/$/, '')}/api`;
   }
-  return 'http://127.0.0.1:8000/api';
+  // Same-origin: Caddy (prod/dev) faz proxy /api -> api:8000.
+  // Em `npm run dev` standalone, vite.config server.proxy cobre o mesmo path.
+  return '/api';
 };
 
 import { JWT_TOKEN_KEY } from '@/components/auth/config';

@@ -1,10 +1,10 @@
 import { useRef, useState, type MouseEventHandler } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
+import { InicioFooter } from '@/components/layout/InicioFooter';
 import texturaBackground from '@/assets/textura.png';
 import congressoForeground from '@/assets/banner1-semfundo.png';
 import mammothImage from '@/assets/figma-mamute.png';
-import logoMamute from '@/assets/logo-mamute.png';
 import iconFuncionalidades from '@/assets/icon-funcionalidades.svg';
 import iconDeputados from '@/assets/icon-deputados.svg';
 import iconSenadores from '@/assets/icon-senadores.svg';
@@ -114,7 +114,7 @@ const Index = () => {
                 <TempoRealIcon />
                 TEMPO REAL
               </p>
-              <h1 className="text-[48px] font-bold leading-[1.08] text-[#393939]">
+              <h1 className="text-[32px] md:text-[48px] font-bold leading-[1.08] text-[#393939]">
                 Monitore políticos do Congresso
               </h1>
               <p className="max-w-[565px] text-[18px] font-normal leading-normal text-[#393939]">
@@ -164,7 +164,7 @@ const Index = () => {
       <section className="bg-white pb-20 pt-2">
         <div className="container">
           <div className="mb-10 text-center lg:text-right">
-            <h2 className="mb-3 text-[40px] font-bold text-[#090909]">
+            <h2 className="mb-3 text-[36px] md:text-[40px] leading-none font-bold text-[#090909]">
               Funcionalidades Principais
             </h2>
             <p className="ml-auto max-w-2xl text-[20px] font-normal text-[#090909]">
@@ -201,7 +201,7 @@ const Index = () => {
 
       <section className="bg-white py-12">
         <div className="container text-center">
-          <h2 className="mb-4 text-[56px] font-bold text-[#080808]">
+          <h2 className="mb-4 text-[36px] md:text-[56px] leading-none font-bold text-[#080808]">
             Pronto para começar?
           </h2>
           <p className="mx-auto mb-8 max-w-2xl text-[18px] font-semibold text-[#080808]">
@@ -213,14 +213,7 @@ const Index = () => {
         </div>
       </section>
 
-      <footer className="bg-white py-8">
-        <div className="container flex flex-col items-center justify-between gap-4 md:flex-row">
-          <img src={logoMamute} alt="Mamute Político" className="h-[47px] w-auto" />
-          <p className="mp-footer-note text-black">
-            2026 Mamute Político. Dados obtidos via API aberta do Congresso Nacional.
-          </p>
-        </div>
-      </footer>
+      <InicioFooter />
     </div>
   );
 };

@@ -3,22 +3,43 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 PYTHONPATH=/app
 
 # Sync Ghost -> projetos (a cada 2 min)
-*/2 * * * * cd /app && /usr/local/bin/python -m mamute_scrappers.scripts.create_users >> /proc/1/fd/1 2>> /proc/1/fd/2
+*/2 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh create-users -- /usr/local/bin/python -m mamute_scrappers.scripts.create_users >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Novas proposições/projetos (a cada 6h)
-0 */6 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition >> /proc/1/fd/1 2>> /proc/1/fd/2
+# Novas proposições do Senado — incremental (a cada 6h)
+5 */6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-propositions -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Novas proposições da Câmara — incremental, ano corrente (a cada 6h)
+20 */6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-propositions -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.proposition --year $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Backfill histórico de proposições (Câmara + Senado, em fatias — a cada 1h).
+# Auto-encerra quando termina; pode remover esta linha depois disso.
+10 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-propositions -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Backfill histórico de votações + discursos (Câmara + Senado, em fatias — a cada 1h,
+# no minuto 40 para não coincidir com o backfill de proposições do minuto 10).
+# Auto-encerra quando termina; pode remover esta linha depois disso.
+40 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-votes-speeches -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Atualização de trâmites/status (diário às 03h)
-0 3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2
+25 3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-proposition-status -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Tipos de proposição (diário às 04h)
-0 4 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_type >> /proc/1/fd/1 2>> /proc/1/fd/2
+25 4 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-proposition-types -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_type >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Votações nominais (a cada 3h)
-0 */3 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
+# Votações nominais do Senado (a cada 3h)
+12 */3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-roll-call-votes -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Discursos/taquigrafias (a cada 2h)
-0 */2 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.senado_crawler.speechs_transcipts >> /proc/1/fd/1 2>> /proc/1/fd/2
+# Votações nominais da Câmara (a cada 3h, no minuto 30 para não coincidir com o Senado)
+42 */3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-roll-call-votes -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Discursos/taquigrafias do Senado (a cada 2h)
+22 */2 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-speeches -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.speechs_transcipts >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Discursos da Câmara (a cada 2h, no minuto 30 para não coincidir com o Senado)
+52 */2 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-speeches -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.speeches_transcripts >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Parlamentares da Câmara (diário às 05h30)
-30 5 * * * cd /app && /usr/local/bin/python -m mamute_scrappers.camara_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
+30 5 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-parliamentarians -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Parlamentares do Senado (diário às 05h45)
+45 5 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-parliamentarians -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
