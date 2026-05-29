@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { LazyAvatarImage } from '@/components/ui/lazy-avatar-image';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -327,10 +328,12 @@ export function ParlamentarSelector({
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={parlamentar.foto} alt={parlamentar.nome} />
-                      <AvatarFallback>{parlamentar.nome[0]}</AvatarFallback>
-                    </Avatar>
+                    <LazyAvatarImage
+                      className="h-10 w-10"
+                      src={parlamentar.foto}
+                      alt={parlamentar.nome}
+                      fallback={parlamentar.nome[0]}
+                    />
                     <div>
                       <p className="font-medium text-sm">{parlamentar.nome}</p>
                       <div className="flex items-center gap-2 flex-wrap">
