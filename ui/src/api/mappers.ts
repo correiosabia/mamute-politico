@@ -1,18 +1,37 @@
 import type { ParliamentarianOut, PropositionOut, RollCallVoteOut, SpeechesTranscriptOut } from './types';
 import type { Parlamentar, Proposicao, Votacao, Discurso } from '@/types/parlamentar';
 
+function pickPhotoUrl(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 function getPhotoUrlFromDetails(details: Record<string, unknown> | null | undefined): string | undefined {
   if (!details || typeof details !== 'object') return undefined;
-  const direct = details['UrlFotoParlamentar'];
-  if (typeof direct === 'string' && direct) return direct;
-  const lista = details['lista'] as Record<string, unknown> | undefined;
-  const listaIdent = lista?.['IdentificacaoParlamentar'] as Record<string, unknown> | undefined;
-  const urlLista = listaIdent?.['UrlFotoParlamentar'];
-  if (typeof urlLista === 'string' && urlLista) return urlLista;
-  const detalhe = details['detalhe'] as Record<string, unknown> | undefined;
-  const detalheIdent = detalhe?.['IdentificacaoParlamentar'] as Record<string, unknown> | undefined;
-  const urlDetalhe = detalheIdent?.['UrlFotoParlamentar'];
-  if (typeof urlDetalhe === 'string' && urlDetalhe) return urlDetalhe;
+
+  const direct = pickPhotoUrl(details['UrlFotoParlamentar']);
+  if (direct) return direct;
+
+  const topLevelFoto = pickPhotoUrl(details['urlFoto']);
+  if (topLevelFoto) return topLevelFoto;
+
+  const ultimoStatus = toRecordOrUndefined(details['ultimoStatus']);
+  const camaraFoto = pickPhotoUrl(ultimoStatus?.['urlFoto']);
+  if (camaraFoto) return camaraFoto;
+
+  const identificacao = toRecordOrUndefined(details['IdentificacaoParlamentar']);
+  const identificacaoFoto = pickPhotoUrl(identificacao?.['UrlFotoParlamentar']);
+  if (identificacaoFoto) return identificacaoFoto;
+
+  const lista = toRecordOrUndefined(details['lista']);
+  const listaIdent = toRecordOrUndefined(lista?.['IdentificacaoParlamentar']);
+  const urlLista = pickPhotoUrl(listaIdent?.['UrlFotoParlamentar']);
+  if (urlLista) return urlLista;
+
+  const detalhe = toRecordOrUndefined(details['detalhe']);
+  const detalheIdent = toRecordOrUndefined(detalhe?.['IdentificacaoParlamentar']);
+  const urlDetalhe = pickPhotoUrl(detalheIdent?.['UrlFotoParlamentar']);
+  if (urlDetalhe) return urlDetalhe;
+
   return undefined;
 }
 

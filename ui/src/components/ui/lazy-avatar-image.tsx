@@ -18,7 +18,7 @@ export function LazyAvatarImage({ src, alt, fallback, className }: LazyAvatarIma
 
   return (
     <Avatar ref={ref} className={cn(className)}>
-      <AvatarImage src={inView ? src : undefined} alt={alt} />
+        <AvatarImage src={inView && src ? src : undefined} alt={alt} />
       <AvatarFallback>{fallback}</AvatarFallback>
     </Avatar>
   );
