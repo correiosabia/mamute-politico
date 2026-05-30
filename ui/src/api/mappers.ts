@@ -40,14 +40,22 @@ function partidoFromSigla(sigla: string | null | undefined): { sigla: string; no
   return { sigla, nome: sigla };
 }
 
+function normalizeStatusText(status: string): string {
+  return status
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 function situacaoFromStatus(
   status: string | null | undefined,
   options?: { defaultWhenMissing?: Parlamentar['situacao'] },
 ): Parlamentar['situacao'] {
   if (!status) return options?.defaultWhenMissing ?? 'Exercício';
-  const s = status.toLowerCase();
+  const s = normalizeStatusText(status);
   if (s.includes('licenciado')) return 'Licenciado';
-  if (s.includes('fim de mandato')) return 'Fim de mandato';
+  if (s.includes('fim de mandato') || s.includes('vacancia')) return 'Fim de mandato';
   if (s.includes('afastado') || s.includes('fora de exercicio')) return 'Afastado';
   return 'Exercício';
 }
