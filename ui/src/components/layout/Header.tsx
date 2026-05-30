@@ -7,7 +7,7 @@ import { useAccountModal } from '@/components/auth/useAccountModal';
 import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
 
-const siteRootUrl = '/';
+const siteRootUrl = '/#/';
 
 type NavItem =
   | { id: string; label: string; path: string }
