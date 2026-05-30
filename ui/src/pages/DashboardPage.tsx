@@ -7,6 +7,7 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import { listMyProjectFavorites, getParliamentarian, getMyDashboardStats } from '@/api/endpoints';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
+import { sortByNome } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2, Pencil, Users } from 'lucide-react';
 import banner3 from '@/assets/banner3-semfundo.png';
@@ -72,9 +73,11 @@ const DashboardPage = () => {
     })),
   });
 
-  const monitorados = parliamentarianQueries
-    .filter((q) => q.data != null)
-    .map((q) => mapParliamentarianOutToParlamentar(q.data!));
+  const monitorados = sortByNome(
+    parliamentarianQueries
+      .filter((q) => q.data != null)
+      .map((q) => mapParliamentarianOutToParlamentar(q.data!)),
+  );
 
   const isLoadingMonitorados =
     favoritesQuery.isLoading ||
