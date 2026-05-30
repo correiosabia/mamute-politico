@@ -7,6 +7,7 @@ export const AUTH_API_ROOT =
   (import.meta.env.VITE_BASE_URL as string | undefined) ?? "";
 export const TOKEN_ENDPOINT = `${AUTH_API_ROOT}/members/api/session/`;
 export const MEMBER_ENDPOINT = `${AUTH_API_ROOT}/members/api/member/`;
+export const MEMBER_EMAIL_ENDPOINT = `${AUTH_API_ROOT}/members/api/member/email`;
 export const INTEGRITY_TOKEN_ENDPOINT = `${AUTH_API_ROOT}/members/api/integrity-token/`;
 export const MAGIC_LINK_ENDPOINT = `${AUTH_API_ROOT}/members/api/send-magic-link/`;
 export const WELL_KNOWN_ENDPOINT = `${AUTH_API_ROOT}/members/.well-known/jwks.json`;

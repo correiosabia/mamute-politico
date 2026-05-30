@@ -1,5 +1,10 @@
 import axios from "axios";
-import { GHOST_VERSION, MEMBER_ENDPOINT, TOKEN_ENDPOINT } from "./config";
+import {
+  GHOST_VERSION,
+  MEMBER_EMAIL_ENDPOINT,
+  MEMBER_ENDPOINT,
+  TOKEN_ENDPOINT,
+} from "./config";
 
 const membersApiHeaders = {
   "app-pragma": "no-cache",
@@ -35,15 +40,22 @@ export async function fetchCurrentMember(
     return null;
   }
 
-  const data = res.data;
-  if (!isRecord(data)) {
+  try {
+    return parseMemberPayload(res.data);
+  } catch {
     return null;
+  }
+}
+
+function parseMemberPayload(data: unknown): CurrentMember {
+  if (!isRecord(data)) {
+    throw new Error("Resposta inválida do servidor");
   }
 
   const email = typeof data.email === "string" ? data.email : "";
   const uuid = typeof data.uuid === "string" ? data.uuid : "";
   if (!email || !uuid) {
-    return null;
+    throw new Error("Resposta inválida do servidor");
   }
 
   const name =
@@ -54,6 +66,110 @@ export async function fetchCurrentMember(
   const status = typeof data.status === "string" ? data.status : undefined;
 
   return { name, email, uuid, status };
+}
+
+function ghostErrorMessage(data: unknown, fallback: string): string {
+  if (!isRecord(data)) {
+    return fallback;
+  }
+  const errors = data.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0];
+    if (isRecord(first) && typeof first.message === "string") {
+      return first.message;
+    }
+  }
+  return fallback;
+}
+
+/**
+ * Returns the session identity token required for sensitive member actions (e.g. email change).
+ */
+export async function fetchIdentityToken(): Promise<string> {
+  const res = await axios.get<string>(TOKEN_ENDPOINT, {
+    withCredentials: true,
+    responseType: "text",
+    headers: { ...membersApiHeaders },
+    validateStatus: () => true,
+  });
+
+  if (res.status === 200 && typeof res.data === "string" && res.data.trim()) {
+    return res.data.trim();
+  }
+
+  const err = new Error("Não foi possível obter token de sessão");
+  (err as Error & { status?: number }).status = res.status;
+  throw err;
+}
+
+/**
+ * Updates the signed-in member's display name.
+ */
+export async function updateMemberProfile(params: {
+  name: string | null;
+}): Promise<CurrentMember> {
+  const name =
+    params.name === null || params.name.trim() === ""
+      ? null
+      : params.name.trim();
+
+  const res = await axios.put<unknown>(
+    MEMBER_ENDPOINT,
+    { name },
+    {
+      withCredentials: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...membersApiHeaders,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (res.status === 200) {
+    return parseMemberPayload(res.data);
+  }
+
+  const err = new Error(
+    ghostErrorMessage(res.data, "Não foi possível atualizar seu perfil")
+  ) as Error & { status?: number; ghostMessage?: string };
+  err.status = res.status;
+  err.ghostMessage = err.message;
+  throw err;
+}
+
+/**
+ * Sends a confirmation link to the new email address. The account email changes only after the link is clicked.
+ */
+export async function requestMemberEmailChange(params: {
+  email: string;
+}): Promise<void> {
+  const identity = await fetchIdentityToken();
+  const email = params.email.trim();
+
+  const res = await axios.post(
+    MEMBER_EMAIL_ENDPOINT,
+    { identity, email },
+    {
+      withCredentials: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...membersApiHeaders,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (res.status === 201 || res.status === 200) {
+    return;
+  }
+
+  const err = new Error(
+    ghostErrorMessage(res.data, "Não foi possível solicitar alteração de e-mail")
+  ) as Error & { status?: number; ghostMessage?: string };
+  err.status = res.status;
+  err.ghostMessage = err.message;
+  throw err;
 }
 
 /**

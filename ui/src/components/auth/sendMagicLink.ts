@@ -108,3 +108,26 @@ export function isMemberNotFoundError(error: unknown): boolean {
     /no member found/i.test(msg)
   );
 }
+
+export type SendMagicLinkUnifiedResult = {
+  emailType: MagicLinkEmailType;
+};
+
+/**
+ * Sends a magic link for sign-in, or sign-up if no member exists for the email.
+ */
+export async function sendMagicLinkUnified(params: {
+  email: string;
+}): Promise<SendMagicLinkUnifiedResult> {
+  const email = params.email.trim();
+  try {
+    await sendMagicLink({ email, emailType: "signin" });
+    return { emailType: "signin" };
+  } catch (e) {
+    if (!isMemberNotFoundError(e)) {
+      throw e;
+    }
+    await sendMagicLink({ email, emailType: "signup" });
+    return { emailType: "signup" };
+  }
+}

@@ -8,25 +8,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import logoMamute from "@/assets/logo-mamute.png";
 import {
-  isMemberNotFoundError,
   sendMagicLink,
+  sendMagicLinkUnified,
   type MagicLinkEmailType,
 } from "./sendMagicLink";
 
 const emailSchema = z.string().trim().email({ message: "E-mail inválido" });
-
-const nameSchema = z
-  .string()
-  .trim()
-  .max(120, { message: "Nome muito longo" })
-  .optional();
 
 const RESEND_COOLDOWN_MS = 45_000;
 
@@ -35,7 +27,6 @@ export type LoginModalProps = {
   onOpenChange: (open: boolean) => void;
   /** Bump when `openLogin` is invoked so the form resets even if the dialog was already closed. */
   launchKey: number;
-  initialTab: "signin" | "signup";
   initialEmail: string;
 };
 
@@ -53,18 +44,11 @@ export function LoginModal({
   open,
   onOpenChange,
   launchKey,
-  initialTab,
   initialEmail,
 }: LoginModalProps) {
-  const [tab, setTab] = useState<"signin" | "signup">(initialTab);
   const [email, setEmail] = useState(initialEmail);
-  const [name, setName] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{
-    email?: string;
-    name?: string;
-  }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string }>({});
   const [error, setError] = useState<string | null>(null);
-  const [showMemberHint, setShowMemberHint] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<{
     email: string;
@@ -78,16 +62,13 @@ export function LoginModal({
     if (!open) {
       return;
     }
-    setTab(initialTab);
     setEmail(initialEmail);
-    setName("");
     setFieldErrors({});
     setError(null);
-    setShowMemberHint(false);
     setSuccess(null);
     setIsSubmitting(false);
     setCooldownUntil(0);
-  }, [open, launchKey, initialTab, initialEmail]);
+  }, [open, launchKey, initialEmail]);
 
   useEffect(() => {
     if (open && !success) {
@@ -102,46 +83,33 @@ export function LoginModal({
     setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
   }, []);
 
-  const validateFields = (mode: MagicLinkEmailType): boolean => {
-    const next: typeof fieldErrors = {};
+  const validateEmail = (): boolean => {
     const emailResult = emailSchema.safeParse(email);
     if (!emailResult.success) {
-      next.email = emailResult.error.flatten().formErrors[0] ?? "E-mail inválido";
+      setFieldErrors({
+        email:
+          emailResult.error.flatten().formErrors[0] ?? "E-mail inválido",
+      });
+      return false;
     }
-    if (mode === "signup") {
-      const nameResult = nameSchema.safeParse(name || undefined);
-      if (!nameResult.success) {
-        next.name = nameResult.error.flatten().formErrors[0];
-      }
-    }
-    setFieldErrors(next);
-    return Object.keys(next).length === 0;
+    setFieldErrors({});
+    return true;
   };
 
-  const submit = async (emailType: MagicLinkEmailType) => {
-    if (!validateFields(emailType)) {
+  const submit = async () => {
+    if (!validateEmail()) {
       return;
     }
     setError(null);
-    setShowMemberHint(false);
     setIsSubmitting(true);
     try {
-      await sendMagicLink({
+      const { emailType } = await sendMagicLinkUnified({
         email: emailSchema.parse(email),
-        emailType,
-        name: emailType === "signup" ? name.trim() || undefined : undefined,
       });
       setSuccess({ email: email.trim(), emailType });
       bumpCooldown();
     } catch (e) {
-      if (emailType === "signin" && isMemberNotFoundError(e)) {
-        setError(
-          "Não encontramos uma conta com esse e-mail. Quer criar uma?"
-        );
-        setShowMemberHint(true);
-      } else {
-        setError(formatErrorMessage(e));
-      }
+      setError(formatErrorMessage(e));
     } finally {
       setIsSubmitting(false);
     }
@@ -157,10 +125,6 @@ export function LoginModal({
       await sendMagicLink({
         email: success.email,
         emailType: success.emailType,
-        name:
-          success.emailType === "signup"
-            ? name.trim() || undefined
-            : undefined,
       });
       bumpCooldown();
     } catch (e) {
@@ -170,20 +134,16 @@ export function LoginModal({
     }
   };
 
-  const switchToSignup = () => {
-    setTab("signup");
-    setShowMemberHint(false);
-    setError(null);
-  };
-
   const resetToForm = () => {
     setSuccess(null);
     setError(null);
-    setShowMemberHint(false);
     setFieldErrors({});
   };
 
-  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  const cooldownRemaining = Math.max(
+    0,
+    Math.ceil((cooldownUntil - Date.now()) / 1000)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -195,14 +155,14 @@ export function LoginModal({
               alt="Mamute Político"
               className="h-9 w-auto"
             />
-            <div>
+            <div className="w-full">
               <DialogTitle className="text-lg font-bold text-[#393939]">
                 {success ? "Verifique seu e-mail" : "Acesso à conta"}
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 {success
                   ? `Enviamos um link para ${success.email}. Verifique sua caixa de entrada (e o spam).`
-                  : "Enviaremos um link mágico para entrar ou criar sua conta."}
+                  : "Enviaremos um link de acesso para seu e-mail."}
               </DialogDescription>
             </div>
           </div>
@@ -211,9 +171,7 @@ export function LoginModal({
         {success ? (
           <div className="space-y-4 pt-1">
             {error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+              <p className="text-sm text-destructive">{error}</p>
             ) : null}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button
@@ -228,9 +186,7 @@ export function LoginModal({
                 type="button"
                 className="rounded-full bg-[#ff0004] text-white hover:bg-[#ff0004]/90"
                 onClick={handleResend}
-                disabled={
-                  isSubmitting || cooldownRemaining > 0
-                }
+                disabled={isSubmitting || cooldownRemaining > 0}
               >
                 {cooldownRemaining > 0
                   ? `Reenviar link (${cooldownRemaining}s)`
@@ -239,26 +195,13 @@ export function LoginModal({
             </div>
           </div>
         ) : (
-          <>
-            {error ? (
-              <Alert variant="destructive">
-                <AlertDescription className="space-y-2">
-                  <p>{error}</p>
-                  {showMemberHint ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-1 rounded-full border-destructive/40"
-                      onClick={switchToSignup}
-                    >
-                      Criar conta com este e-mail
-                    </Button>
-                  ) : null}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit();
+            }}
+          >
             <div className="space-y-2">
               <Label htmlFor="login-email">E-mail</Label>
               <Input
@@ -269,73 +212,24 @@ export function LoginModal({
                 placeholder="voce@exemplo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={Boolean(fieldErrors.email)}
+                aria-invalid={Boolean(fieldErrors.email || error)}
               />
               {fieldErrors.email ? (
                 <p className="text-sm text-destructive">{fieldErrors.email}</p>
               ) : null}
+              {error ? (
+                <p className="pt-3 text-sm text-destructive">{error}</p>
+              ) : null}
             </div>
 
-            <Tabs
-              value={tab}
-              onValueChange={(v) => {
-                setTab(v as "signin" | "signup");
-                setFieldErrors({});
-                setError(null);
-                setShowMemberHint(false);
-              }}
-              className="w-full"
+            <Button
+              type="submit"
+              className="w-full rounded-full bg-[#ff0004] text-white hover:bg-[#ff0004]/90"
+              disabled={isSubmitting}
             >
-              <TabsList className="grid w-full grid-cols-2 rounded-full bg-black/5 p-1">
-                <TabsTrigger value="signin" className="rounded-full">
-                  Entrar
-                </TabsTrigger>
-                <TabsTrigger value="signup" className="rounded-full">
-                  Criar conta
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="signin" className="mt-4 space-y-4">
-                <Button
-                  type="button"
-                  className="w-full rounded-full bg-[#ff0004] text-white hover:bg-[#ff0004]/90"
-                  disabled={isSubmitting}
-                  onClick={() => void submit("signin")}
-                >
-                  {isSubmitting && tab === "signin"
-                    ? "Enviando…"
-                    : "Enviar link de acesso"}
-                </Button>
-              </TabsContent>
-
-              <TabsContent value="signup" className="mt-4 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-name">Nome (opcional)</Label>
-                  <Input
-                    id="login-name"
-                    autoComplete="name"
-                    placeholder="Como devemos chamar você"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    aria-invalid={Boolean(fieldErrors.name)}
-                  />
-                  {fieldErrors.name ? (
-                    <p className="text-sm text-destructive">{fieldErrors.name}</p>
-                  ) : null}
-                </div>
-                <Button
-                  type="button"
-                  className="w-full rounded-full bg-[#ff0004] text-white hover:bg-[#ff0004]/90"
-                  disabled={isSubmitting}
-                  onClick={() => void submit("signup")}
-                >
-                  {isSubmitting && tab === "signup"
-                    ? "Enviando…"
-                    : "Enviar link de acesso"}
-                </Button>
-              </TabsContent>
-            </Tabs>
-          </>
+              {isSubmitting ? "Enviando…" : "Enviar link de acesso"}
+            </Button>
+          </form>
         )}
       </DialogContent>
     </Dialog>

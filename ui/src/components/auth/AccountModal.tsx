@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import { z } from "zod";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -10,6 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -27,7 +30,9 @@ import {
   deleteMyAccount,
   fetchCurrentMember,
   isDeleteAccountNotSupportedError,
+  requestMemberEmailChange,
   signOut as revokeGhostSessionOnServer,
+  updateMemberProfile,
 } from "./fetchCurrentMember";
 import { ghostSignOut } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import type { CurrentMember } from "./fetchCurrentMember";
@@ -39,6 +44,14 @@ export type AccountModalProps = {
   launchKey: number;
 };
 
+const emailSchema = z.string().trim().email({ message: "E-mail inválido" });
+
+const nameSchema = z
+  .string()
+  .trim()
+  .max(120, { message: "Nome muito longo" })
+  .optional();
+
 function initialsFromMember(member: CurrentMember | null): string {
   if (!member) return "?";
   const source = (member.name?.trim() || member.email || "?").trim();
@@ -47,15 +60,52 @@ function initialsFromMember(member: CurrentMember | null): string {
   return secondChar ? (first + secondChar.toUpperCase()).slice(0, 2) : first;
 }
 
+function formatErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error) && !error.response) {
+    return "Não foi possível conectar. Verifique sua rede.";
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Algo deu errado. Tente novamente em instantes.";
+}
+
+function normalizeName(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProps) {
   const [member, setMember] = useState<CurrentMember | null>(null);
   const [loadState, setLoadState] = useState<
     "idle" | "loading" | "error" | "ready"
   >("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [draftName, setDraftName] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string;
+    email?: string;
+  }>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [emailChangeNotice, setEmailChangeNotice] = useState<string | null>(
+    null
+  );
   const [signingOut, setSigningOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const resetEditState = useCallback(() => {
+    setMode("view");
+    setDraftName("");
+    setDraftEmail("");
+    setFieldErrors({});
+    setSaveError(null);
+    setIsSaving(false);
+    setEmailChangeNotice(null);
+  }, []);
 
   const loadMember = useCallback(
     async (signal: AbortSignal) => {
@@ -99,6 +149,7 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
       setMember(null);
       setLoadState("idle");
       setLoadError(null);
+      resetEditState();
       setSigningOut(false);
       setDeletingAccount(false);
       setConfirmDeleteOpen(false);
@@ -108,11 +159,107 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
     const ac = new AbortController();
     void loadMember(ac.signal);
     return () => ac.abort();
-  }, [open, launchKey, loadMember]);
+  }, [open, launchKey, loadMember, resetEditState]);
 
   const handleRetry = () => {
     const ac = new AbortController();
     void loadMember(ac.signal);
+  };
+
+  const handleStartEdit = () => {
+    if (!member) return;
+    setDraftName(member.name ?? "");
+    setDraftEmail(member.email);
+    setFieldErrors({});
+    setSaveError(null);
+    setMode("edit");
+  };
+
+  const handleCancelEdit = () => {
+    setMode("view");
+    setDraftName("");
+    setDraftEmail("");
+    setFieldErrors({});
+    setSaveError(null);
+    setIsSaving(false);
+  };
+
+  const validateFields = (): boolean => {
+    const next: typeof fieldErrors = {};
+    const nameResult = nameSchema.safeParse(draftName || undefined);
+    if (!nameResult.success) {
+      next.name = nameResult.error.flatten().formErrors[0];
+    }
+    const emailResult = emailSchema.safeParse(draftEmail);
+    if (!emailResult.success) {
+      next.email =
+        emailResult.error.flatten().formErrors[0] ?? "E-mail inválido";
+    }
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!member) return;
+    if (!validateFields()) return;
+
+    const nextName = normalizeName(draftName);
+    const nextEmail = emailSchema.parse(draftEmail);
+    const nameChanged = nextName !== member.name;
+    const emailChanged =
+      nextEmail.toLowerCase() !== member.email.toLowerCase();
+
+    if (!nameChanged && !emailChanged) {
+      setMode("view");
+      return;
+    }
+
+    setSaveError(null);
+    setIsSaving(true);
+
+    let updatedMember = member;
+    let nameSaved = false;
+
+    try {
+      if (nameChanged) {
+        updatedMember = await updateMemberProfile({ name: nextName });
+        setMember(updatedMember);
+        nameSaved = true;
+      }
+
+      if (emailChanged) {
+        try {
+          await requestMemberEmailChange({ email: nextEmail });
+          setEmailChangeNotice(
+            `Enviamos um link de confirmação para ${nextEmail}. Seu e-mail só muda depois que você clicar no link.`
+          );
+        } catch (emailError) {
+          if (nameSaved) {
+            setSaveError(
+              `Nome atualizado, mas não foi possível solicitar a alteração de e-mail: ${formatErrorMessage(emailError)}`
+            );
+            setMode("view");
+            toast.success("Nome atualizado");
+            return;
+          }
+          throw emailError;
+        }
+      }
+
+      if (nameChanged && !emailChanged) {
+        toast.success("Perfil atualizado");
+      } else if (emailChanged && !nameChanged) {
+        toast.success("Link de confirmação enviado");
+      } else {
+        toast.success("Nome atualizado e link de confirmação enviado");
+      }
+
+      setMode("view");
+    } catch (e) {
+      setSaveError(formatErrorMessage(e));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -150,6 +297,8 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
       setDeletingAccount(false);
     }
   };
+
+  const actionsDisabled = signingOut || deletingAccount || isSaving;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -202,45 +351,120 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
           </Alert>
         ) : null}
 
-        {loadState === "ready" && member ? (
-          <div className="flex flex-col gap-4 py-1 sm:flex-row sm:items-start sm:gap-5">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ff0004] text-sm font-bold text-white"
-              aria-hidden
-            >
-              {initialsFromMember(member)}
-            </div>
-            <div className="min-w-0 flex-1 space-y-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Nome
-                </p>
-                <p className="text-base text-[#393939]">
-                  {member.name?.trim() ? (
-                    member.name
-                  ) : (
-                    <span className="text-muted-foreground">Sem nome</span>
-                  )}
-                </p>
+        {loadState === "ready" && member && mode === "view" ? (
+          <>
+            {emailChangeNotice ? (
+              <p className="text-sm text-muted-foreground">{emailChangeNotice}</p>
+            ) : null}
+            {saveError ? (
+              <p className="text-sm text-destructive">{saveError}</p>
+            ) : null}
+            <div className="flex flex-col gap-4 py-1 sm:flex-row sm:items-start sm:gap-5">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ff0004] text-sm font-bold text-white"
+                aria-hidden
+              >
+                {initialsFromMember(member)}
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  E-mail
-                </p>
-                <p className="break-all text-base text-[#393939]">{member.email}</p>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Nome
+                  </p>
+                  <p className="text-base text-[#393939]">
+                    {member.name?.trim() ? (
+                      member.name
+                    ) : (
+                      <span className="text-muted-foreground">Sem nome</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    E-mail
+                  </p>
+                  <p className="break-all text-base text-[#393939]">
+                    {member.email}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          </>
         ) : null}
 
-        {loadState === "ready" && member ? (
+        {loadState === "ready" && member && mode === "edit" ? (
+          <form
+            className="space-y-4 py-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSave();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="account-name">Nome</Label>
+              <Input
+                id="account-name"
+                autoComplete="name"
+                placeholder="Como devemos chamar você"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                aria-invalid={Boolean(fieldErrors.name)}
+              />
+              {fieldErrors.name ? (
+                <p className="text-sm text-destructive">{fieldErrors.name}</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="account-email">E-mail</Label>
+              <Input
+                id="account-email"
+                type="email"
+                autoComplete="email"
+                placeholder="voce@exemplo.com"
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                aria-invalid={Boolean(fieldErrors.email || saveError)}
+              />
+              {fieldErrors.email ? (
+                <p className="text-sm text-destructive">{fieldErrors.email}</p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Alterações de e-mail exigem confirmação por link enviado ao novo
+                endereço.
+              </p>
+            </div>
+            {saveError ? (
+              <p className="text-sm text-destructive">{saveError}</p>
+            ) : null}
+            <DialogFooter className="gap-2 px-0 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                disabled={actionsDisabled}
+                onClick={handleCancelEdit}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-full bg-[#ff0004] text-white hover:bg-[#ff0004]/90"
+                disabled={actionsDisabled}
+              >
+                {isSaving ? "Salvando…" : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
+
+        {loadState === "ready" && member && mode === "view" ? (
           <DialogFooter className="gap-2 sm:justify-end">
             {/* Temporarily hidden per request:
             <Button
               type="button"
               variant="outline"
               className="rounded-full border-destructive/50 text-destructive hover:bg-destructive/10"
-              disabled={signingOut || deletingAccount}
+              disabled={actionsDisabled}
               onClick={() => setConfirmDeleteOpen(true)}
             >
               Excluir minha conta
@@ -248,9 +472,18 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
             */}
             <Button
               type="button"
+              variant="outline"
+              className="rounded-full"
+              disabled={actionsDisabled}
+              onClick={handleStartEdit}
+            >
+              Editar
+            </Button>
+            <Button
+              type="button"
               variant="destructive"
               className="rounded-full bg-[#ff0004] hover:bg-[#ff0004]/90"
-              disabled={signingOut || deletingAccount}
+              disabled={actionsDisabled}
               onClick={() => void handleSignOut()}
             >
               {signingOut ? "Saindo…" : "Sair"}
