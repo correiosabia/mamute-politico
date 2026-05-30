@@ -91,4 +91,40 @@ describe("isMemberNotFoundError", () => {
       false
     );
   });
+
+  it("detects Ghost sign-in prompt to sign up first", () => {
+    const ghostMsg =
+      "No member exists with this e-mail address. Please sign up first.";
+    const err = Object.assign(new Error(ghostMsg), { ghostMessage: ghostMsg });
+    expect(isMemberNotFoundError(err)).toBe(true);
+  });
+});
+
+describe("sendMagicLinkUnified with Ghost sign-in-not-found copy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIntegrityToken();
+  });
+
+  it("falls back to signup for the current Ghost sign-in error text", async () => {
+    mockMagicLinkPost(
+      {
+        status: 404,
+        data: {
+          errors: [
+            {
+              message:
+                "No member exists with this e-mail address. Please sign up first.",
+            },
+          ],
+        },
+      },
+      { status: 201 }
+    );
+
+    const result = await sendMagicLinkUnified({ email: "new@example.com" });
+
+    expect(result).toEqual({ emailType: "signup" });
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+  });
 });

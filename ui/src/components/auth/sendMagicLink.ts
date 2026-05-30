@@ -104,8 +104,12 @@ export function isMemberNotFoundError(error: unknown): boolean {
     "";
   return (
     /member not found/i.test(msg) ||
+    /no member exists/i.test(msg) ||
+    /no member found/i.test(msg) ||
     /membro n[aã]o encontrado/i.test(msg) ||
-    /no member found/i.test(msg)
+    /n[aã]o existe.*membro/i.test(msg) ||
+    /please sign up first/i.test(msg) ||
+    /sign up first/i.test(msg)
   );
 }
 
