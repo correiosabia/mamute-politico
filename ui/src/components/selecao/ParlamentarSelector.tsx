@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/popover';
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 
 type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
 
@@ -103,9 +104,9 @@ export function ParlamentarSelector({
   }, [rawList]);
 
   const parlamentaresDisponiveis = useMemo(() => {
-    return allParlamentares.filter((p) => {
+    const filtered = allParlamentares.filter((p) => {
       // Filter by search term
-      if (searchTerm && !p.nome.toLowerCase().includes(searchTerm.toLowerCase())) {
+      if (searchTerm && !includesNormalizedSearch(p.nome, searchTerm)) {
         return false;
       }
 
@@ -139,7 +140,13 @@ export function ParlamentarSelector({
 
       return true;
     });
+    return sortByNome(filtered);
   }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, situacaoFilter, parlamentaresSelecionados]);
+
+  const parlamentaresSelecionadosOrdenados = useMemo(
+    () => sortByNome(parlamentaresSelecionados),
+    [parlamentaresSelecionados],
+  );
 
   const partidosOptions = useMemo(() => {
     const siglas = new Set((rawList ?? []).map((p) => p.party).filter(Boolean) as string[]);
@@ -396,7 +403,7 @@ export function ParlamentarSelector({
               </div>
             ) : (
             <div className="space-y-2">
-              {parlamentaresSelecionados.map((parlamentar) => (
+              {parlamentaresSelecionadosOrdenados.map((parlamentar) => (
                 <div
                   key={parlamentar.id}
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors group cursor-pointer"

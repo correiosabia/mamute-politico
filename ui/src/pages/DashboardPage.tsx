@@ -7,6 +7,7 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import { listMyProjectFavorites, getParliamentarian, getMyDashboardStats } from '@/api/endpoints';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
+import { sortByNome } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2, Pencil, Users } from 'lucide-react';
 import banner3 from '@/assets/banner3-semfundo.png';
@@ -72,9 +73,11 @@ const DashboardPage = () => {
     })),
   });
 
-  const monitorados = parliamentarianQueries
-    .filter((q) => q.data != null)
-    .map((q) => mapParliamentarianOutToParlamentar(q.data!));
+  const monitorados = sortByNome(
+    parliamentarianQueries
+      .filter((q) => q.data != null)
+      .map((q) => mapParliamentarianOutToParlamentar(q.data!)),
+  );
 
   const isLoadingMonitorados =
     favoritesQuery.isLoading ||
@@ -206,7 +209,7 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Main grid: Timeline + Últimos projetos + Estatísticas */}
+        {/* Main grid: Timeline + Últimas ações + Estatísticas */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Linha do tempo — 2 cols */}
           <div className="mp-card lg:col-span-2 bg-white p-6">
@@ -218,9 +221,9 @@ const DashboardPage = () => {
 
           {/* Right column */}
           <div className="space-y-6">
-            {/* Últimos projetos */}
+            {/* Últimas ações */}
             <div className="mp-card bg-white p-6">
-              <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimos projetos</h2>
+              <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
               <ProposicoesList limit={2} />
             </div>
 
