@@ -156,7 +156,7 @@ export function LoginModal({
               alt="Mamute Político"
               className="h-9 w-auto"
             />
-            <div>
+            <div className="w-full">
               <DialogTitle className="text-lg font-bold text-[#393939]">
                 {success ? "Verifique seu e-mail" : "Acesso à conta"}
               </DialogTitle>
