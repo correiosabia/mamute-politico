@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/popover';
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { includesNormalizedSearch } from '@/lib/utils';
 
 type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
 
@@ -105,7 +106,7 @@ export function ParlamentarSelector({
   const parlamentaresDisponiveis = useMemo(() => {
     return allParlamentares.filter((p) => {
       // Filter by search term
-      if (searchTerm && !p.nome.toLowerCase().includes(searchTerm.toLowerCase())) {
+      if (searchTerm && !includesNormalizedSearch(p.nome, searchTerm)) {
         return false;
       }
 
