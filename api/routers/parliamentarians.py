@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,137 @@ except (ImportError, ValueError):
     from dependencies import get_db
 
 router = APIRouter(prefix="/parliamentarians", tags=["parliamentarians"])
+
+_SENADO_STATUS_KEYS = (
+    "status",
+    "situacao",
+    "Situacao",
+    "SituacaoParlamentar",
+    "DescricaoSituacao",
+    "DescricaoStatus",
+)
+
+
+def _coerce_non_empty_str(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _is_senador_type(parliamentarian_type: Optional[str]) -> bool:
+    if not parliamentarian_type:
+        return False
+    return "senad" in parliamentarian_type.lower()
+
+
+def _parse_iso_date(value: Any) -> Optional[date]:
+    text = _coerce_non_empty_str(value)
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _find_senado_status_in_object(obj: Dict[str, Any]) -> Optional[str]:
+    for key in _SENADO_STATUS_KEYS:
+        parsed = _coerce_non_empty_str(obj.get(key))
+        if parsed:
+            return parsed
+
+    for nested_key in ("IdentificacaoParlamentar", "Mandato", "Mandatos", "DadosBasicosParlamentar"):
+        nested = obj.get(nested_key)
+        if isinstance(nested, dict):
+            parsed = _find_senado_status_in_object(nested)
+            if parsed:
+                return parsed
+
+    return None
+
+
+def _collect_mandato_legislatura_periods(mandato: Dict[str, Any]) -> List[Tuple[date, date]]:
+    periods: List[Tuple[date, date]] = []
+    for key in ("PrimeiraLegislaturaDoMandato", "SegundaLegislaturaDoMandato"):
+        legislatura = mandato.get(key)
+        if not isinstance(legislatura, dict):
+            continue
+        start = _parse_iso_date(legislatura.get("DataInicio"))
+        end = _parse_iso_date(legislatura.get("DataFim"))
+        if start is not None and end is not None:
+            periods.append((start, end))
+    return periods
+
+
+def _derive_senado_status_from_mandato(
+    details: Dict[str, Any],
+    *,
+    reference_date: Optional[date] = None,
+) -> Optional[str]:
+    """Infere situação do senador a partir das datas de legislatura no mandato."""
+    today = reference_date or date.today()
+
+    for root_key in ("lista", "detalhe"):
+        root = details.get(root_key)
+        if not isinstance(root, dict):
+            continue
+        mandato = root.get("Mandato")
+        if not isinstance(mandato, dict):
+            continue
+
+        periods = _collect_mandato_legislatura_periods(mandato)
+        if not periods:
+            continue
+
+        if any(start <= today <= end for start, end in periods):
+            return "Exercício"
+
+        latest_end = max(end for _, end in periods)
+        if today > latest_end:
+            return "Fim de mandato"
+
+        earliest_start = min(start for start, _ in periods)
+        if today < earliest_start:
+            return "Fora de exercício"
+
+    return None
+
+
+def _resolve_parliamentarian_status(
+    *,
+    parliamentarian_type: Optional[str],
+    stored_status: Optional[str],
+    details: Optional[Dict[str, Any]],
+    reference_date: Optional[date] = None,
+) -> Optional[str]:
+    """Preenche status a partir da coluna, details ou mandato (Senado)."""
+    resolved = _coerce_non_empty_str(stored_status)
+    if resolved:
+        return resolved
+
+    if not details or not isinstance(details, dict):
+        return None
+
+    if not _is_senador_type(parliamentarian_type):
+        ultimo_status = details.get("ultimoStatus")
+        if isinstance(ultimo_status, dict):
+            return _coerce_non_empty_str(ultimo_status.get("situacao"))
+        return None
+
+    for root_key in ("lista", "detalhe"):
+        root = details.get(root_key)
+        if isinstance(root, dict):
+            parsed = _find_senado_status_in_object(root)
+            if parsed:
+                return parsed
+
+    derived = _derive_senado_status_from_mandato(details, reference_date=reference_date)
+    if derived:
+        return derived
+
+    # Lista oficial do Senado é "ParlamentarEmExercicio".
+    return "Exercício"
 
 
 def _extract_photo_url_from_details(details: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -87,7 +218,11 @@ def _serialize_parliamentarian(parliamentarian: Parliamentarian) -> "Parliamenta
         email=parliamentarian.email,
         telephone=parliamentarian.telephone,
         cpf=parliamentarian.cpf,
-        status=parliamentarian.status,
+        status=_resolve_parliamentarian_status(
+            parliamentarian_type=parliamentarian.type,
+            stored_status=parliamentarian.status,
+            details=details,
+        ),
         party=parliamentarian.party,
         state_of_birth=parliamentarian.state_of_birth,
         city_of_birth=parliamentarian.city_of_birth,

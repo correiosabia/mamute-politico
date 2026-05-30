@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 from typing import (
     Any,
@@ -336,6 +337,53 @@ def _extract_parlamentar_items(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return result
 
 
+def _parse_iso_date(value: Any) -> Optional[date]:
+    text = _coerce_text(value)
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _collect_mandato_legislatura_periods(mandato: Dict[str, Any]) -> List[tuple[date, date]]:
+    periods: List[tuple[date, date]] = []
+    for key in ("PrimeiraLegislaturaDoMandato", "SegundaLegislaturaDoMandato"):
+        legislatura = mandato.get(key)
+        if not isinstance(legislatura, dict):
+            continue
+        start = _parse_iso_date(legislatura.get("DataInicio"))
+        end = _parse_iso_date(legislatura.get("DataFim"))
+        if start is not None and end is not None:
+            periods.append((start, end))
+    return periods
+
+
+def _derive_status_from_mandato(parlamentar: Dict[str, Any]) -> Optional[str]:
+    mandato = parlamentar.get("Mandato")
+    if not isinstance(mandato, dict):
+        return None
+
+    today = date.today()
+    periods = _collect_mandato_legislatura_periods(mandato)
+    if not periods:
+        return None
+
+    if any(start <= today <= end for start, end in periods):
+        return "Exercício"
+
+    latest_end = max(end for _, end in periods)
+    if today > latest_end:
+        return "Fim de mandato"
+
+    earliest_start = min(start for start, _ in periods)
+    if today < earliest_start:
+        return "Fora de exercício"
+
+    return None
+
+
 def _parse_social_networks_json(parlamentar: Dict[str, Any]) -> List[SocialNetworkPayload]:
     candidates: List[Any] = []
 
@@ -440,6 +488,10 @@ def _build_payload_from_json(parlamentar: Dict[str, Any]) -> Optional[Parliament
         payload["telephone"] = telephone
     if details_payload:
         payload["details"] = details_payload
+
+    status = _derive_status_from_mandato(parlamentar)
+    if status:
+        payload["status"] = status
 
     return payload
 

@@ -82,8 +82,8 @@ DEFAULT_HEADERS = {
 }
 
 REQUEST_TIMEOUT = 30
-DEFAULT_PAGE_DELAY = 1.0
-DEFAULT_DETAIL_DELAY = 1.0
+DEFAULT_PAGE_DELAY = 0.1
+DEFAULT_DETAIL_DELAY = 0.1
 
 _http_session = requests.Session()
 _http_session.headers.update(DEFAULT_HEADERS)

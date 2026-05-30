@@ -48,7 +48,7 @@ from typing import Any, Dict, List
 logger = logging.getLogger("backfill_votes_speeches")
 
 # --- Configuração -----------------------------------------------------------
-SINCE_YEAR = 2022          # piso pedido pelo projeto ("no mínimo de 2022 pra cá")
+SINCE_YEAR = 2018          # piso alinhado com backfill_propositions.py (Senado discursos 2018-2021 estavam ausentes)
 BACKFILL_END_YEAR = date.today().year
 CHUNKS_PER_RUN = 4         # chunks processados por execução do cron (conservador:
                            # o servidor é compartilhado e queremos ser educados
