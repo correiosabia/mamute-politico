@@ -36,7 +36,7 @@ CAMARA_API_BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
 CAMARA_PROPOSICOES_ENDPOINT = f"{CAMARA_API_BASE_URL}/proposicoes"
 CAMARA_PROPOSICAO_WEB_URL = "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao"
 
-REQUEST_DELAY = 0.5  # Delay entre requests de detalhes (segundos)
+REQUEST_DELAY = 0.1  # Delay entre requests de detalhes (segundos)
 PAGE_SIZE = 100
 HTTP_TIMEOUT_SECONDS = 30
 REQUEST_MAX_RETRIES = 4

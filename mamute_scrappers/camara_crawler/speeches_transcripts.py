@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 CAMARA_API_BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
 
-REQUEST_DELAY = 0.3  # Delay entre requests (segundos)
+REQUEST_DELAY = 0.1  # Delay entre requests (segundos)
 PAGE_SIZE = 50
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
