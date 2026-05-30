@@ -98,7 +98,7 @@ const Index = () => {
             className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
           />
           <div
-            className="pointer-events-none absolute inset-0 h-full w-full"
+            className="pointer-events-none absolute inset-0 hidden h-full w-full md:block"
             style={{ transform: heroTransform, transformOrigin: 'center center' }}
           >
             <img
@@ -108,29 +108,38 @@ const Index = () => {
             />
           </div>
 
-          <div className="container relative z-10 grid min-h-[700px] md:min-h-[560px] 2xl:min-h-[800px] items-center py-8">
-            <div className="max-w-[610px] space-y-5">
-              <p className="flex items-center gap-2 text-[15px] font-extrabold italic leading-normal tracking-[0.02em] text-[#393939] uppercase">
-                <TempoRealIcon />
-                TEMPO REAL
-              </p>
-              <h1 className="text-[32px] md:text-[48px] font-bold leading-[1.08] text-[#393939]">
-                Monitore políticos do Congresso
-              </h1>
-              <p className="max-w-[565px] text-[18px] font-normal leading-normal text-[#393939]">
-              Memória de elefante: saiba como vota, o que propõe e até o que diz em discurso o(s) congressista(s) da sua escolha.
-              </p>
-              <div className="flex flex-wrap gap-4 pt-2">
-                <Link
-                  to="/selecao"
-                  className="inline-flex h-9 items-center rounded-[76px] bg-[#ff0004] px-9 text-[13px] font-bold uppercase leading-normal tracking-normal text-white transition hover:opacity-90"
-                >
+          <div className="relative z-10">
+            <div className="container flex flex-col py-8 md:grid md:min-h-[560px] 2xl:min-h-[800px] md:items-center">
+              <div className="max-w-[610px] space-y-5">
+                <p className="flex items-center gap-2 text-[15px] font-extrabold italic leading-normal tracking-[0.02em] text-[#393939] uppercase">
+                  <TempoRealIcon />
+                  TEMPO REAL
+                </p>
+                <h1 className="text-[32px] md:text-[48px] font-bold leading-[1.08] text-[#393939]">
+                  Monitore políticos do Congresso
+                </h1>
+                <p className="max-w-[565px] text-[18px] font-normal leading-normal text-[#393939]">
+                  Memória de elefante: saiba como vota, o que propõe e até o que diz em discurso o(s) congressista(s) da sua escolha.
+                </p>
+                <div className="flex flex-wrap gap-4 pt-2">
+                  <Link
+                    to="/selecao"
+                    className="inline-flex h-9 items-center rounded-[76px] bg-[#ff0004] px-9 text-[13px] font-bold uppercase leading-normal tracking-normal text-white transition hover:opacity-90"
+                  >
                     COMEÇAR AGORA
-                </Link>
-                <Link to="/dashboard" className="mp-pill-light inline-flex h-9 items-center px-7 text-[13px] font-semibold uppercase leading-normal tracking-normal text-[#4b4b4b] transition hover:opacity-90">
+                  </Link>
+                  <Link to="/dashboard" className="mp-pill-light inline-flex h-9 items-center px-7 text-[13px] font-semibold uppercase leading-normal tracking-normal text-[#4b4b4b] transition hover:opacity-90">
                     EXPLORAR DASHBOARD
-                </Link>
+                  </Link>
+                </div>
               </div>
+            </div>
+            <div className="mt-8 w-full overflow-hidden md:hidden" aria-hidden="true">
+              <img
+                src={congressoForeground}
+                alt=""
+                className="block h-auto w-[200%] max-w-none -translate-x-1/2"
+              />
             </div>
           </div>
         </section>

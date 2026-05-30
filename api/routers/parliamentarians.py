@@ -328,6 +328,7 @@ def _apply_situacao_filter(stmt, situacao: str):
         return stmt.where(
             or_(
                 Parliamentarian.status.ilike("%fim de mandato%"),
+                Parliamentarian.status.ilike("%vac%"),
                 and_(
                     is_deputado,
                     or_(
