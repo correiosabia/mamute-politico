@@ -155,7 +155,7 @@ const ParlamentarDashboard = () => {
           </Link>
         </div>
 
-        {/* Top Row: Dados cadastrais | Temas do discurso | Últimos projetos */}
+        {/* Top Row: Dados cadastrais | Temas do discurso | Últimas ações */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Dados cadastrais */}
           <div className="mp-card bg-white p-6">
@@ -169,9 +169,9 @@ const ParlamentarDashboard = () => {
             <WordCloud parliamentarianId={parliamentarianCode} parlamentarNome={parlamentar.nome} />
           </div>
 
-          {/* Últimos projetos */}
+          {/* Últimas ações */}
           <div className="mp-card bg-white p-6">
-            <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Últimos projetos</h2>
+            <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
             <ProposicoesList limit={4} parliamentarianId={id} />
           </div>
         </div>

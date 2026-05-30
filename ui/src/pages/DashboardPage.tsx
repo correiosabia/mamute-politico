@@ -206,7 +206,7 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Main grid: Timeline + Últimos projetos + Estatísticas */}
+        {/* Main grid: Timeline + Últimas ações + Estatísticas */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Linha do tempo — 2 cols */}
           <div className="mp-card lg:col-span-2 bg-white p-6">
@@ -218,9 +218,9 @@ const DashboardPage = () => {
 
           {/* Right column */}
           <div className="space-y-6">
-            {/* Últimos projetos */}
+            {/* Últimas ações */}
             <div className="mp-card bg-white p-6">
-              <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimos projetos</h2>
+              <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
               <ProposicoesList limit={2} />
             </div>
 
