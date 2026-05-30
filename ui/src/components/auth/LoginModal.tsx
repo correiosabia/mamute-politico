@@ -205,12 +205,6 @@ export function LoginModal({
               void submit();
             }}
           >
-            {error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-
             <div className="space-y-2">
               <Label htmlFor="login-email">E-mail</Label>
               <Input
@@ -221,10 +215,15 @@ export function LoginModal({
                 placeholder="voce@exemplo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={Boolean(fieldErrors.email)}
+                aria-invalid={Boolean(fieldErrors.email || error)}
               />
               {fieldErrors.email ? (
                 <p className="text-sm text-destructive">{fieldErrors.email}</p>
+              ) : null}
+              {error ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               ) : null}
             </div>
 
