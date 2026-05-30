@@ -8,19 +8,13 @@ export type { OpenLoginOptions } from "./loginModalContext";
 export function LoginModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [launchKey, setLaunchKey] = useState(0);
-  const [initialTab, setInitialTab] = useState<"signin" | "signup">("signin");
   const [initialEmail, setInitialEmail] = useState("");
 
   const openLogin = useCallback((options?: OpenLoginOptions) => {
-    setInitialTab(options?.defaultTab ?? "signin");
     setInitialEmail(options?.defaultEmail ?? "");
     setLaunchKey((k) => k + 1);
     setOpen(true);
   }, []);
-
-  const openSignup = useCallback(() => {
-    openLogin({ defaultTab: "signup" });
-  }, [openLogin]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -29,10 +23,9 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       openLogin,
-      openSignup,
       close,
     }),
-    [openLogin, openSignup, close]
+    [openLogin, close]
   );
 
   return (
@@ -42,7 +35,6 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
         open={open}
         onOpenChange={setOpen}
         launchKey={launchKey}
-        initialTab={initialTab}
         initialEmail={initialEmail}
       />
     </LoginModalContext.Provider>
