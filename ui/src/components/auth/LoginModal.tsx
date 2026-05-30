@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import logoMamute from "@/assets/logo-mamute.png";
 import {
   sendMagicLink,
@@ -172,9 +171,7 @@ export function LoginModal({
         {success ? (
           <div className="space-y-4 pt-1">
             {error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+              <p className="text-sm text-destructive">{error}</p>
             ) : null}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button
@@ -221,9 +218,7 @@ export function LoginModal({
                 <p className="text-sm text-destructive">{fieldErrors.email}</p>
               ) : null}
               {error ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
+                <p className="pt-3 text-sm text-destructive">{error}</p>
               ) : null}
             </div>
 
