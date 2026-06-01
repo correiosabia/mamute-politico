@@ -321,7 +321,7 @@ function getAutorFromDetails(details: Record<string, unknown> | null | undefined
 }
 
 export function mapPropositionOutToProposicao(o: PropositionOut): Proposicao {
-  const ementa = o.proposition_description ?? o.summary ?? '—';
+  const ementa = o.summary?.trim() || o.proposition_description?.trim() || '—';
   return {
     id: String(o.id),
     tipo: o.proposition_acronym ?? '—',
