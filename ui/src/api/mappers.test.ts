@@ -39,4 +39,19 @@ describe('mapPropositionOutToProposicao', () => {
 
     expect(proposicao.ementa).toBe('Texto disponível sem summary');
   });
+
+  it('maps Camara proposition keywords to tema', () => {
+    const proposicao = mapPropositionOutToProposicao(
+      makeProposition({
+        details: {
+          keywords:
+            'Alteração, Lei de Benefícios da Previdência Social (1991), pensão por morte.',
+        },
+      }),
+    );
+
+    expect(proposicao.tema).toBe(
+      'Alteração, Lei de Benefícios da Previdência Social (1991), pensão por morte',
+    );
+  });
 });

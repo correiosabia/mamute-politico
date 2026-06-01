@@ -172,6 +172,63 @@ function toStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+const THEME_DETAIL_KEYS = [
+  'keywords',
+  'palavrasChave',
+  'palavras_chave',
+  'indexacao',
+  'Indexacao',
+  'tema',
+  'assunto',
+] as const;
+
+function normalizeTemaValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+    return normalized || undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => normalizeTemaValue(item))
+      .filter((item): item is string => Boolean(item));
+    return parts.length > 0 ? parts.join(', ') : undefined;
+  }
+
+  return undefined;
+}
+
+function findTemaInDetails(value: unknown, depth = 0): string | undefined {
+  if (depth > 4) return undefined;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = findTemaInDetails(item, depth + 1);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  const record = toRecordOrUndefined(value);
+  if (!record) return undefined;
+
+  for (const key of THEME_DETAIL_KEYS) {
+    const tema = normalizeTemaValue(record[key]);
+    if (tema) return tema;
+  }
+
+  for (const nestedValue of Object.values(record)) {
+    const nested = findTemaInDetails(nestedValue, depth + 1);
+    if (nested) return nested;
+  }
+
+  return undefined;
+}
+
+function getTemaFromDetails(details: Record<string, unknown> | null | undefined): string {
+  return findTemaInDetails(details) ?? '—';
+}
+
 function getCamaraStatus(details: Record<string, unknown> | undefined, topLevelStatus: string | null | undefined): string | undefined {
   const fromTopLevel = toStringOrUndefined(topLevelStatus);
   if (fromTopLevel) return fromTopLevel;
@@ -331,7 +388,7 @@ export function mapPropositionOutToProposicao(o: PropositionOut): Proposicao {
     ementa,
     dataApresentacao: o.presentation_date ?? '',
     situacao: o.current_status ?? '—',
-    tema: '—',
+    tema: getTemaFromDetails(o.details),
     autor: getAutorFromDetails(o.details),
   };
 }

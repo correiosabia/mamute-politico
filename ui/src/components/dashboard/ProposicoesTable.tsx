@@ -379,8 +379,12 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                   <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
                     {proposicao.ementa}
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="whitespace-nowrap text-[10px]">
+                  <TableCell className="max-w-[210px]">
+                    <Badge
+                      variant="secondary"
+                      className="max-w-[190px] overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
+                      title={proposicao.tema !== '—' ? proposicao.tema : undefined}
+                    >
                       {proposicao.tema}
                     </Badge>
                   </TableCell>
