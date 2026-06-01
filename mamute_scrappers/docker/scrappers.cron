@@ -12,13 +12,26 @@ PYTHONPATH=/app
 20 */6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-propositions -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.proposition --year $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Backfill histórico de proposições (Câmara + Senado, em fatias — a cada 1h).
-# Auto-encerra quando termina; pode remover esta linha depois disso.
-10 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-propositions -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions >> /proc/1/fd/1 2>> /proc/1/fd/2
+# --chunks-per-run 50: com REQUEST_DELAY reduzido a 0.1s os chunks rodam rápido,
+# então faz sentido consumir mais fila por execução horária. Auto-encerra quando
+# termina (pending=0); rodadas subsequentes saem na hora sem fazer nada.
+10 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-propositions -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions --chunks-per-run 50 >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Backfill histórico de votações + discursos (Câmara + Senado, em fatias — a cada 1h,
 # no minuto 40 para não coincidir com o backfill de proposições do minuto 10).
-# Auto-encerra quando termina; pode remover esta linha depois disso.
-40 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-votes-speeches -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches >> /proc/1/fd/1 2>> /proc/1/fd/2
+# --chunks-per-run 50: idem proposições. Auto-encerra quando termina.
+40 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-votes-speeches -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches --chunks-per-run 50 >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Burst de inicialização (@reboot): ao subir o container, dispara um loop que
+# esvazia a fila do backfill mais rápido do que o ritmo horário. Sai quando ve
+# "Backfill completo" / "nada a fazer" no output do orquestrador. Em runs
+# subsequentes (já zerado) é no-op imediato.
+#
+# Sleep 30s no comeco da-se margem pro container terminar o boot (DB ready, etc).
+# A trava de arquivo do orquestrador (flock em backfill*.lock) garante que esse
+# burst e o cron horario nao executam ao mesmo tempo: quem chegar segundo sai.
+@reboot sleep 30 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions --chunks-per-run 100 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
+@reboot sleep 30 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches --chunks-per-run 100 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
 
 # Atualização de trâmites/status (diário às 03h)
 25 3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-proposition-status -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2
