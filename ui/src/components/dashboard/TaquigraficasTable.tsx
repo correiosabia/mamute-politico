@@ -302,7 +302,7 @@ export function TaquigraficasTable({ limit = 20, parliamentarianId }: Taquigrafi
               <TableHeader>
                 <TableRow>
                   <TableHead>Data</TableHead>
-                  <TableHead>Sessão</TableHead>
+                  {/* <TableHead>Sessão</TableHead> */}
                   <TableHead>Tipo</TableHead>
                   <TableHead>Resumo</TableHead>
                   <TableHead>Análise</TableHead>
@@ -335,7 +335,7 @@ export function TaquigraficasTable({ limit = 20, parliamentarianId }: Taquigrafi
                     <TableCell className="text-sm text-muted-foreground">
                       {speech.date ? new Date(speech.date).toLocaleDateString('pt-BR') : '—'}
                     </TableCell>
-                    <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell>
+                    {/* <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell> */}
                     <TableCell className="text-sm">{speech.type ?? '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[360px] truncate">
                       {speech.summary ?? speech.speech_text ?? '—'}
