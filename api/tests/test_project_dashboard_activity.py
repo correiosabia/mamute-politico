@@ -158,6 +158,7 @@ def _make_activity_session() -> Session:
                 (
                     id,
                     title,
+                    link,
                     proposition_acronym,
                     proposition_number,
                     presentation_year,
@@ -168,9 +169,9 @@ def _make_activity_session() -> Session:
                     updated_at
                 )
             values
-                (1, 'PL monitorado', 'PL', 1, 2026, 'Aguardando Despacho', 'Do parlamentar monitorado', '2026-05-10', '2026-05-10 00:00:00', '2026-05-10 00:00:00'),
-                (2, 'PL fora', 'PL', 2, 2026, 'Aguardando Despacho', 'De outro parlamentar', '2026-05-11', '2026-05-11 00:00:00', '2026-05-11 00:00:00'),
-                (3, 'PL coautoria', 'PL', 3, 2026, 'Aguardando Despacho', 'Com coautoria monitorada', '2026-05-12', '2026-05-12 00:00:00', '2026-05-12 00:00:00')
+                (1, 'PL monitorado', 'https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=2293709', 'PL', 1, 2026, 'Aguardando Despacho', 'Do parlamentar monitorado', '2026-05-10', '2026-05-10 00:00:00', '2026-05-10 00:00:00'),
+                (2, 'PL fora', null, 'PL', 2, 2026, 'Aguardando Despacho', 'De outro parlamentar', '2026-05-11', '2026-05-11 00:00:00', '2026-05-11 00:00:00'),
+                (3, 'PL coautoria', null, 'PL', 3, 2026, 'Aguardando Despacho', 'Com coautoria monitorada', '2026-05-12', '2026-05-12 00:00:00', '2026-05-12 00:00:00')
             """
         )
         conn.exec_driver_sql(
@@ -222,6 +223,10 @@ def test_dashboard_activity_only_returns_data_for_project_favorites(monkeypatch)
         ]
         assert [item["id"] for item in payload["votes"]] == [11]
         assert payload["votes"][0]["parliamentarian_name"] == "Parlamentar Monitorado"
+        assert (
+            payload["votes"][0]["proposition_votes_link"]
+            == "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao/votacoes?idProposicao=2293709"
+        )
     finally:
         db_session.close()
 
@@ -248,6 +253,10 @@ def test_dashboard_activity_survives_missing_vote_date_migration(monkeypatch) ->
         assert [item["id"] for item in payload["votes"]] == [11]
         assert payload["votes"][0]["date_vote"] is None
         assert payload["votes"][0]["parliamentarian_name"] == "Parlamentar Monitorado"
+        assert (
+            payload["votes"][0]["proposition_votes_link"]
+            == "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao/votacoes?idProposicao=2293709"
+        )
     finally:
         db_session.close()
 
@@ -273,5 +282,9 @@ def test_roll_call_votes_survives_missing_vote_date_migration(monkeypatch) -> No
         assert [item["id"] for item in payload] == [11]
         assert payload[0]["date_vote"] is None
         assert payload[0]["parliamentarian_name"] == "Parlamentar Monitorado"
+        assert (
+            payload[0]["proposition_votes_link"]
+            == "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao/votacoes?idProposicao=2293709"
+        )
     finally:
         db_session.close()
