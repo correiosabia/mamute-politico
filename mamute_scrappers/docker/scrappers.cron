@@ -2,8 +2,8 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 PYTHONPATH=/app
 
-# Sync Ghost -> projetos (a cada 2 min)
-*/2 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh create-users -- /usr/local/bin/python -m mamute_scrappers.scripts.create_users >> /proc/1/fd/1 2>> /proc/1/fd/2
+# Sync Ghost -> projetos agora é recebido pela API em /api/webhooks/ghost/members.
+# Rode mamute_scrappers.scripts.create_users manualmente apenas para reconciliação.
 
 # Novas proposições do Senado — incremental (a cada 6h)
 5 */6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-propositions -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition >> /proc/1/fd/1 2>> /proc/1/fd/2

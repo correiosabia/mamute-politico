@@ -36,7 +36,8 @@ Projeto pai: [README raiz](../README.md)
    cp .env.example .env
    ```
 
-   Ajuste principalmente `DATABASE_URL` e as variáveis do Ghost Members.
+   Ajuste principalmente `DATABASE_URL`, as variáveis do Ghost Members e
+   `GHOST_WEBHOOK_SECRET` se for receber webhooks do Ghost.
 
 5. Inicie a API:
 
@@ -52,4 +53,7 @@ Projeto pai: [README raiz](../README.md)
 ## Observações
 
 - Rotas protegidas exigem `Authorization: Bearer <token>` com JWT emitido pelo Ghost Members.
+- O endpoint `POST /api/webhooks/ghost/members` recebe eventos `member.added`,
+  `member.edited` e `member.deleted` do Ghost. Configure o mesmo segredo no
+  Ghost Admin e em `GHOST_WEBHOOK_SECRET`.
 - Em caso de rotação de chaves JWKS, reinicie a aplicação para recarregar a chave pública.

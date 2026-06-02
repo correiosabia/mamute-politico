@@ -9,6 +9,7 @@ try:
     from .routers import (
         analysis,
         authors_proposition,
+        ghost_webhooks,
         projects,
         parliamentarians,
         propositions,
@@ -22,6 +23,7 @@ except ImportError:
     from routers import (
         analysis,
         authors_proposition,
+        ghost_webhooks,
         projects,
         parliamentarians,
         propositions,
@@ -54,6 +56,8 @@ def create_app() -> FastAPI:
     auth_dependencies = [Depends(verify_token)]
 
     api_router = APIRouter(prefix="/api")
+
+    api_router.include_router(ghost_webhooks.router)
 
     api_router.include_router(analysis.router, dependencies=auth_dependencies)
     api_router.include_router(parliamentarians.router, dependencies=auth_dependencies)
@@ -135,4 +139,3 @@ app = create_app()
 
 
 __all__ = ["app", "create_app"]
-

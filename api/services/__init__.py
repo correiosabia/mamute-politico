@@ -1,0 +1,2 @@
+"""Serviços reutilizáveis da API."""
+

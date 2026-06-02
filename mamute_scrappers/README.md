@@ -36,7 +36,9 @@ Projeto pai: [README raiz](../README.md)
    cp .env.example .env
    ```
 
-   Ajuste no mínimo `DATABASE_URL`. Para sincronização de usuários e análise com OpenAI, configure também `GHOST_API_KEY`, `GHOST_ADMIN_URL` e `OPENAI_API_KEY`.
+   Ajuste no mínimo `DATABASE_URL`. Para análise com OpenAI, configure também
+   `OPENAI_API_KEY`. Para backfill manual de usuários do Ghost, configure
+   `GHOST_API_KEY` e `GHOST_ADMIN_URL`.
 
 5. Rode as migrações:
 
@@ -79,15 +81,18 @@ python -m mamute_scrappers.camara_crawler.speeches_transcripts --dry-run
 python -m mamute_scrappers.scripts.rebuild_speech_text_analysis --help
 ```
 
-### Sincronizar usuários/projetos via Ghost
+### Reconciliar usuários/projetos via Ghost
 
 ```bash
 python -m mamute_scrappers.scripts.create_users
 ```
 
+Esse comando é um backfill manual. A sincronização contínua Ghost -> projetos é
+recebida pela API em `POST /api/webhooks/ghost/members`.
+
 ## Cronjobs recomendados
 
-Exemplo de configuração para atualização contínua de usuários, projetos, trâmites e dados auxiliares:
+Exemplo de configuração para atualização contínua de projetos, trâmites e dados auxiliares:
 
 ```cron
 ##########################
@@ -97,8 +102,8 @@ PROJECT_ROOT=mamute-politico
 PYTHON_BIN=mamute-politico/.venv/bin/python
 LOG_DIR=mamute-politico/mamute_scrappers/.logs
 
-# Sync Ghost -> projetos (a cada 2 min)
-*/2 * * * *   cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.scripts.create_users >> $LOG_DIR/scripts/create_users.log 2>&1
+# Sync Ghost -> projetos é feito via webhook da API.
+# Rode mamute_scrappers.scripts.create_users manualmente apenas para reconciliação.
 
 # Novas proposições/projetos (a cada 6h)
 0 */6 * * *   cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.senado_crawler.proposition >> $LOG_DIR/crawlers/propositions.log 2>&1

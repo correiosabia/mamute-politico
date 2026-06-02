@@ -63,6 +63,7 @@ GHOST_BASE_URL=https://mamute.voltdata.info/
 GHOST_MEMBERS_API_AUDIENCE=https://mamute.voltdata.info/members/api
 GHOST_MEMBERS_API_ISSUER=https://mamute.voltdata.info/members/api
 GHOST_JWKS_PATH=members/.well-known/jwks.json
+GHOST_WEBHOOK_SECRET=[[Mesmo segredo configurado no webhook da integração customizada do Ghost]]
 DATABASE_URL=postgresql://user:senha@host:porta/banco-db
 SQLALCHEMY_ECHO=0
 APPLICATION_NAME=MAMUTE_POLITICO_API

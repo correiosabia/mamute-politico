@@ -35,8 +35,8 @@ LOG_DIR=/app/.logs
 #    SCRIPTS AUXILIARES
 ###########################
 
-# Rodar a cada 30 minutos a sincronização de usuários do Ghost
-*/30 * * * *   cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.scripts.create_users >> $LOG_DIR/scripts/create_users.log 2>&1
+# A sincronização contínua de usuários Ghost -> projetos é feita via webhook da API.
+# Rode mamute_scrappers.scripts.create_users manualmente apenas para reconciliação.
 
 # Rotina mensal para limpeza dos logs (dia 1, 02h)
 0 2 1 * *      mkdir -p $LOG_DIR/crawlers $LOG_DIR/scripts && find $LOG_DIR -type f -mtime +30 -delete

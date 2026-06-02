@@ -33,6 +33,7 @@ def test_all_routers_importable() -> None:
     routers = [
         "analysis",
         "authors_proposition",
+        "ghost_webhooks",
         "parliamentarians",
         "projects",
         "propositions",
@@ -56,6 +57,7 @@ def test_critical_routes_registered() -> None:
         "/api/projects/me/favorites",
         "/api/projects/me/dashboard-stats",
         "/api/projects/me/dashboard-activity",
+        "/api/webhooks/ghost/members",
     }
     missing = expected - paths
     assert not missing, f"Rotas esperadas nao registradas: {sorted(missing)}"
