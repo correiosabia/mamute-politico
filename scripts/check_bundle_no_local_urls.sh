@@ -45,7 +45,8 @@ fi
 declare -a EXPECTED=(
   "/parliamentarians"
   "/projects/me/favorites"
-  "/projects/me/dashboard-stats"
+  "/projects/me/dashboard-activity"
+  "/projects/me/parliamentarians/"
   "/chat/chatbot/stream"
 )
 
