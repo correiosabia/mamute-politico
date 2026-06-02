@@ -657,15 +657,13 @@ def get_my_dashboard_stats(
 @router.get(
     "/me/parliamentarians/{parliamentarian_id}/dashboard-stats",
     response_model=ProjectDashboardStatsOut,
-    summary="Estatísticas dos últimos 3 meses para um parlamentar no contexto autenticado",
+    summary="Estatísticas dos últimos 3 meses para um parlamentar específico",
 )
 def get_my_parliamentarian_dashboard_stats(
     parliamentarian_id: int,
-    request: Request,
     db: Session = Depends(get_db),
 ) -> ProjectDashboardStatsOut:
     """Retorna estatísticas dos últimos 3 meses para um parlamentar específico."""
-    _get_project_from_token_email(request, db)
     _ensure_parliamentarian_exists(db, parliamentarian_id)
 
     range_start, range_end, range_start_dt, range_end_dt_exclusive = (
