@@ -25,7 +25,12 @@ try:
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
     from .propositions import PropositionOut, _serialize_proposition
-    from .roll_call_votes import RollCallVoteOut, _serialize_roll_call_vote
+    from .roll_call_votes import (
+        RollCallVoteOut,
+        _list_roll_call_votes_without_vote_date,
+        _serialize_roll_call_vote,
+        _table_has_column,
+    )
 except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.parliamentarian import Parliamentarian
@@ -38,7 +43,12 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
     from routers.propositions import PropositionOut, _serialize_proposition
-    from routers.roll_call_votes import RollCallVoteOut, _serialize_roll_call_vote
+    from routers.roll_call_votes import (
+        RollCallVoteOut,
+        _list_roll_call_votes_without_vote_date,
+        _serialize_roll_call_vote,
+        _table_has_column,
+    )
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -292,6 +302,13 @@ def _list_project_dashboard_votes(
     parliamentarian_ids: List[int],
     limit: int,
 ) -> List[RollCallVoteOut]:
+    if not _table_has_column(db, "roll_call_votes", "vote_date"):
+        return _list_roll_call_votes_without_vote_date(
+            db,
+            parliamentarian_ids=parliamentarian_ids,
+            limit=limit,
+        )
+
     stmt = (
         select(RollCallVote)
         .options(

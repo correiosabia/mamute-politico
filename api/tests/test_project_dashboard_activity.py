@@ -224,3 +224,54 @@ def test_dashboard_activity_only_returns_data_for_project_favorites(monkeypatch)
         assert payload["votes"][0]["parliamentarian_name"] == "Parlamentar Monitorado"
     finally:
         db_session.close()
+
+
+def test_dashboard_activity_survives_missing_vote_date_migration(monkeypatch) -> None:
+    db_session = _make_activity_session()
+    try:
+        db_session.connection().exec_driver_sql(
+            "alter table roll_call_votes drop column vote_date"
+        )
+        db_session.commit()
+
+        client = _client_for_authenticated_project(
+            monkeypatch,
+            favorite_ids=[101],
+            db_session=db_session,
+        )
+
+        response = client.get("/api/projects/me/dashboard-activity")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["id"] for item in payload["propositions"]] == [3, 1]
+        assert [item["id"] for item in payload["votes"]] == [11]
+        assert payload["votes"][0]["date_vote"] is None
+        assert payload["votes"][0]["parliamentarian_name"] == "Parlamentar Monitorado"
+    finally:
+        db_session.close()
+
+
+def test_roll_call_votes_survives_missing_vote_date_migration(monkeypatch) -> None:
+    db_session = _make_activity_session()
+    try:
+        db_session.connection().exec_driver_sql(
+            "alter table roll_call_votes drop column vote_date"
+        )
+        db_session.commit()
+
+        client = _client_for_authenticated_project(
+            monkeypatch,
+            favorite_ids=[101],
+            db_session=db_session,
+        )
+
+        response = client.get("/api/roll-call-votes/?limit=1&parliamentarian_id=101")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["id"] for item in payload] == [11]
+        assert payload[0]["date_vote"] is None
+        assert payload[0]["parliamentarian_name"] == "Parlamentar Monitorado"
+    finally:
+        db_session.close()

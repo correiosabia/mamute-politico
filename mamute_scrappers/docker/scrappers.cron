@@ -64,3 +64,6 @@ PYTHONPATH=/app
 
 # Parlamentares do Senado (diário às 05h45)
 45 5 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-parliamentarians -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.parliamentarian >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Presença em plenário da Câmara (diário às 06h10, janela padrão de 30 dias)
+10 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-plenary-attendance -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.plenary_attendance >> /proc/1/fd/1 2>> /proc/1/fd/2

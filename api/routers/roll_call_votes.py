@@ -7,16 +7,19 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, select
+from sqlalchemy import asc, desc, inspect as sqlalchemy_inspect, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 try:
     # Execução como pacote (api.routers.roll_call_votes).
+    from ..db.models.parliamentarian import Parliamentarian
     from ..db.models.proposition import Proposition
     from ..db.models.roll_call_votes import RollCallVote
     from ..dependencies import get_db
 except (ImportError, ValueError):
     # Execução local dentro de api/ sem reconhecimento de pacote.
+    from db.models.parliamentarian import Parliamentarian
     from db.models.proposition import Proposition
     from db.models.roll_call_votes import RollCallVote
     from dependencies import get_db
@@ -113,6 +116,130 @@ def _serialize_roll_call_vote(vote: RollCallVote) -> RollCallVoteOut:
     )
 
 
+def _clean_optional_text(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _table_has_column(db: Session, table_name: str, column_name: str) -> bool:
+    try:
+        columns = sqlalchemy_inspect(db.get_bind()).get_columns(table_name)
+    except SQLAlchemyError:
+        return True
+    return any(column.get("name") == column_name for column in columns)
+
+
+def _serialize_roll_call_vote_without_vote_date(row) -> RollCallVoteOut:
+    proposition_link = _clean_optional_text(row["proposition_link"])
+    proposition_votes_link = (
+        f"{proposition_link.rstrip('/')}/votacoes" if proposition_link else None
+    )
+    parliamentarian_name = _clean_optional_text(
+        row["parliamentarian_full_name"]
+    ) or _clean_optional_text(row["parliamentarian_name"])
+
+    return RollCallVoteOut(
+        id=int(row["id"]),
+        parliamentarian_id=int(row["parliamentarian_id"]),
+        proposition_id=int(row["proposition_id"]),
+        proposition_title=_clean_optional_text(row["proposition_title"]),
+        vote=_clean_optional_text(row["vote"]),
+        description=_clean_optional_text(row["description"]),
+        link=_clean_optional_text(row["link"]),
+        proposition_votes_link=proposition_votes_link,
+        date_vote=None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        parliamentarian_name=parliamentarian_name,
+        parliamentarian_party=_clean_optional_text(row["parliamentarian_party"]),
+        parliamentarian_state_elected=_clean_optional_text(
+            row["parliamentarian_state_elected"]
+        ),
+    )
+
+
+def _roll_call_votes_without_vote_date_stmt():
+    return (
+        select(
+            RollCallVote.id.label("id"),
+            RollCallVote.parliamentarian_id.label("parliamentarian_id"),
+            RollCallVote.proposition_id.label("proposition_id"),
+            RollCallVote.vote.label("vote"),
+            RollCallVote.description.label("description"),
+            RollCallVote.link.label("link"),
+            RollCallVote.created_at.label("created_at"),
+            RollCallVote.updated_at.label("updated_at"),
+            Proposition.title.label("proposition_title"),
+            Proposition.link.label("proposition_link"),
+            Parliamentarian.name.label("parliamentarian_name"),
+            Parliamentarian.full_name.label("parliamentarian_full_name"),
+            Parliamentarian.party.label("parliamentarian_party"),
+            Parliamentarian.state_elected.label("parliamentarian_state_elected"),
+        )
+        .outerjoin(Proposition, Proposition.id == RollCallVote.proposition_id)
+        .outerjoin(
+            Parliamentarian,
+            Parliamentarian.id == RollCallVote.parliamentarian_id,
+        )
+    )
+
+
+def _list_roll_call_votes_without_vote_date(
+    db: Session,
+    *,
+    limit: int,
+    offset: int = 0,
+    proposition_id: Optional[int] = None,
+    parliamentarian_id: Optional[int] = None,
+    parliamentarian_ids: Optional[List[int]] = None,
+    created_from: Optional[datetime] = None,
+    created_to: Optional[datetime] = None,
+    updated_from: Optional[datetime] = None,
+    updated_to: Optional[datetime] = None,
+    sort_by: Literal[
+        "created_at",
+        "updated_at",
+        "id",
+        "parliamentarian_id",
+        "proposition_id",
+    ] = "created_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+) -> List[RollCallVoteOut]:
+    stmt = _roll_call_votes_without_vote_date_stmt()
+    if proposition_id is not None:
+        stmt = stmt.where(RollCallVote.proposition_id == proposition_id)
+    if parliamentarian_id is not None:
+        stmt = stmt.where(RollCallVote.parliamentarian_id == parliamentarian_id)
+    if parliamentarian_ids is not None:
+        stmt = stmt.where(RollCallVote.parliamentarian_id.in_(parliamentarian_ids))
+    if created_from is not None:
+        stmt = stmt.where(RollCallVote.created_at >= created_from)
+    if created_to is not None:
+        stmt = stmt.where(RollCallVote.created_at <= created_to)
+    if updated_from is not None:
+        stmt = stmt.where(RollCallVote.updated_at >= updated_from)
+    if updated_to is not None:
+        stmt = stmt.where(RollCallVote.updated_at <= updated_to)
+
+    sortable_columns = {
+        "created_at": RollCallVote.created_at,
+        "updated_at": RollCallVote.updated_at,
+        "id": RollCallVote.id,
+        "parliamentarian_id": RollCallVote.parliamentarian_id,
+        "proposition_id": RollCallVote.proposition_id,
+    }
+    sort_column = sortable_columns[sort_by]
+    stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
+    stmt = stmt.offset(offset).limit(limit)
+
+    return [
+        _serialize_roll_call_vote_without_vote_date(row)
+        for row in db.execute(stmt).mappings().all()
+    ]
+
+
 @router.get("/", response_model=List[RollCallVoteOut])
 @router.get("/votacoes", response_model=List[RollCallVoteOut])
 def list_roll_call_votes(
@@ -155,6 +282,21 @@ def list_roll_call_votes(
     ),
 ) -> List[RollCallVoteOut]:
     """Retorna uma lista paginada de votações nominais."""
+    if not _table_has_column(db, "roll_call_votes", "vote_date"):
+        return _list_roll_call_votes_without_vote_date(
+            db,
+            limit=limit,
+            offset=offset,
+            proposition_id=proposition_id,
+            parliamentarian_id=parliamentarian_id,
+            created_from=created_from,
+            created_to=created_to,
+            updated_from=updated_from,
+            updated_to=updated_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
     stmt = (
         select(RollCallVote)
         .options(
@@ -199,6 +341,15 @@ def get_roll_call_vote(
     db: Session = Depends(get_db),
 ) -> RollCallVoteOut:
     """Busca uma votação nominal pelo identificador."""
+    if not _table_has_column(db, "roll_call_votes", "vote_date"):
+        stmt_without_vote_date = _roll_call_votes_without_vote_date_stmt().where(
+            RollCallVote.id == vote_id
+        )
+        row = db.execute(stmt_without_vote_date).mappings().first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Votação não encontrada.")
+        return _serialize_roll_call_vote_without_vote_date(row)
+
     stmt = (
         select(RollCallVote)
         .options(
