@@ -136,6 +136,7 @@ def _make_activity_session() -> Session:
                 vote text,
                 description text,
                 link text,
+                vote_date date,
                 created_at datetime not null,
                 updated_at datetime not null
             )
