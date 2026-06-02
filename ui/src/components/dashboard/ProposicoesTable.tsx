@@ -376,8 +376,10 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                   <TableCell className="font-medium">
                     {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
                   </TableCell>
-                  <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
-                    {proposicao.ementa}
+                  <TableCell className="max-w-[300px] text-sm text-muted-foreground">
+                    <span className="block line-clamp-3">
+                      {proposicao.ementa}
+                    </span>
                   </TableCell>
                   <TableCell className="max-w-[210px]">
                     <Badge
