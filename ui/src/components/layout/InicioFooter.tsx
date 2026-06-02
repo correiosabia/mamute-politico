@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import logoMamute from '@/assets/logo-mamute.png';
 import logoSabia from '@/assets/footer-logo-sabia.png';
@@ -88,18 +89,27 @@ export function InicioFooter() {
               </a>
             </PartnerColumn>
             <PartnerColumn label="Financiamento" className="col-span-2 md:col-auto">
-              <img
-                src={logoGni}
-                alt="Google News Initiative"
-                className="h-[28px] w-auto max-w-full object-contain md:h-[29px] md:max-w-[215px] lg:h-[31px]"
-              />
+              <a
+                href="https://newsinitiative.withgoogle.com/pt-br/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block"
+              >
+                <img
+                  src={logoGni}
+                  alt="Google News Initiative"
+                  className="h-[28px] w-auto max-w-full object-contain md:h-[29px] md:max-w-[215px] lg:h-[31px]"
+                />
+              </a>
             </PartnerColumn>
           </div>
-          <img
-            src={logoMamute}
-            alt="Mamute Político"
-            className="h-[47px] w-auto max-w-full shrink-0 self-center object-contain lg:self-auto"
-          />
+          <Link to="/" className="inline-block shrink-0 self-center lg:self-auto">
+            <img
+              src={logoMamute}
+              alt="Mamute Político"
+              className="h-[47px] w-auto max-w-full object-contain"
+            />
+          </Link>
         </div>
       </div>
     </footer>
