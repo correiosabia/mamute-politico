@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import List, Literal, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
@@ -81,10 +82,23 @@ def _resolve_date_vote(vote: RollCallVote) -> Optional[date]:
     return _extract_date_vote_legacy(vote.proposition)
 
 
+def _build_proposition_votes_link(proposition_link: object) -> Optional[str]:
+    link = _clean_optional_text(proposition_link)
+    if link is None:
+        return None
+
+    parts = urlsplit(link)
+    path = parts.path.rstrip("/")
+    if not path.endswith("/votacoes"):
+        path = f"{path}/votacoes"
+
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
 def _serialize_roll_call_vote(vote: RollCallVote) -> RollCallVoteOut:
-    proposition_votes_link: Optional[str] = None
-    if vote.proposition and isinstance(vote.proposition.link, str) and vote.proposition.link:
-        proposition_votes_link = f"{vote.proposition.link.rstrip('/')}/votacoes"
+    proposition_votes_link = _build_proposition_votes_link(
+        vote.proposition.link if vote.proposition else None
+    )
 
     mp_name: Optional[str] = None
     mp_party: Optional[str] = None
@@ -132,10 +146,7 @@ def _table_has_column(db: Session, table_name: str, column_name: str) -> bool:
 
 
 def _serialize_roll_call_vote_without_vote_date(row) -> RollCallVoteOut:
-    proposition_link = _clean_optional_text(row["proposition_link"])
-    proposition_votes_link = (
-        f"{proposition_link.rstrip('/')}/votacoes" if proposition_link else None
-    )
+    proposition_votes_link = _build_proposition_votes_link(row["proposition_link"])
     parliamentarian_name = _clean_optional_text(
         row["parliamentarian_full_name"]
     ) or _clean_optional_text(row["parliamentarian_name"])
