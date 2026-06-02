@@ -45,7 +45,14 @@ class RollCallVoteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-def _extract_date_vote(proposition: Optional[Proposition]) -> Optional[date]:
+def _extract_date_vote_legacy(proposition: Optional[Proposition]) -> Optional[date]:
+    """Fallback enquanto o backfill_vote_dates ainda não populou os históricos.
+
+    Extrai a data de votação do JSON `proposition.details.decisao_destino.Decisao.Data`,
+    que só existe para uma fração dos votos do Senado (~3% segundo auditoria) e
+    nunca para a Câmara. Será removido em PR posterior, quando `vote_date` tiver
+    100% de cobertura.
+    """
     if proposition is None or not isinstance(proposition.details, dict):
         return None
 
@@ -61,6 +68,14 @@ def _extract_date_vote(proposition: Optional[Proposition]) -> Optional[date]:
         return date.fromisoformat(raw_date)
     except ValueError:
         return None
+
+
+def _resolve_date_vote(vote: RollCallVote) -> Optional[date]:
+    """Prefere `vote.vote_date` (coluna populada pelo crawler); cai no extrator
+    legado apenas se a coluna estiver vazia (votos pré-PR aguardando backfill)."""
+    if vote.vote_date is not None:
+        return vote.vote_date
+    return _extract_date_vote_legacy(vote.proposition)
 
 
 def _serialize_roll_call_vote(vote: RollCallVote) -> RollCallVoteOut:
@@ -89,7 +104,7 @@ def _serialize_roll_call_vote(vote: RollCallVote) -> RollCallVoteOut:
         description=vote.description,
         link=vote.link,
         proposition_votes_link=proposition_votes_link,
-        date_vote=_extract_date_vote(vote.proposition),
+        date_vote=_resolve_date_vote(vote),
         created_at=vote.created_at,
         updated_at=vote.updated_at,
         parliamentarian_name=mp_name,

@@ -474,6 +474,10 @@ def _upsert_roll_call_vote(
     record.vote = payload.get("vote")
     record.description = payload.get("description")
     record.link = link
+    vote_date = payload.get("vote_date")
+    if vote_date is not None:
+        # payload["vote_date"] vem como datetime (dataHoraRegistro tem hora).
+        record.vote_date = vote_date.date() if hasattr(vote_date, "date") else vote_date
 
     return record, created
 

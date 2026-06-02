@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Text
+from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -26,6 +26,10 @@ class RollCallVote(Base):
     vote = Column(Text)
     description = Column(Text)
     link = Column(Text)
+    # Data em que a votação efetivamente ocorreu. Popular pelo crawler a partir
+    # de dataHoraRegistro (Câmara) ou DataSessao (Senado). Nullable enquanto o
+    # backfill_vote_dates ainda não populou os históricos.
+    vote_date = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
