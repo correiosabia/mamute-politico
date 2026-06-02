@@ -8,6 +8,7 @@ from typing import Any
 _EXPORTS = {
     "agency": ".agency",
     "parliamentarian": ".parliamentarian",
+    "plenary_attendance": ".plenary_attendance",
     "proposition": ".proposition",
     "speeches_transcripts": ".speeches_transcripts",
 }

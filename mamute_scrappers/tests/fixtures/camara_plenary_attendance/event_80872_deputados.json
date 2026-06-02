@@ -1,0 +1,26 @@
+{
+  "dados": [
+    {
+      "id": 62881,
+      "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/62881",
+      "nome": "Danilo Forte",
+      "siglaPartido": "União",
+      "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/37903",
+      "siglaUf": "CE",
+      "idLegislatura": 57,
+      "urlFoto": "https://www.camara.leg.br/internet/deputado/bandep/62881.jpg",
+      "email": "dep.daniloforte@camara.leg.br"
+    },
+    {
+      "id": 66828,
+      "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/66828",
+      "nome": "Fausto Pinato",
+      "siglaPartido": "PP",
+      "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/38009",
+      "siglaUf": "SP",
+      "idLegislatura": 57,
+      "urlFoto": "https://www.camara.leg.br/internet/deputado/bandep/66828.jpg",
+      "email": "dep.faustopinato@camara.leg.br"
+    }
+  ]
+}
