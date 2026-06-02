@@ -29,7 +29,7 @@ export function EstatisticasCard({ stats, isLoading = false }: EstatisticasCardP
   ];
 
   return (
-    <div className="mp-card bg-white p-6">
+    <div className="mp-card bg-white p-6 h-full">
       <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Estatísticas</h2>
       <div className="flex items-start justify-between gap-2">
         {statsItems.map((stat) => (
