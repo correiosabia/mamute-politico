@@ -22,6 +22,13 @@ PYTHONPATH=/app
 # --chunks-per-run 50: idem proposições. Auto-encerra quando termina.
 40 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-votes-speeches -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches --chunks-per-run 50 >> /proc/1/fd/1 2>> /proc/1/fd/2
 
+# Backfill da coluna vote_date em roll_call_votes (Câmara + Senado, a cada 1h
+# no minuto 55 — depois do camara-speeches do minuto 52). Cada link representa
+# uma votação inteira (N votos), então uma chamada HTTP popula N linhas. Com
+# ~5-10k votações distintas no banco, 200 links/h consome a fila em ~1 dia.
+# Auto-encerra quando termina.
+55 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-vote-dates -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_vote_dates --chunks-per-run 200 >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # Burst de inicialização (@reboot): ao subir o container, dispara um loop que
 # esvazia a fila do backfill mais rápido do que o ritmo horário. Sai quando ve
 # "Backfill completo" / "nada a fazer" no output do orquestrador. Em runs
@@ -32,6 +39,7 @@ PYTHONPATH=/app
 # burst e o cron horario nao executam ao mesmo tempo: quem chegar segundo sai.
 @reboot sleep 30 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_propositions --chunks-per-run 100 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
 @reboot sleep 30 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_votes_speeches --chunks-per-run 100 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
+@reboot sleep 30 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_vote_dates --chunks-per-run 500 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill vote_dates completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
 
 # Atualização de trâmites/status (diário às 03h)
 25 3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-proposition-status -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_status >> /proc/1/fd/1 2>> /proc/1/fd/2
