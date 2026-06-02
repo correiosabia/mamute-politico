@@ -1,0 +1,10 @@
+# Dependências do módulo de notificação por e-mail.
+# Instale também o pacote principal dos crawlers:
+#   pip install -r mamute_scrappers/requirements.txt
+#
+# Este arquivo lista o mínimo para rodar o envio standalone.
+
+python-dotenv>=1.0.1
+SQLAlchemy>=2.0.44
+psycopg2-binary>=2.9.10
+backports.zoneinfo>=0.2.1; python_version < "3.9"

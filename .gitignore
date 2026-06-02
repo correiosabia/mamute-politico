@@ -1,6 +1,10 @@
 __pycache__/
 **/__pycache__/
 .env
+scripts/.env
+scripts/notificacao/.env
+mamute_scrappers/scripts/notificacao/.env
+mamute_scrappers/scripts/notificacao/output/
 mamute_scrappers/.env
 api/.env
 api/.venv/

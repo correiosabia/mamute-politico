@@ -1,0 +1,184 @@
+"""Orquestração do envio em lote."""
+
+from __future__ import annotations
+
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import List, Optional
+
+from mamute_scrappers.db import session_scope
+from mamute_scrappers.db.session import get_session
+
+from .config import (
+    PERIODICIDADE_TESTE,
+    default_highlight_limit,
+    subject_for_periodicidade,
+)
+from .mailer import send_html_email
+from .models import ProjectRecipient
+from .report_builder import build_project_report, render_report_html
+from .repository import get_recipient_by_id, list_recipients_for_periodicity
+
+logger = logging.getLogger(__name__)
+
+_OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+
+
+def _save_html(projeto_id: int, periodicidade: str, html_body: str, output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"projeto_{projeto_id}_{periodicidade}.html"
+    path.write_text(html_body, encoding="utf-8")
+    return path
+
+
+def _process_recipient(
+    recipient: ProjectRecipient,
+    periodicidade: str,
+    *,
+    dry_run: bool,
+    highlight_limit: int,
+    skip_empty: bool,
+    save_html: bool,
+    output_dir: Path,
+) -> str:
+    session = get_session()
+    try:
+        report = build_project_report(
+            session,
+            recipient,
+            periodicidade,
+            highlight_limit=highlight_limit,
+        )
+        if report is None:
+            return f"projeto {recipient.id}: sem parlamentares favoritos"
+
+        has_activity = (
+            report.stats.propositions_count
+            + report.stats.votes_count
+            + report.stats.speeches_count
+            > 0
+            or bool(report.highlights)
+        )
+        if skip_empty and not has_activity:
+            return f"projeto {recipient.id}: sem atividade no período"
+
+        html_body = render_report_html(report, periodicidade)
+
+        if save_html or dry_run:
+            path = _save_html(recipient.id, periodicidade, html_body, output_dir)
+            if dry_run:
+                return (
+                    f"projeto {recipient.id}: dry-run ({recipient.email}) "
+                    f"→ {path}"
+                )
+
+        if dry_run:
+            return f"projeto {recipient.id}: dry-run ({recipient.email})"
+
+        send_html_email(
+            html_body,
+            recipient.email,
+            subject_for_periodicidade(periodicidade),
+        )
+        return f"projeto {recipient.id}: enviado para {recipient.email}"
+    except Exception as exc:
+        logger.exception("Erro no projeto %s", recipient.id)
+        return f"projeto {recipient.id}: erro — {exc}"
+    finally:
+        session.close()
+
+
+def resolve_recipients(
+    periodicidade: str,
+    *,
+    projeto_id: Optional[int] = None,
+    include_without_tier: bool = False,
+) -> List[ProjectRecipient]:
+    with session_scope() as session:
+        if projeto_id is not None:
+            recipient = get_recipient_by_id(session, projeto_id)
+            if recipient is None:
+                raise RuntimeError(f"Projeto {projeto_id} não encontrado ou inativo.")
+            return [recipient]
+        return list_recipients_for_periodicity(
+            session,
+            periodicidade,
+            include_without_tier=include_without_tier,
+        )
+
+
+def run(
+    periodicidade: str,
+    *,
+    dry_run: bool = False,
+    projeto_id: Optional[int] = None,
+    highlight_limit: Optional[int] = None,
+    skip_empty: bool = True,
+    include_without_tier: bool = False,
+    max_workers: Optional[int] = None,
+    list_only: bool = False,
+    save_html: bool = False,
+    output_dir: Optional[Path] = None,
+) -> List[str]:
+    """Executa o envio (ou simulação) para todos os destinatários elegíveis."""
+    results: List[str] = []
+    limit = highlight_limit if highlight_limit is not None else default_highlight_limit(
+        periodicidade
+    )
+    out_dir = output_dir or _OUTPUT_DIR
+
+    recipients = resolve_recipients(
+        periodicidade,
+        projeto_id=projeto_id,
+        include_without_tier=include_without_tier,
+    )
+
+    if list_only:
+        for recipient in recipients:
+            line = f"{recipient.id}\t{recipient.email}\t{recipient.nome}"
+            print(line)
+            results.append(line)
+        return results
+
+    if not recipients:
+        logger.warning("Nenhum destinatário elegível.")
+        return results
+
+    if periodicidade == PERIODICIDADE_TESTE and not dry_run and projeto_id is None:
+        logger.warning(
+            "Modo %s envia para TODOS os projetos ativos. "
+            "Use --dry-run ou --projeto-id em testes.",
+            periodicidade,
+        )
+
+    workers = max_workers or os.cpu_count() or 4
+    logger.info(
+        "Processando %s projeto(s) com %s worker(s). dry_run=%s limite=%s",
+        len(recipients),
+        workers,
+        dry_run,
+        limit,
+    )
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                _process_recipient,
+                recipient,
+                periodicidade,
+                dry_run=dry_run,
+                highlight_limit=limit,
+                skip_empty=skip_empty,
+                save_html=save_html,
+                output_dir=out_dir,
+            )
+            for recipient in recipients
+        ]
+        for future in as_completed(futures):
+            message = future.result()
+            logger.info(message)
+            results.append(message)
+
+    return results
