@@ -11,7 +11,12 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
-import { getParliamentarian, listMyProjectFavorites } from '@/api/endpoints';
+import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
+import {
+  getMyParliamentarianDashboardStats,
+  getParliamentarian,
+  listMyProjectFavorites,
+} from '@/api/endpoints';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
 import { ArrowLeft, Cloud, FileText, Vote, Loader2, Users, Pencil } from 'lucide-react';
@@ -67,6 +72,11 @@ const ParlamentarDashboard = () => {
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
     queryFn: () => listMyProjectFavorites(),
+  });
+  const dashboardStatsQuery = useQuery({
+    queryKey: ['dashboard-stats', 'parliamentarian', numericId],
+    queryFn: () => getMyParliamentarianDashboardStats(numericId),
+    enabled: isIdValid,
   });
   const monitoradosCount = favoritesQuery.data?.length ?? 0;
 
@@ -155,8 +165,8 @@ const ParlamentarDashboard = () => {
           </Link>
         </div>
 
-        {/* Top Row: Dados cadastrais | Temas do discurso | Últimas ações */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Top Row: Dados cadastrais | Temas do discurso | Últimas ações | Estatísticas */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Dados cadastrais */}
           <div className="mp-card bg-white p-6">
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
@@ -174,6 +184,9 @@ const ParlamentarDashboard = () => {
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
             <ProposicoesList limit={4} parliamentarianId={id} />
           </div>
+
+          {/* Estatísticas */}
+          <EstatisticasCard stats={dashboardStatsQuery.data} isLoading={dashboardStatsQuery.isLoading} />
         </div>
 
         {/* Bottom: Proposições do Parlamentar with tabs */}

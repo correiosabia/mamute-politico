@@ -654,4 +654,51 @@ def get_my_dashboard_stats(
     )
 
 
+@router.get(
+    "/me/parliamentarians/{parliamentarian_id}/dashboard-stats",
+    response_model=ProjectDashboardStatsOut,
+    summary="Estatísticas dos últimos 3 meses para um parlamentar no contexto autenticado",
+)
+def get_my_parliamentarian_dashboard_stats(
+    parliamentarian_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ProjectDashboardStatsOut:
+    """Retorna estatísticas dos últimos 3 meses para um parlamentar específico."""
+    _get_project_from_token_email(request, db)
+    _ensure_parliamentarian_exists(db, parliamentarian_id)
+
+    range_start, range_end, range_start_dt, range_end_dt_exclusive = (
+        _last_three_months_range_sao_paulo()
+    )
+    parliamentarian_ids = [parliamentarian_id]
+
+    return ProjectDashboardStatsOut(
+        propositions_this_week=_count_propositions_in_range(
+            db,
+            parliamentarian_ids,
+            range_start,
+            range_end,
+        ),
+        attendance_avg_percent=_calculate_attendance_avg_percent(
+            db,
+            parliamentarian_ids,
+            range_start,
+            range_end,
+        ),
+        recent_votes_count=_count_recent_votes(
+            db,
+            parliamentarian_ids,
+            range_start_dt,
+            range_end_dt_exclusive,
+        ),
+        speeches_count=_count_speeches_in_range(
+            db,
+            parliamentarian_ids,
+            range_start,
+            range_end,
+        ),
+    )
+
+
 __all__ = ["router"]
