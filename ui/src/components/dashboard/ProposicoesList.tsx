@@ -103,7 +103,7 @@ export function ProposicoesList({
               PROJETO
             </span>
             <span
-              className={`basis-full text-[11px] font-semibold truncate md:basis-auto md:max-w-[140px] ${getProposicaoSituacaoTextClass(proposicao.situacao)}`}
+              className={`basis-full text-[11px] font-semibold truncate md:basis-auto ${getProposicaoSituacaoTextClass(proposicao.situacao)}`}
             >
               {toTitleCase(proposicao.situacao)}
             </span>
