@@ -38,11 +38,18 @@ export function InicioFooter() {
         <div className="flex min-w-0 flex-col items-center gap-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 flex-col items-center gap-2 lg:items-start">
             <span className={partnerLabelClass}>Concepção</span>
-            <img
-              src={logoSabia}
-              alt="Correio Sabiá"
-              className="h-[46px] w-auto max-w-full object-contain"
-            />
+            <a
+              href="https://correiosabia.com.br/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block"
+            >
+              <img
+                src={logoSabia}
+                alt="Correio Sabiá"
+                className="h-[46px] w-auto max-w-full object-contain"
+              />
+            </a>
           </div>
           <p className="mp-footer-note min-w-0 max-w-[442px] text-center text-black lg:text-right">
             2026 Mamute Político. Dados obtidos via API aberta do Congresso Nacional.
@@ -53,18 +60,32 @@ export function InicioFooter() {
           {/* Below md: 2+1 grid (centered); md+: three icons in a row; lg+: Mamute beside partners */}
           <div className="grid min-w-0 w-full grid-cols-2 gap-3 md:flex md:w-full md:shrink-0 md:justify-center md:gap-x-8 lg:w-auto lg:justify-start lg:gap-x-[45px] xl:gap-x-[54px]">
             <PartnerColumn label="Programa">
-              <img
-                src={logoCodesinfo}
-                alt="Codesinfo"
-                className="h-[36px] w-auto max-w-full object-contain md:h-[40px] md:max-w-[176px] lg:h-[44px]"
-              />
+              <a
+                href="https://codesinfo.com.br/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block"
+              >
+                <img
+                  src={logoCodesinfo}
+                  alt="Codesinfo"
+                  className="h-[36px] w-auto max-w-full object-contain md:h-[40px] md:max-w-[176px] lg:h-[44px]"
+                />
+              </a>
             </PartnerColumn>
             <PartnerColumn label="Apoio">
-              <img
-                src={logoProjor}
-                alt="Projor"
-                className="h-[32px] w-auto max-w-full object-contain md:h-[36px] md:max-w-[161px] lg:h-[39px]"
-              />
+              <a
+                href="https://www.projor.org.br/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block"
+              >
+                <img
+                  src={logoProjor}
+                  alt="Projor"
+                  className="h-[32px] w-auto max-w-full object-contain md:h-[36px] md:max-w-[161px] lg:h-[39px]"
+                />
+              </a>
             </PartnerColumn>
             <PartnerColumn label="Financiamento" className="col-span-2 md:col-auto">
               <img
