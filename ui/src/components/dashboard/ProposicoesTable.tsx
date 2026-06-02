@@ -398,10 +398,10 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                   <TableCell className="w-[220px] min-w-[220px] max-w-[220px]">
                     <Badge
                       variant={getProposicaoSituacaoBadgeVariant(proposicao.situacao)}
-                      className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
+                      className="max-w-full min-w-0 text-[10px]"
                       title={proposicao.situacao !== '—' ? proposicao.situacao : undefined}
                     >
-                      {proposicao.situacao}
+                      <span className="min-w-0 truncate">{proposicao.situacao}</span>
                     </Badge>
                   </TableCell>
                 </TableRow>
