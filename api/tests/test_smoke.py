@@ -55,6 +55,7 @@ def test_critical_routes_registered() -> None:
         "/api/propositions/",
         "/api/projects/me/favorites",
         "/api/projects/me/dashboard-stats",
+        "/api/projects/me/dashboard-activity",
     }
     missing = expected - paths
     assert not missing, f"Rotas esperadas nao registradas: {sorted(missing)}"
@@ -90,6 +91,7 @@ def test_openapi_schema_generates() -> None:
     [
         "/api/projects/me/favorites",
         "/api/projects/me/dashboard-stats",
+        "/api/projects/me/dashboard-activity",
         "/api/parliamentarians/",
         "/api/propositions/",
     ],

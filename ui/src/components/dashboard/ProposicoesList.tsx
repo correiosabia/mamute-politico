@@ -1,12 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { listPropositions, listPropositionsByParliamentarian } from '@/api/endpoints';
 import { mapPropositionOutToProposicao } from '@/api/mappers';
+import type { PropositionOut } from '@/api/types';
 import { getProposicaoSituacaoTextClass } from '@/lib/proposicaoSituacao';
 import { Loader2 } from 'lucide-react';
 
 interface ProposicoesListProps {
   limit?: number;
   parliamentarianId?: string;
+  items?: PropositionOut[];
+  isLoading?: boolean;
+  isError?: boolean;
 }
 
 function toTitleCase(str: string): string {
@@ -23,19 +27,30 @@ function formatDate(dateStr: string): string {
   }
 }
 
-export function ProposicoesList({ limit = 5, parliamentarianId }: ProposicoesListProps) {
+export function ProposicoesList({
+  limit = 5,
+  parliamentarianId,
+  items,
+  isLoading: externalIsLoading,
+  isError: externalIsError,
+}: ProposicoesListProps) {
   const numericId = parliamentarianId != null && parliamentarianId !== '' ? Number(parliamentarianId) : NaN;
   const isParliamentarianScope = Number.isInteger(numericId) && numericId > 0;
+  const hasExternalItems = items != null;
 
-  const { data: rawList, isLoading, isError } = useQuery({
+  const { data: queriedList, isLoading: queryIsLoading, isError: queryIsError } = useQuery({
     queryKey: ['propositions', isParliamentarianScope ? 'by-parliamentarian' : 'list', numericId, limit],
     queryFn: () =>
       isParliamentarianScope
         ? listPropositionsByParliamentarian(numericId, { limit })
         : listPropositions({ limit, offset: 0 }),
+    enabled: !hasExternalItems,
   });
 
+  const rawList = hasExternalItems ? items.slice(0, limit) : queriedList;
   const proposicoes = rawList != null ? rawList.map(mapPropositionOutToProposicao) : [];
+  const isLoading = externalIsLoading ?? (!hasExternalItems && queryIsLoading);
+  const isError = externalIsError ?? (!hasExternalItems && queryIsError);
 
   if (isLoading) {
     return (

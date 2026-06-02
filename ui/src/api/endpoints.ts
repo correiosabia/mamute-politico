@@ -10,6 +10,7 @@ import type {
   SpeechAnalysisSummaryOut,
   SpeechAnalysisOut,
   DashboardStatsOut,
+  DashboardActivityOut,
 } from './types';
 
 export interface ListParliamentariansParams {
@@ -297,6 +298,14 @@ export function removeMyProjectFavorite(parliamentarianId: number): Promise<void
 /** Estatísticas dos últimos 3 meses para parlamentares favoritados no projeto autenticado. */
 export function getMyDashboardStats(): Promise<DashboardStatsOut> {
   return request<DashboardStatsOut>('/projects/me/dashboard-stats');
+}
+
+/** Atividades recentes para parlamentares favoritados no projeto autenticado. */
+export function getMyDashboardActivity(params: { limit?: number } = {}): Promise<DashboardActivityOut> {
+  const sp = new URLSearchParams();
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  const q = sp.toString();
+  return request<DashboardActivityOut>(`/projects/me/dashboard-activity${q ? `?${q}` : ''}`);
 }
 
 export type AuthorsPropositionSortBy =

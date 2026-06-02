@@ -107,6 +107,11 @@ export interface DashboardStatsOut {
   speeches_count: number;
 }
 
+export interface DashboardActivityOut {
+  propositions: PropositionOut[];
+  votes: RollCallVoteOut[];
+}
+
 export interface AuthorsPropositionOut {
   id: number;
   parliamentarian_id: number;

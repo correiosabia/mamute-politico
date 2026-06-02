@@ -1,7 +1,5 @@
-import { useQueries } from '@tanstack/react-query';
-import { listPropositions, listRollCallVotes } from '@/api/endpoints';
 import { votoFromApi } from '@/api/mappers';
-import type { RollCallVoteOut } from '@/api/types';
+import type { PropositionOut, RollCallVoteOut } from '@/api/types';
 import { Loader2 } from 'lucide-react';
 import iconProjeto from '@/assets/icon-timeline-projeto.svg';
 import iconVotacaoAprovado from '@/assets/icon-timeline-votacao-aprovado.svg';
@@ -16,6 +14,13 @@ interface TimelineItem {
   autor: string;
   status: string;
   link?: string;
+}
+
+interface TimelineProps {
+  propositions: PropositionOut[];
+  votes: RollCallVoteOut[];
+  isLoading?: boolean;
+  isError?: boolean;
 }
 
 function formatVoteParliamentarianAutor(v: RollCallVoteOut): string {
@@ -91,24 +96,12 @@ function formatDate(dateStr: string): string {
   }
 }
 
-export function Timeline() {
-  const queryParams = { limit: 20, offset: 0 } as const;
-  const [propositionsQuery, votesQuery] = useQueries({
-    queries: [
-      {
-        queryKey: ['propositions', 'timeline', queryParams],
-        queryFn: () => listPropositions(queryParams),
-      },
-      {
-        queryKey: ['roll-call-votes', 'timeline', queryParams],
-        queryFn: () => listRollCallVotes(queryParams),
-      },
-    ],
-  });
-
-  const propositions = propositionsQuery.data ?? [];
-  const votes = votesQuery.data ?? [];
-
+export function Timeline({
+  propositions,
+  votes,
+  isLoading = false,
+  isError = false,
+}: TimelineProps) {
   const timelineItems: TimelineItem[] = [
     ...propositions.map((p) => ({
       id: `p-${p.id}`,
@@ -141,9 +134,7 @@ export function Timeline() {
       return bTs - aTs;
     });
 
-  const isLoading = propositionsQuery.isLoading || votesQuery.isLoading;
   const hasNoData = propositions.length === 0 && votes.length === 0;
-  const isError = propositionsQuery.isError && votesQuery.isError;
 
   if (isLoading) {
     return (

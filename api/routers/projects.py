@@ -11,7 +11,7 @@ import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import asc, desc, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 try:
     # Execução como pacote (api.routers.projects).
@@ -24,6 +24,8 @@ try:
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
+    from .propositions import PropositionOut, _serialize_proposition
+    from .roll_call_votes import RollCallVoteOut, _serialize_roll_call_vote
 except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.parliamentarian import Parliamentarian
@@ -35,6 +37,8 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
+    from routers.propositions import PropositionOut, _serialize_proposition
+    from routers.roll_call_votes import RollCallVoteOut, _serialize_roll_call_vote
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -65,6 +69,13 @@ class ProjectDashboardStatsOut(BaseModel):
     attendance_avg_percent: Optional[int] = None
     recent_votes_count: int
     speeches_count: int
+
+
+class ProjectDashboardActivityOut(BaseModel):
+    """Atividades recentes dos parlamentares monitorados pelo projeto autenticado."""
+
+    propositions: List[PropositionOut]
+    votes: List[RollCallVoteOut]
 
 
 def _normalize_text(value: Optional[str]) -> str:
@@ -187,6 +198,50 @@ def _calculate_attendance_avg_percent(
         return None
     avg_ratio = sum(presence_scores) / len(presence_scores)
     return int(round(avg_ratio * 100))
+
+
+def _list_project_dashboard_propositions(
+    db: Session,
+    parliamentarian_ids: List[int],
+    limit: int,
+) -> List[PropositionOut]:
+    authorship_proposition_ids = select(AuthorsProposition.proposition_id).where(
+        AuthorsProposition.parliamentarian_id.in_(parliamentarian_ids)
+    )
+    stmt = (
+        select(Proposition)
+        .where(Proposition.id.in_(authorship_proposition_ids))
+        .order_by(
+            desc(Proposition.presentation_date).nulls_last(),
+            desc(Proposition.created_at),
+            desc(Proposition.id),
+        )
+        .limit(limit)
+    )
+    propositions = db.execute(stmt).scalars().all()
+    return [_serialize_proposition(proposition) for proposition in propositions]
+
+
+def _list_project_dashboard_votes(
+    db: Session,
+    parliamentarian_ids: List[int],
+    limit: int,
+) -> List[RollCallVoteOut]:
+    stmt = (
+        select(RollCallVote)
+        .options(
+            selectinload(RollCallVote.proposition),
+            selectinload(RollCallVote.parliamentarian),
+        )
+        .where(RollCallVote.parliamentarian_id.in_(parliamentarian_ids))
+        .order_by(
+            desc(RollCallVote.created_at),
+            desc(RollCallVote.id),
+        )
+        .limit(limit)
+    )
+    votes = db.execute(stmt).scalars().all()
+    return [_serialize_roll_call_vote(vote) for vote in votes]
 
 
 def _ensure_active_project(db: Session, project_id: int) -> Projetos:
@@ -364,6 +419,36 @@ def remove_my_project_favorite(
 
 
 @router.get(
+    "/me/dashboard-activity",
+    response_model=ProjectDashboardActivityOut,
+    summary="Atividades recentes dos parlamentares favoritados no projeto autenticado",
+)
+def get_my_dashboard_activity(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+) -> ProjectDashboardActivityOut:
+    """Retorna atividades recentes escopadas aos parlamentares favoritados."""
+    project = _get_project_from_token_email(request, db)
+    parliamentarian_ids = _get_project_favorite_ids(db, project.id)
+    if not parliamentarian_ids:
+        return ProjectDashboardActivityOut(propositions=[], votes=[])
+
+    return ProjectDashboardActivityOut(
+        propositions=_list_project_dashboard_propositions(
+            db,
+            parliamentarian_ids,
+            limit,
+        ),
+        votes=_list_project_dashboard_votes(
+            db,
+            parliamentarian_ids,
+            limit,
+        ),
+    )
+
+
+@router.get(
     "/{project_id}/favorites",
     response_model=List[ProjectFavoriteOut],
     summary="Lista favoritos de um projeto",
@@ -505,4 +590,3 @@ def get_my_dashboard_stats(
 
 
 __all__ = ["router"]
-

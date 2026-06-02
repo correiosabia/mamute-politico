@@ -4,7 +4,12 @@ import { useQuery, useQueries } from '@tanstack/react-query';
 import { Header } from '@/components/layout/Header';
 import { Timeline } from '@/components/dashboard/Timeline';
 import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
-import { listMyProjectFavorites, getParliamentarian, getMyDashboardStats } from '@/api/endpoints';
+import {
+  listMyProjectFavorites,
+  getParliamentarian,
+  getMyDashboardStats,
+  getMyDashboardActivity,
+} from '@/api/endpoints';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { sortByNome } from '@/lib/utils';
@@ -96,7 +101,13 @@ const DashboardPage = () => {
     queryFn: getMyDashboardStats,
   });
 
+  const dashboardActivityQuery = useQuery({
+    queryKey: ['dashboard-activity', 'me', { limit: 20 }],
+    queryFn: () => getMyDashboardActivity({ limit: 20 }),
+  });
+
   const dashboardStats = dashboardStatsQuery.data;
+  const dashboardActivity = dashboardActivityQuery.data;
   const statsItems = [
     {
       value: dashboardStats != null ? String(dashboardStats.propositions_this_week) : '--',
@@ -215,7 +226,12 @@ const DashboardPage = () => {
           <div className="mp-card lg:col-span-2 bg-white p-6">
             <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Linha do tempo</h2>
             <div className="h-[560px]">
-              <Timeline />
+              <Timeline
+                propositions={dashboardActivity?.propositions ?? []}
+                votes={dashboardActivity?.votes ?? []}
+                isLoading={dashboardActivityQuery.isLoading}
+                isError={dashboardActivityQuery.isError}
+              />
             </div>
           </div>
 
@@ -224,7 +240,12 @@ const DashboardPage = () => {
             {/* Últimas ações */}
             <div className="mp-card bg-white p-6">
               <h2 className="mb-4 truncate text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
-              <ProposicoesList limit={2} />
+              <ProposicoesList
+                limit={2}
+                items={dashboardActivity?.propositions ?? []}
+                isLoading={dashboardActivityQuery.isLoading}
+                isError={dashboardActivityQuery.isError}
+              />
             </div>
 
             {/* Estatísticas */}
