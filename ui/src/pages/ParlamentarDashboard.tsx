@@ -11,7 +11,12 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
-import { getParliamentarian, listMyProjectFavorites } from '@/api/endpoints';
+import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
+import {
+  getMyParliamentarianDashboardStats,
+  getParliamentarian,
+  listMyProjectFavorites,
+} from '@/api/endpoints';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
 import { ArrowLeft, Cloud, FileText, Vote, Loader2, Users, Pencil } from 'lucide-react';
@@ -67,6 +72,11 @@ const ParlamentarDashboard = () => {
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
     queryFn: () => listMyProjectFavorites(),
+  });
+  const dashboardStatsQuery = useQuery({
+    queryKey: ['dashboard-stats', 'parliamentarian', numericId],
+    queryFn: () => getMyParliamentarianDashboardStats(numericId),
+    enabled: isIdValid,
   });
   const monitoradosCount = favoritesQuery.data?.length ?? 0;
 
@@ -155,12 +165,16 @@ const ParlamentarDashboard = () => {
           </Link>
         </div>
 
-        {/* Top Row: Dados cadastrais | Temas do discurso | Últimas ações */}
+        {/* Top Row: Coluna 1 (Dados cadastrais + Estatísticas) | Temas do discurso | Últimas ações */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Dados cadastrais */}
-          <div className="mp-card bg-white p-6">
-            <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
-            <ParlamentarInfo parlamentar={parlamentar} />
+          {/* Coluna 1: Dados cadastrais + Estatísticas */}
+          <div className="flex flex-col gap-6">
+            <div className="mp-card bg-white p-6">
+              <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
+              <ParlamentarInfo parlamentar={parlamentar} />
+            </div>
+
+            <EstatisticasCard stats={dashboardStatsQuery.data} isLoading={dashboardStatsQuery.isLoading} />
           </div>
 
           {/* Temas do discurso */}
