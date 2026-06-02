@@ -398,7 +398,7 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                   <TableCell className="w-[220px] min-w-[220px] max-w-[220px]">
                     <Badge
                       variant={getProposicaoSituacaoBadgeVariant(proposicao.situacao)}
-                      className="inline-block w-full overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
+                      className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
                       title={proposicao.situacao !== '—' ? proposicao.situacao : undefined}
                     >
                       {proposicao.situacao}
