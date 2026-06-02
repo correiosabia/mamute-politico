@@ -115,13 +115,13 @@ export function ProposicoesList({
           </p>
 
           {/* Date + Theme */}
-          <div className="flex min-w-0 items-center gap-4">
-            <span className="text-[11px] font-semibold text-[#383838]">
-              {formatDate(proposicao.dataApresentacao)}
-            </span>
+          <div className="flex flex-col min-w-0">
             {proposicao.tema && proposicao.tema !== '—' && (
               <span className="min-w-0 truncate text-[11px] font-semibold text-[#383838]">{proposicao.tema}</span>
             )}
+            <span className="text-[11px] font-semibold text-[#383838]">
+              {formatDate(proposicao.dataApresentacao)}
+            </span>
           </div>
         </div>
       ))}
