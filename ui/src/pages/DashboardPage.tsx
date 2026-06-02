@@ -7,7 +7,6 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import {
   listMyProjectFavorites,
   getParliamentarian,
-  getMyDashboardStats,
   getMyDashboardActivity,
 } from '@/api/endpoints';
 import { ApiError } from '@/api/client';
@@ -96,39 +95,12 @@ const DashboardPage = () => {
         ? favoritesError.message
         : 'Não foi possível carregar os favoritos.';
 
-  const dashboardStatsQuery = useQuery({
-    queryKey: ['dashboard-stats', 'me'],
-    queryFn: getMyDashboardStats,
-  });
-
   const dashboardActivityQuery = useQuery({
     queryKey: ['dashboard-activity', 'me', { limit: 20 }],
     queryFn: () => getMyDashboardActivity({ limit: 20 }),
   });
 
-  const dashboardStats = dashboardStatsQuery.data;
   const dashboardActivity = dashboardActivityQuery.data;
-  const statsItems = [
-    {
-      value: dashboardStats != null ? String(dashboardStats.propositions_this_week) : '--',
-      label: 'Projetos\n3 meses',
-    },
-    {
-      value:
-        dashboardStats?.attendance_avg_percent != null
-          ? `${dashboardStats.attendance_avg_percent}%`
-          : '--',
-      label: 'Presença\nmédia',
-    },
-    {
-      value: dashboardStats != null ? String(dashboardStats.recent_votes_count) : '--',
-      label: 'Votações\nrecentes',
-    },
-    {
-      value: dashboardStats != null ? String(dashboardStats.speeches_count) : '--',
-      label: 'Discursos',
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-textura-gold">
@@ -220,7 +192,7 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Main grid: Timeline + Últimas ações + Estatísticas */}
+        {/* Main grid: Timeline + Últimas ações */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Linha do tempo — 2 cols */}
           <div className="mp-card lg:col-span-2 bg-white p-6">
@@ -248,22 +220,6 @@ const DashboardPage = () => {
               />
             </div>
 
-            {/* Estatísticas */}
-            <div className="mp-card bg-white p-6">
-              <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Estatísticas</h2>
-              <div className="flex items-start justify-between gap-2">
-                {statsItems.map((stat) => (
-                  <div key={stat.label} className="flex flex-col items-center gap-2">
-                    <div className="w-[49px] h-[49px] flex items-center justify-center rounded-full border border-[#878787]">
-                      <p className="text-[18px] font-bold text-[#468fff]">{stat.value}</p>
-                    </div>
-                    <p className="text-[13px] text-[#383838] text-center leading-tight whitespace-pre-line">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </main>

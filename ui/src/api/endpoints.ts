@@ -300,6 +300,11 @@ export function getMyDashboardStats(): Promise<DashboardStatsOut> {
   return request<DashboardStatsOut>('/projects/me/dashboard-stats');
 }
 
+/** Estatísticas dos últimos 3 meses para um parlamentar específico no contexto autenticado. */
+export function getMyParliamentarianDashboardStats(parliamentarianId: number): Promise<DashboardStatsOut> {
+  return request<DashboardStatsOut>(`/projects/me/parliamentarians/${parliamentarianId}/dashboard-stats`);
+}
+
 /** Atividades recentes para parlamentares favoritados no projeto autenticado. */
 export function getMyDashboardActivity(params: { limit?: number } = {}): Promise<DashboardActivityOut> {
   const sp = new URLSearchParams();
