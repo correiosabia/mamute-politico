@@ -1,5 +1,9 @@
 import { votoFromApi } from '@/api/mappers';
-import type { PropositionOut, RollCallVoteOut } from '@/api/types';
+import type {
+  DashboardActivityAuthorOut,
+  DashboardActivityPropositionOut,
+  RollCallVoteOut,
+} from '@/api/types';
 import { Loader2 } from 'lucide-react';
 import iconProjeto from '@/assets/icon-timeline-projeto.svg';
 import iconVotacaoAprovado from '@/assets/icon-timeline-votacao-aprovado.svg';
@@ -17,7 +21,7 @@ interface TimelineItem {
 }
 
 interface TimelineProps {
-  propositions: PropositionOut[];
+  propositions: DashboardActivityPropositionOut[];
   votes: RollCallVoteOut[];
   isLoading?: boolean;
   isError?: boolean;
@@ -46,6 +50,21 @@ function extractAutor(details: Record<string, unknown> | null | undefined): stri
     if (nome) return partido && uf ? `${nome} ${partido} - ${uf}` : nome;
   }
   return '—';
+}
+
+function formatAuthor(author: DashboardActivityAuthorOut): string {
+  const name = author.name?.trim() || author.full_name?.trim();
+  const party = author.party?.trim();
+  const uf = author.state_elected?.trim();
+  if (name && party && uf) return `${name} ${party} - ${uf}`;
+  if (name && party) return `${name} ${party}`;
+  if (name) return name;
+  return '—';
+}
+
+function formatMonitoredAuthors(authors: DashboardActivityAuthorOut[] | undefined): string | null {
+  if (!authors?.length) return null;
+  return authors.map(formatAuthor).filter((author) => author !== '—').join('; ') || null;
 }
 
 function getItemIcon(item: TimelineItem): string {
@@ -109,7 +128,7 @@ export function Timeline({
       titulo: `${p.proposition_acronym ?? 'PL'} ${p.proposition_number ?? ''}/${p.presentation_year ?? ''}`.trim(),
       descricao: p.proposition_description ?? p.summary ?? '—',
       data: p.presentation_date ?? p.created_at?.slice(0, 10) ?? '',
-      autor: extractAutor(p.details),
+      autor: formatMonitoredAuthors(p.monitored_authors) ?? extractAutor(p.details),
       status: p.current_status ?? '—',
       link: p.link ?? undefined,
     })),

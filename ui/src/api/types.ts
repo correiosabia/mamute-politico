@@ -107,8 +107,21 @@ export interface DashboardStatsOut {
   speeches_count: number;
 }
 
+export interface DashboardActivityAuthorOut {
+  id: number;
+  name?: string | null;
+  full_name?: string | null;
+  party?: string | null;
+  state_elected?: string | null;
+  type?: string | null;
+}
+
+export interface DashboardActivityPropositionOut extends PropositionOut {
+  monitored_authors: DashboardActivityAuthorOut[];
+}
+
 export interface DashboardActivityOut {
-  propositions: PropositionOut[];
+  propositions: DashboardActivityPropositionOut[];
   votes: RollCallVoteOut[];
 }
 

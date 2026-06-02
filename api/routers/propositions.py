@@ -51,6 +51,14 @@ class PropositionOut(BaseModel):
 
 def _build_proposition_link(proposition: Proposition) -> Optional[str]:
     # TODO: Implementar a logica do link na fonte ao inves do codigo abaixo
+    details = proposition.details if isinstance(proposition.details, dict) else {}
+    full_text_url = details.get("urlInteiroTeor")
+    if (
+        proposition.proposition_acronym == "DOC"
+        and isinstance(full_text_url, str)
+        and full_text_url
+    ):
+        return full_text_url
     if isinstance(proposition.link, str) and "camara.leg.br" in proposition.link:
         # Proposições da Câmara (deputados) devem apontar para a ficha de tramitação.
         return proposition.link
@@ -185,4 +193,3 @@ def get_proposition(
 
 
 __all__ = ["router"]
-

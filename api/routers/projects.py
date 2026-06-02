@@ -71,10 +71,27 @@ class ProjectDashboardStatsOut(BaseModel):
     speeches_count: int
 
 
+class ProjectDashboardActivityAuthorOut(BaseModel):
+    """Parlamentar monitorado associado a uma atividade do dashboard."""
+
+    id: int
+    name: Optional[str] = None
+    full_name: Optional[str] = None
+    party: Optional[str] = None
+    state_elected: Optional[str] = None
+    type: Optional[str] = None
+
+
+class ProjectDashboardActivityPropositionOut(PropositionOut):
+    """Proposição com autores monitorados pelo projeto autenticado."""
+
+    monitored_authors: List[ProjectDashboardActivityAuthorOut]
+
+
 class ProjectDashboardActivityOut(BaseModel):
     """Atividades recentes dos parlamentares monitorados pelo projeto autenticado."""
 
-    propositions: List[PropositionOut]
+    propositions: List[ProjectDashboardActivityPropositionOut]
     votes: List[RollCallVoteOut]
 
 
@@ -204,7 +221,7 @@ def _list_project_dashboard_propositions(
     db: Session,
     parliamentarian_ids: List[int],
     limit: int,
-) -> List[PropositionOut]:
+) -> List[ProjectDashboardActivityPropositionOut]:
     authorship_proposition_ids = select(AuthorsProposition.proposition_id).where(
         AuthorsProposition.parliamentarian_id.in_(parliamentarian_ids)
     )
@@ -219,7 +236,55 @@ def _list_project_dashboard_propositions(
         .limit(limit)
     )
     propositions = db.execute(stmt).scalars().all()
-    return [_serialize_proposition(proposition) for proposition in propositions]
+    if not propositions:
+        return []
+
+    proposition_ids = [int(proposition.id) for proposition in propositions]
+    favorite_author_links = (
+        select(
+            AuthorsProposition.proposition_id,
+            AuthorsProposition.parliamentarian_id,
+        )
+        .where(AuthorsProposition.proposition_id.in_(proposition_ids))
+        .where(AuthorsProposition.parliamentarian_id.in_(parliamentarian_ids))
+        .distinct()
+        .subquery()
+    )
+    authors_stmt = (
+        select(favorite_author_links.c.proposition_id, Parliamentarian)
+        .join(
+            Parliamentarian,
+            Parliamentarian.id == favorite_author_links.c.parliamentarian_id,
+        )
+        .order_by(
+            favorite_author_links.c.proposition_id,
+            asc(Parliamentarian.name),
+            asc(Parliamentarian.id),
+        )
+    )
+    monitored_authors_by_proposition: dict[int, List[ProjectDashboardActivityAuthorOut]] = {}
+    for proposition_id, parliamentarian in db.execute(authors_stmt).all():
+        monitored_authors_by_proposition.setdefault(int(proposition_id), []).append(
+            ProjectDashboardActivityAuthorOut(
+                id=int(parliamentarian.id),
+                name=parliamentarian.name,
+                full_name=parliamentarian.full_name,
+                party=parliamentarian.party,
+                state_elected=parliamentarian.state_elected,
+                type=parliamentarian.type,
+            )
+        )
+
+    return [
+        ProjectDashboardActivityPropositionOut(
+            **_serialize_proposition(proposition).model_dump(),
+            monitored_authors=monitored_authors_by_proposition.get(
+                int(proposition.id),
+                [],
+            ),
+        )
+        for proposition in propositions
+    ]
 
 
 def _list_project_dashboard_votes(

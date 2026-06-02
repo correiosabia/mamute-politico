@@ -147,7 +147,8 @@ def _make_activity_session() -> Session:
                 (id, name, full_name, party, state_elected, created_at, updated_at)
             values
                 (101, 'Monitorado', 'Parlamentar Monitorado', 'PMA', 'SP', '2026-01-01 00:00:00', '2026-01-01 00:00:00'),
-                (202, 'Outro', 'Parlamentar Fora do Projeto', 'FORA', 'RJ', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+                (202, 'Outro', 'Parlamentar Fora do Projeto', 'FORA', 'RJ', '2026-01-01 00:00:00', '2026-01-01 00:00:00'),
+                (303, 'Coautor', 'Parlamentar Coautor', 'COA', 'MG', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
             """
         )
         conn.exec_driver_sql(
@@ -167,7 +168,8 @@ def _make_activity_session() -> Session:
                 )
             values
                 (1, 'PL monitorado', 'PL', 1, 2026, 'Aguardando Despacho', 'Do parlamentar monitorado', '2026-05-10', '2026-05-10 00:00:00', '2026-05-10 00:00:00'),
-                (2, 'PL fora', 'PL', 2, 2026, 'Aguardando Despacho', 'De outro parlamentar', '2026-05-11', '2026-05-11 00:00:00', '2026-05-11 00:00:00')
+                (2, 'PL fora', 'PL', 2, 2026, 'Aguardando Despacho', 'De outro parlamentar', '2026-05-11', '2026-05-11 00:00:00', '2026-05-11 00:00:00'),
+                (3, 'PL coautoria', 'PL', 3, 2026, 'Aguardando Despacho', 'Com coautoria monitorada', '2026-05-12', '2026-05-12 00:00:00', '2026-05-12 00:00:00')
             """
         )
         conn.exec_driver_sql(
@@ -176,7 +178,9 @@ def _make_activity_session() -> Session:
                 (id, parliamentarian_id, proposition_id, created_at, updated_at)
             values
                 (1, 101, 1, '2026-05-10 00:00:00', '2026-05-10 00:00:00'),
-                (2, 202, 2, '2026-05-11 00:00:00', '2026-05-11 00:00:00')
+                (2, 202, 2, '2026-05-11 00:00:00', '2026-05-11 00:00:00'),
+                (3, 303, 3, '2026-05-12 00:00:00', '2026-05-12 00:00:00'),
+                (4, 101, 3, '2026-05-12 00:00:00', '2026-05-12 00:00:00')
             """
         )
         conn.exec_driver_sql(
@@ -204,7 +208,17 @@ def test_dashboard_activity_only_returns_data_for_project_favorites(monkeypatch)
 
         assert response.status_code == 200
         payload = response.json()
-        assert [item["id"] for item in payload["propositions"]] == [1]
+        assert [item["id"] for item in payload["propositions"]] == [3, 1]
+        assert payload["propositions"][0]["monitored_authors"] == [
+            {
+                "id": 101,
+                "name": "Monitorado",
+                "full_name": "Parlamentar Monitorado",
+                "party": "PMA",
+                "state_elected": "SP",
+                "type": None,
+            }
+        ]
         assert [item["id"] for item in payload["votes"]] == [11]
         assert payload["votes"][0]["parliamentarian_name"] == "Parlamentar Monitorado"
     finally:
