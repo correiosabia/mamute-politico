@@ -344,10 +344,10 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
           <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
-                <TableHead>Tipo/Número</TableHead>
+                <TableHead>Data</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Ementa</TableHead>
                 <TableHead>Tema</TableHead>
-                <TableHead>Data</TableHead>
                 <TableHead>Situação</TableHead>
               </TableRow>
             </TableHeader>
@@ -373,6 +373,11 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                     proposicao.link ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2' : 'cursor-default',
                   ].join(' ')}
                 >
+                  <TableCell className="text-sm text-muted-foreground">
+                    {proposicao.dataApresentacao
+                      ? new Date(proposicao.dataApresentacao).toLocaleDateString('pt-BR')
+                      : '—'}
+                  </TableCell>
                   <TableCell className="font-medium">
                     {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
                   </TableCell>
@@ -389,11 +394,6 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                     >
                       {proposicao.tema}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {proposicao.dataApresentacao
-                      ? new Date(proposicao.dataApresentacao).toLocaleDateString('pt-BR')
-                      : '—'}
                   </TableCell>
                   <TableCell className="w-[220px] min-w-[220px] max-w-[220px]">
                     <Badge
