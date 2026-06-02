@@ -165,12 +165,16 @@ const ParlamentarDashboard = () => {
           </Link>
         </div>
 
-        {/* Top Row: Dados cadastrais | Temas do discurso | Últimas ações | Estatísticas */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Dados cadastrais */}
-          <div className="mp-card bg-white p-6">
-            <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
-            <ParlamentarInfo parlamentar={parlamentar} />
+        {/* Top Row: Coluna 1 (Dados cadastrais + Estatísticas) | Temas do discurso | Últimas ações */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Coluna 1: Dados cadastrais + Estatísticas */}
+          <div className="flex flex-col gap-6">
+            <div className="mp-card bg-white p-6">
+              <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
+              <ParlamentarInfo parlamentar={parlamentar} />
+            </div>
+
+            <EstatisticasCard stats={dashboardStatsQuery.data} isLoading={dashboardStatsQuery.isLoading} />
           </div>
 
           {/* Temas do discurso */}
@@ -184,9 +188,6 @@ const ParlamentarDashboard = () => {
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
             <ProposicoesList limit={4} parliamentarianId={id} />
           </div>
-
-          {/* Estatísticas */}
-          <EstatisticasCard stats={dashboardStatsQuery.data} isLoading={dashboardStatsQuery.isLoading} />
         </div>
 
         {/* Bottom: Proposições do Parlamentar with tabs */}
