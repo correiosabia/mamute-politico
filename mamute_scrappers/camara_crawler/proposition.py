@@ -256,23 +256,6 @@ def _get_last_proposition_date(session: Session, year_start: int) -> Optional[da
     return None
 
 
-def _fetch_propositions_list(
-    year: int,
-    page: int = 1,
-) -> Optional[Dict[str, Any]]:
-    """Busca lista paginada de proposições."""
-    params = {
-        "ano": year,
-        "ordem": "DESC",
-        "ordenarPor": "id",
-        "pagina": page,
-        "itens": PAGE_SIZE,
-    }
-
-    logger.debug("Buscando lista de proposições (ano=%s, página=%s)", year, page)
-    return _request_json(CAMARA_PROPOSICOES_ENDPOINT, params=params)
-
-
 def _fetch_proposition_detail(proposition_id: int) -> Optional[Dict[str, Any]]:
     """Busca detalhes completos de uma proposição específica."""
     url = f"{CAMARA_PROPOSICOES_ENDPOINT}/{proposition_id}"
@@ -404,24 +387,32 @@ def _iter_propositions_paginated(
 ) -> Generator[Tuple[Dict[str, Any], bool], None, None]:
     """Itera sobre proposições da Câmara com paginação automática.
 
+    Usa `dataApresentacaoInicio`/`dataApresentacaoFim` (data de APRESENTAÇÃO)
+    em combinação com `ano=year_start` para que cada chunk capture exatamente
+    as proposições apresentadas no intervalo — sem o vazamento histórico que
+    `dataInicio/Fim` (data de TRAMITAÇÃO) gerava: chunks semanais antes pegavam
+    ~3.800 itens (de muitos anos); agora pegam ~720 (estritamente apresentados
+    naquela semana).
+
     Args:
-        year_start: Ano inicial para buscar
-        force_full: Se True, ignora busca incremental
-        data_inicio: Data inicial YYYY-MM-DD (sobrescreve busca incremental)
-        pagina_inicial: Página inicial da paginação (padrão: 1)
-        data_fim: Data final YYYY-MM-DD (limita o período — útil para backfill em fatias)
-        session: Sessão do banco (para busca incremental)
+        year_start: Ano de apresentação a buscar (passado também como `ano=` na API).
+        force_full: Se True, ignora busca incremental.
+        data_inicio: Data de apresentação inicial YYYY-MM-DD (sobrescreve incremental).
+        pagina_inicial: Página inicial da paginação (padrão: 1).
+        data_fim: Data de apresentação final YYYY-MM-DD (limita o período — útil
+            para backfill em fatias semanais).
+        session: Sessão do banco (para busca incremental).
 
     Yields:
         Tupla (dados_basicos, is_new)
     """
     # Determinar data inicial
     start_date = None
-    
+
     if data_inicio:
         # Prioridade 1: Data fornecida como parâmetro
         start_date = data_inicio
-        logger.info("Usando data inicial fornecida: %s", start_date)
+        logger.info("Usando data de apresentação inicial fornecida: %s", start_date)
     elif not force_full and session:
         # Prioridade 2: Busca incremental (última data no banco)
         last_date = _get_last_proposition_date(session, year_start)
@@ -429,21 +420,25 @@ def _iter_propositions_paginated(
             next_day = last_date + timedelta(days=1)
             start_date = next_day.strftime("%Y-%m-%d")
             logger.info("Busca incremental desde: %s", start_date)
-    
+
     # Se não tem data inicial, usa início do ano
     if not start_date:
         start_date = f"{year_start}-01-01"
         logger.info("Buscando desde início do ano: %s", start_date)
-    
-    # Parâmetros base da API
+
+    # Parâmetros base da API: `ano` + `dataApresentacaoInicio/Fim` filtram por
+    # data de APRESENTAÇÃO (semântica que queremos). O `ano` é redundante quando
+    # o intervalo está estritamente dentro de um ano, mas blindagem contra
+    # respostas que ignoram o filtro de data em alguns tipos de proposição.
     base_params = {
-        "dataInicio": start_date,  # ← USA A DATA AQUI
+        "ano": year_start,
+        "dataApresentacaoInicio": start_date,
         "ordem": "DESC",
         "ordenarPor": "id",
         "itens": PAGE_SIZE,
     }
     if data_fim:
-        base_params["dataFim"] = data_fim
+        base_params["dataApresentacaoFim"] = data_fim
         logger.info("Limitando período até: %s", data_fim)
     
     page = max(1, pagina_inicial)
@@ -934,12 +929,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-inicio",
         type=str,
-        help="Data inicial no formato YYYY-MM-DD (sobrescreve busca incremental).",
+        help=(
+            "Data de APRESENTAÇÃO inicial (YYYY-MM-DD). Sobrescreve a busca "
+            "incremental. Filtra `dataApresentacaoInicio` na API da Câmara."
+        ),
     )
     parser.add_argument(
         "--data-fim",
         type=str,
-        help="Data final no formato YYYY-MM-DD (limita o período — backfill em fatias).",
+        help=(
+            "Data de APRESENTAÇÃO final (YYYY-MM-DD). Combinada com --data-inicio "
+            "fatia o backfill por janelas. Filtra `dataApresentacaoFim` na API."
+        ),
     )
     parser.add_argument(
         "--force-full",
