@@ -337,8 +337,10 @@ export function TaquigraficasTable({ limit = 20, parliamentarianId }: Taquigrafi
                     </TableCell>
                     {/* <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell> */}
                     <TableCell className="text-sm">{speech.type ?? '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[360px] truncate">
-                      {speech.summary ?? speech.speech_text ?? '—'}
+                    <TableCell className="text-sm text-muted-foreground max-w-[360px]">
+                      <span className="block line-clamp-3">
+                        {speech.summary ?? speech.speech_text ?? '—'}
+                      </span>
                     </TableCell>
                     <TableCell>
                       {analysisQueries.some((q) => q.isLoading) ? (
