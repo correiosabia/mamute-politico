@@ -55,6 +55,7 @@ export function LoginModal({
     emailType: MagicLinkEmailType;
   } | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   const emailInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +69,7 @@ export function LoginModal({
     setSuccess(null);
     setIsSubmitting(false);
     setCooldownUntil(0);
+    setNow(Date.now());
   }, [open, launchKey, initialEmail]);
 
   useEffect(() => {
@@ -80,8 +82,20 @@ export function LoginModal({
   }, [open, success, launchKey]);
 
   const bumpCooldown = useCallback(() => {
-    setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
+    const nextNow = Date.now();
+    setNow(nextNow);
+    setCooldownUntil(nextNow + RESEND_COOLDOWN_MS);
   }, []);
+
+  useEffect(() => {
+    if (!open || !success || cooldownUntil <= now) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1_000);
+    return () => window.clearInterval(id);
+  }, [cooldownUntil, now, open, success]);
 
   const validateEmail = (): boolean => {
     const emailResult = emailSchema.safeParse(email);
@@ -142,7 +156,7 @@ export function LoginModal({
 
   const cooldownRemaining = Math.max(
     0,
-    Math.ceil((cooldownUntil - Date.now()) / 1000)
+    Math.ceil((cooldownUntil - now) / 1000)
   );
 
   return (
