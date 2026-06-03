@@ -90,6 +90,33 @@ python -m mamute_scrappers.scripts.create_users
 Esse comando é um backfill manual. A sincronização contínua Ghost -> projetos é
 recebida pela API em `POST /api/webhooks/ghost/members`.
 
+### Relatórios por e-mail (notificação)
+
+Execute na **raiz** do repositório (`mamute-politico`). Configure `DATABASE_URL` e
+as variáveis `SMTP_*` em `mamute_scrappers/.env` (veja `.env.example`). Em produção,
+cada projeto só recebe o relatório se o tier tiver a periodicidade em
+`tiers.detalhes.periodicidade_email` (ex.: `["week"]` ou `["month"]`).
+
+Documentação completa: [`scripts/notificacao/README.md`](scripts/notificacao/README.md).
+
+```bash
+# Listar destinatários elegíveis (sem enviar)
+python -m mamute_scrappers.scripts.notificacao --periodicidade week --list-only
+python -m mamute_scrappers.scripts.notificacao --periodicidade month --list-only
+
+# Relatório semanal — todos os projetos com "week" no tier
+python -m mamute_scrappers.scripts.notificacao --periodicidade week
+
+# Relatório mensal — todos os projetos com "month" no tier
+python -m mamute_scrappers.scripts.notificacao --periodicidade month
+```
+
+Teste de um projeto (HTML em `mamute_scrappers/scripts/notificacao/output/`):
+
+```bash
+python -m mamute_scrappers.scripts.notificacao --periodicidade week --projeto-id 1 --dry-run
+```
+
 ## Cronjobs recomendados
 
 Exemplo de configuração para atualização contínua de projetos, trâmites e dados auxiliares:
@@ -122,6 +149,12 @@ LOG_DIR=mamute-politico/mamute_scrappers/.logs
 
 # Parlamentares da Câmara (diário às 05h30)
 30 5 * * *    cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.camara_crawler.parliamentarian >> $LOG_DIR/crawlers/camara_parliamentarians.log 2>&1
+
+# Relatórios por e-mail — semanal (segundas 08:00)
+0 8 * * 1     cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.scripts.notificacao --periodicidade week >> $LOG_DIR/notificacao/week.log 2>&1
+
+# Relatórios por e-mail — mensal (dia 1, 08:00)
+0 8 1 * *     cd $PROJECT_ROOT && $PYTHON_BIN -m mamute_scrappers.scripts.notificacao --periodicidade month >> $LOG_DIR/notificacao/month.log 2>&1
 ```
 
 ## Observações
