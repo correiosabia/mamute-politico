@@ -48,7 +48,7 @@ export async function getIntegrityToken(): Promise<string> {
   return token;
 }
 
-export type MagicLinkEmailType = "signin" | "signup";
+export type MagicLinkEmailType = "signin" | "signup" | "subscribe";
 
 export type SendMagicLinkParams = {
   email: string;
@@ -97,41 +97,17 @@ export async function sendMagicLink(params: SendMagicLinkParams): Promise<void> 
   throw err;
 }
 
-export function isMemberNotFoundError(error: unknown): boolean {
-  const msg =
-    (error as { ghostMessage?: string })?.ghostMessage ??
-    (error as Error)?.message ??
-    "";
-  return (
-    /member not found/i.test(msg) ||
-    /no member exists/i.test(msg) ||
-    /no member found/i.test(msg) ||
-    /membro n[aã]o encontrado/i.test(msg) ||
-    /n[aã]o existe.*membro/i.test(msg) ||
-    /please sign up first/i.test(msg) ||
-    /sign up first/i.test(msg)
-  );
-}
-
 export type SendMagicLinkUnifiedResult = {
   emailType: MagicLinkEmailType;
 };
 
 /**
- * Sends a magic link for sign-in, or sign-up if no member exists for the email.
+ * Sends a magic link for Ghost's combined sign-in/sign-up flow.
  */
 export async function sendMagicLinkUnified(params: {
   email: string;
 }): Promise<SendMagicLinkUnifiedResult> {
   const email = params.email.trim();
-  try {
-    await sendMagicLink({ email, emailType: "signin" });
-    return { emailType: "signin" };
-  } catch (e) {
-    if (!isMemberNotFoundError(e)) {
-      throw e;
-    }
-    await sendMagicLink({ email, emailType: "signup" });
-    return { emailType: "signup" };
-  }
+  await sendMagicLink({ email, emailType: "subscribe" });
+  return { emailType: "subscribe" };
 }

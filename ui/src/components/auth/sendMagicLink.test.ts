@@ -1,9 +1,6 @@
 import axios from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  sendMagicLinkUnified,
-  isMemberNotFoundError,
-} from "./sendMagicLink";
+import { sendMagicLinkUnified } from "./sendMagicLink";
 
 vi.mock("axios");
 vi.mock("./config", () => ({
@@ -35,39 +32,20 @@ describe("sendMagicLinkUnified", () => {
     mockIntegrityToken();
   });
 
-  it("returns signin when signin magic link succeeds", async () => {
+  it("uses Ghost subscribe flow for combined sign-in and sign-up", async () => {
     mockMagicLinkPost({ status: 201 });
 
-    const result = await sendMagicLinkUnified({ email: "user@example.com" });
+    const result = await sendMagicLinkUnified({ email: " user@example.com " });
 
-    expect(result).toEqual({ emailType: "signin" });
+    expect(result).toEqual({ emailType: "subscribe" });
     expect(mockedAxios.post).toHaveBeenCalledTimes(1);
     expect(mockedAxios.post.mock.calls[0]?.[1]).toMatchObject({
       email: "user@example.com",
-      emailType: "signin",
+      emailType: "subscribe",
     });
   });
 
-  it("falls back to signup when signin reports member not found", async () => {
-    mockMagicLinkPost(
-      {
-        status: 404,
-        data: { errors: [{ message: "Member not found" }] },
-      },
-      { status: 201 }
-    );
-
-    const result = await sendMagicLinkUnified({ email: "new@example.com" });
-
-    expect(result).toEqual({ emailType: "signup" });
-    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
-    expect(mockedAxios.post.mock.calls[1]?.[1]).toMatchObject({
-      email: "new@example.com",
-      emailType: "signup",
-    });
-  });
-
-  it("does not call signup when signin fails for other reasons", async () => {
+  it("propagates Ghost errors without retrying", async () => {
     mockMagicLinkPost({
       status: 500,
       data: { errors: [{ message: "Failed to send email" }] },
@@ -78,53 +56,5 @@ describe("sendMagicLinkUnified", () => {
     ).rejects.toThrow("Failed to send email");
 
     expect(mockedAxios.post).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("isMemberNotFoundError", () => {
-  it("detects Ghost member-not-found messages", () => {
-    const err = Object.assign(new Error("Member not found"), {
-      ghostMessage: "Member not found",
-    });
-    expect(isMemberNotFoundError(err)).toBe(true);
-    expect(isMemberNotFoundError(new Error("Failed to send email"))).toBe(
-      false
-    );
-  });
-
-  it("detects Ghost sign-in prompt to sign up first", () => {
-    const ghostMsg =
-      "No member exists with this e-mail address. Please sign up first.";
-    const err = Object.assign(new Error(ghostMsg), { ghostMessage: ghostMsg });
-    expect(isMemberNotFoundError(err)).toBe(true);
-  });
-});
-
-describe("sendMagicLinkUnified with Ghost sign-in-not-found copy", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockIntegrityToken();
-  });
-
-  it("falls back to signup for the current Ghost sign-in error text", async () => {
-    mockMagicLinkPost(
-      {
-        status: 404,
-        data: {
-          errors: [
-            {
-              message:
-                "No member exists with this e-mail address. Please sign up first.",
-            },
-          ],
-        },
-      },
-      { status: 201 }
-    );
-
-    const result = await sendMagicLinkUnified({ email: "new@example.com" });
-
-    expect(result).toEqual({ emailType: "signup" });
-    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
   });
 });
