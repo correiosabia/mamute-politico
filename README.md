@@ -173,7 +173,9 @@ VITE_BASE_URL=https://mamute.voltdata.info
 Após subir a stack, configure o Ghost para redirecionar a home para a aplicação e aplicar os ajustes visuais recomendados.
 
 - Guia completo: [`environments/ghost.md`](environments/ghost.md)
-- Inclui: script de redirecionamento no Code Injection
+- Inclui: script de redirecionamento no Code Injection e webhooks `member.*`
+  para sincronizar usuarios Ghost -> projetos
+
 ## Links rápidos
 
 - [README dos Scrappers](mamute_scrappers/README.md)

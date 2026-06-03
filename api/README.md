@@ -55,5 +55,6 @@ Projeto pai: [README raiz](../README.md)
 - Rotas protegidas exigem `Authorization: Bearer <token>` com JWT emitido pelo Ghost Members.
 - O endpoint `POST /api/webhooks/ghost/members` recebe eventos `member.added`,
   `member.edited` e `member.deleted` do Ghost. Configure o mesmo segredo no
-  Ghost Admin e em `GHOST_WEBHOOK_SECRET`.
+  Ghost Admin e em `GHOST_WEBHOOK_SECRET`. Passo a passo:
+  [`../environments/ghost.md`](../environments/ghost.md).
 - Em caso de rotação de chaves JWKS, reinicie a aplicação para recarregar a chave pública.
