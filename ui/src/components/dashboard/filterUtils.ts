@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
+
 type StringFilterShape<T> = {
   [K in keyof T]: string;
 };
@@ -26,7 +28,25 @@ export function formatDateTimeLabel(value: string): string {
 
 export function formatDateOnlyLabel(value: string): string {
   if (!value) return '';
-  const date = new Date(`${value}T00:00:00`);
+
+  const dateOnlyMatch = DATE_ONLY_PATTERN.exec(value);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsedYear = Number(year);
+    const parsedMonth = Number(month) - 1;
+    const parsedDay = Number(day);
+    const localDate = new Date(parsedYear, parsedMonth, parsedDay);
+
+    if (
+      localDate.getFullYear() === parsedYear &&
+      localDate.getMonth() === parsedMonth &&
+      localDate.getDate() === parsedDay
+    ) {
+      return localDate.toLocaleDateString('pt-BR');
+    }
+  }
+
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('pt-BR');
 }

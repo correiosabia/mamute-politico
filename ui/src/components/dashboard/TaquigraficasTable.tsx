@@ -333,7 +333,7 @@ export function TaquigraficasTable({ limit = 20, parliamentarianId }: Taquigrafi
                     ].join(' ')}
                   >
                     <TableCell className="text-sm text-muted-foreground">
-                      {speech.date ? new Date(speech.date).toLocaleDateString('pt-BR') : '—'}
+                      {speech.date ? formatDateOnlyLabel(speech.date) : '—'}
                     </TableCell>
                     {/* <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell> */}
                     <TableCell className="text-sm">{speech.type ?? '—'}</TableCell>

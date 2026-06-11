@@ -375,7 +375,7 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
                 >
                   <TableCell className="text-sm text-muted-foreground">
                     {proposicao.dataApresentacao
-                      ? new Date(proposicao.dataApresentacao).toLocaleDateString('pt-BR')
+                      ? formatDateOnlyLabel(proposicao.dataApresentacao)
                       : '—'}
                   </TableCell>
                   <TableCell className="font-medium">

@@ -4,6 +4,7 @@ import { listRollCallVotes, type RollCallVoteSortBy, type SortOrder } from '@/ap
 import { mapRollCallVoteOutToVotacao } from '@/api/mappers';
 import {
   buildFilterChips,
+  formatDateOnlyLabel,
   formatDateTimeLabel,
   toIsoOrUndefined,
   useDraftAppliedFilters,
@@ -316,7 +317,7 @@ export function VotacoesTable({ limit = 10, parliamentarianId }: VotacoesTablePr
                       {votacao.proposicao}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {votacao.data ? new Date(votacao.data).toLocaleDateString('pt-BR') : '—'}
+                      {votacao.data ? formatDateOnlyLabel(votacao.data) : '—'}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 whitespace-nowrap">
