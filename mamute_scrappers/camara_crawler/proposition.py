@@ -575,8 +575,17 @@ def _build_payload_from_data(
                 or status_proposicao.get("despacho")
             )
 
-        # Órgão de origem
-        payload["agency_code"] = _parse_int(detail_data.get("idOrgaoOrigem"))
+        # Órgão do trâmite. A API da Câmara não expõe `idOrgaoOrigem`; o órgão
+        # disponível vem em statusProposicao.uriOrgao (.../orgaos/{id}), cujo id
+        # casa com agency.agency_code.
+        agency_code = None
+        if isinstance(status_proposicao, dict):
+            uri_orgao = status_proposicao.get("uriOrgao")
+            if uri_orgao:
+                match = re.search(r"/orgaos/(\d+)", uri_orgao)
+                if match:
+                    agency_code = int(match.group(1))
+        payload["agency_code"] = agency_code
 
         payload["author_codes"] = author_codes if author_codes is not None else []
 
