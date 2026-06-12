@@ -343,11 +343,16 @@ def _upsert_speech(
     created = False
 
     if speech_link:
+        # speech_link da Câmara histórica é a URL do Diário, compartilhada por
+        # vários discursos do mesmo dia -> (parliamentarian_id, speech_link) NÃO
+        # é único. Usar .first() em vez de .one_or_none() para não estourar
+        # MultipleResultsFound (que travava toda a passada do crawler).
         record = (
             session.query(SpeechesTranscript)
             .filter(SpeechesTranscript.parliamentarian_id == parliamentarian.id)
             .filter(SpeechesTranscript.speech_link == speech_link)
-            .one_or_none()
+            .order_by(SpeechesTranscript.id)
+            .first()
         )
 
     if record is None:
