@@ -1,0 +1,23 @@
+{
+  "free": {
+    "qtd_termos": 1,
+    "qtd_email": 0,
+    "qtd_consultas_ia_mes": 0,
+    "orgao": [],
+    "periodicidade_email": []
+  },
+  "default-product": {
+    "qtd_termos": 3,
+    "qtd_email": 1,
+    "qtd_consultas_ia_mes": 50,
+    "orgao": [],
+    "periodicidade_email": ["week"]
+  },
+  "cidadao-mamute": {
+    "qtd_termos": 10,
+    "qtd_email": 1,
+    "qtd_consultas_ia_mes": 200,
+    "orgao": [],
+    "periodicidade_email": ["week"]
+  }
+}
