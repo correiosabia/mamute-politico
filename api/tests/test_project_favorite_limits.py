@@ -9,13 +9,37 @@ from sqlalchemy.pool import StaticPool
 from api.routers import projects
 
 
-def _make_session(*, qtd_termos: int, existing_favorites: list[int] | None = None) -> Session:
+@pytest.fixture(autouse=True)
+def _clear_limit_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MAMUTE_TIER_LIMITS_JSON", raising=False)
+
+
+def _make_session(
+    *,
+    qtd_termos: int,
+    existing_favorites: list[int] | None = None,
+    tier_slug: str = "default-product",
+    product_id: str = "target-tier-id",
+) -> Session:
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            create table tiers (
+                id integer primary key,
+                tier_name_debug text not null,
+                product_id text not null,
+                detalhes text not null,
+                created_at datetime not null default current_timestamp,
+                updated_at datetime not null default current_timestamp,
+                deleted_at datetime
+            )
+            """
+        )
         conn.exec_driver_sql(
             """
             create table projetos (
@@ -79,13 +103,43 @@ def _make_session(*, qtd_termos: int, existing_favorites: list[int] | None = Non
         conn.execute(
             text(
                 """
-                insert into projetos
-                    (id, nome, email, qtd_termos, created_at, updated_at)
+                insert into tiers
+                    (id, tier_name_debug, product_id, detalhes, created_at, updated_at)
                 values
-                    (10, 'Assinante', 'assinante@example.com', :qtd_termos, '2026-01-01', '2026-01-01')
+                    (
+                        1,
+                        'Plano teste',
+                        :product_id,
+                        :detalhes,
+                        '2026-01-01',
+                        '2026-01-01'
+                    )
                 """
             ),
-            {"qtd_termos": qtd_termos},
+            {
+                "product_id": product_id,
+                "detalhes": f'{{"ghost": {{"slug": "{tier_slug}"}}}}',
+            },
+        )
+        conn.execute(
+            text(
+                """
+                insert into projetos
+                    (id, nome, cliente, email, tier_id, qtd_termos, created_at, updated_at)
+                values
+                    (
+                        10,
+                        'Assinante',
+                        :product_id,
+                        'assinante@example.com',
+                        1,
+                        :qtd_termos,
+                        '2026-01-01',
+                        '2026-01-01'
+                    )
+                """
+            ),
+            {"product_id": product_id, "qtd_termos": qtd_termos},
         )
         for parliamentarian_id in [101, 202, 303]:
             conn.execute(
@@ -161,5 +215,24 @@ def test_project_favorite_quota_reports_limit_used_and_remaining() -> None:
         assert quota.used == 2
         assert quota.remaining == 1
         assert quota.limit_reached is False
+    finally:
+        db.close()
+
+
+def test_project_favorite_quota_uses_env_limit_by_tier_slug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "MAMUTE_TIER_LIMITS_JSON",
+        '{"default-product":{"qtd_termos":2}}',
+    )
+    db = _make_session(qtd_termos=99, existing_favorites=[101])
+    try:
+        project = projects._ensure_active_project(db, 10)
+        quota = projects._build_project_favorite_quota(db, project)
+
+        assert quota.limit == 2
+        assert quota.used == 1
+        assert quota.remaining == 1
     finally:
         db.close()

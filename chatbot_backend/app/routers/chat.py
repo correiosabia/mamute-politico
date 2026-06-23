@@ -6,14 +6,25 @@ import asyncio
 import json
 import logging
 from time import perf_counter
-from typing import AsyncIterator, Dict
+from typing import AsyncIterator, Dict, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 
-from ..schemas import ChatRequest, ChatResponse
+from ..core.config import get_settings
+from ..core.database import get_session
+from ..schemas import ChatQuotaResponse, ChatRequest, ChatResponse
+from ..security import verify_token_header
 from ..services.chat_service import ChatbotService
+from ..services.quota import (
+    ChatQuotaConfigError,
+    disabled_quota_response,
+    get_chat_quota,
+    mark_chat_usage,
+    start_chat_usage,
+)
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 
@@ -28,18 +39,132 @@ def _sse_event_stream(payload: Dict[str, object]) -> str:
     return f"data: {data}\n\n"
 
 
+def _quota_enabled() -> bool:
+    return bool(get_settings().chatbot_quota_enabled)
+
+
+def _token_email_from_header(authorization: Optional[str]) -> str:
+    payload = verify_token_header(authorization)
+    token_email = payload.get("sub")
+    if not isinstance(token_email, str) or not token_email.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token sem e-mail (sub) para identificar o projeto.",
+        )
+    return token_email.strip()
+
+
+def _start_usage_or_raise(
+    authorization: Optional[str],
+    *,
+    request_id: str,
+    question: str,
+) -> int | None:
+    if not _quota_enabled():
+        return None
+
+    settings = get_settings()
+    token_email = _token_email_from_header(authorization)
+    try:
+        with get_session() as session:
+            usage = start_chat_usage(
+                session,
+                token_email,
+                request_id=request_id,
+                question_chars=len(question or ""),
+                model=settings.openai_model,
+            )
+            return usage.usage_id
+    except (ChatQuotaConfigError, SQLAlchemyError) as exc:
+        if settings.chatbot_quota_fail_open:
+            logger.exception(
+                "Chatbot quota check failed open | request_id=%s | reason=%s",
+                request_id,
+                exc,
+            )
+            return None
+        logger.exception(
+            "Chatbot quota check failed closed | request_id=%s | reason=%s",
+            request_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Falha ao verificar limite de consultas IA.",
+        ) from exc
+
+
+def _mark_usage(usage_id: int | None, *, status_value: str, answer_chars: int = 0) -> None:
+    if usage_id is None:
+        return
+    try:
+        with get_session() as session:
+            mark_chat_usage(
+                session,
+                usage_id,
+                status_value=status_value,
+                answer_chars=answer_chars,
+            )
+    except SQLAlchemyError as exc:  # pragma: no cover - only observability on cleanup
+        logger.exception(
+            "Failed to mark chatbot usage | usage_id=%s | status=%s | reason=%s",
+            usage_id,
+            status_value,
+            exc,
+        )
+
+
+@router.get(
+    "/quota",
+    response_model=ChatQuotaResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Consulta a cota mensal de uso do chatbot",
+)
+async def quota(authorization: Optional[str] = Header(default=None)) -> ChatQuotaResponse:
+    """Return the authenticated user's chatbot quota when quota enforcement is enabled."""
+
+    if not _quota_enabled():
+        with get_session() as session:
+            return get_chat_quota(session, email="")
+
+    token_email = _token_email_from_header(authorization)
+    settings = get_settings()
+    try:
+        with get_session() as session:
+            return get_chat_quota(session, token_email)
+    except (ChatQuotaConfigError, SQLAlchemyError) as exc:
+        if settings.chatbot_quota_fail_open:
+            logger.exception("Chatbot quota endpoint failed open | reason=%s", exc)
+            return disabled_quota_response()
+        logger.exception("Chatbot quota endpoint failed closed | reason=%s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Falha ao verificar limite de consultas IA.",
+        ) from exc
+
+
 @router.post(
     "/stream",
     status_code=status.HTTP_200_OK,
     response_class=StreamingResponse,
     summary="Obtém resposta do chatbot em modo streaming",
 )
-async def stream_chat(request: ChatRequest) -> StreamingResponse:
+async def stream_chat(
+    request: ChatRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> StreamingResponse:
     """Expõe o fluxo de tokens gerados pelo LLM."""
 
+    request_id = str(uuid4())
+    usage_id = _start_usage_or_raise(
+        authorization,
+        request_id=request_id,
+        question=request.question,
+    )
+
     async def event_generator() -> AsyncIterator[str]:
-        request_id = str(uuid4())
         started_at = perf_counter()
+        answer_chars = 0
         filters = request.filters.model_dump(exclude_none=True) if request.filters else None
         inputs = {"question": request.question, "history": [msg.model_dump() for msg in request.history]}
         if filters:
@@ -53,7 +178,11 @@ async def stream_chat(request: ChatRequest) -> StreamingResponse:
         )
         try:
             async for chunk in service.stream_response(inputs, request_id=request_id):
+                value = chunk.get("value")
+                if chunk.get("type") == "token" and isinstance(value, str):
+                    answer_chars += len(value)
                 yield _sse_event_stream(chunk)
+            _mark_usage(usage_id, status_value="completed", answer_chars=answer_chars)
             elapsed = perf_counter() - started_at
             logger.info(
                 "✅ Stream request completed | request_id=%s | elapsed_ms=%.2f",
@@ -67,6 +196,7 @@ async def stream_chat(request: ChatRequest) -> StreamingResponse:
                 request_id,
                 elapsed * 1000,
             )
+            _mark_usage(usage_id, status_value="cancelled", answer_chars=answer_chars)
             yield _sse_event_stream({"type": "cancel"})
             raise
         except Exception as exc:  # pragma: no cover - logado externamente
@@ -77,6 +207,7 @@ async def stream_chat(request: ChatRequest) -> StreamingResponse:
                 elapsed * 1000,
                 exc,
             )
+            _mark_usage(usage_id, status_value="failed", answer_chars=answer_chars)
             yield _sse_event_stream(
                 {"type": "error", "message": str(exc)}
             )
@@ -98,10 +229,18 @@ async def stream_chat(request: ChatRequest) -> StreamingResponse:
     status_code=status.HTTP_200_OK,
     summary="Obtém resposta completa do chatbot (sem streaming)",
 )
-async def query_chat(request: ChatRequest) -> ChatResponse:
+async def query_chat(
+    request: ChatRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> ChatResponse:
     """Executa o fluxo normal sem streaming."""
 
     request_id = str(uuid4())
+    usage_id = _start_usage_or_raise(
+        authorization,
+        request_id=request_id,
+        question=request.question,
+    )
     started_at = perf_counter()
     payload = {
         "question": request.question,
@@ -120,6 +259,7 @@ async def query_chat(request: ChatRequest) -> ChatResponse:
     try:
         answer = await service.invoke(payload, request_id=request_id)
     except Exception as exc:
+        _mark_usage(usage_id, status_value="failed")
         elapsed = perf_counter() - started_at
         logger.exception(
             "❌ Query request failed | request_id=%s | elapsed_ms=%.2f | error=%s",
@@ -128,6 +268,7 @@ async def query_chat(request: ChatRequest) -> ChatResponse:
             exc,
         )
         raise
+    _mark_usage(usage_id, status_value="completed", answer_chars=len(answer))
     elapsed = perf_counter() - started_at
     logger.info(
         "✅ Query request completed | request_id=%s | elapsed_ms=%.2f | answer_chars=%s",

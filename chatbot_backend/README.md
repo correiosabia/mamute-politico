@@ -89,7 +89,42 @@ Endpoints principais:
 
 - `POST /chat/chatbot/stream` – responde em streaming via Server-Sent Events (`text/event-stream`).
 - `POST /chat/chatbot/query` – retorna a resposta completa sem streaming.
+- `GET /chat/chatbot/quota` – retorna uso e limite mensal de consultas IA quando a quota está ativa.
 - `GET /chat/health` – verificação simples de saúde.
+
+## Quota mensal por tier
+
+O chatbot pode exigir JWT do Ghost Members e limitar consultas IA por mês. Por padrão, a quota fica desligada para manter compatibilidade com deployments existentes:
+
+```bash
+MAMUTE_CHATBOT_QUOTA_ENABLED=false
+MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT=0
+MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"default-product":{"qtd_termos":3,"qtd_consultas_ia_mes":50},"cidadao-mamute":{"qtd_termos":10,"qtd_consultas_ia_mes":200}}
+MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON=
+MAMUTE_CHATBOT_QUOTA_FAIL_OPEN=false
+```
+
+Quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`, as rotas `stream` e `query` passam a exigir `Authorization: Bearer <Ghost Members JWT>`. O serviço resolve o projeto pelo e-mail (`sub`) do token, descobre o slug do tier em `tiers.detalhes.ghost.slug` e aplica o limite mensal.
+
+Precedência do limite:
+
+1. `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` por slug do Ghost, se usado como override específico do chatbot.
+2. `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`, compartilhado com outros limites do app.
+3. `tiers.detalhes.qtd_consultas_ia_mes`, se existir.
+4. `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`.
+5. Sem configuração, o limite efetivo é `0`.
+
+O mesmo `MAMUTE_TIER_LIMITS_JSON` também pode controlar o limite de parlamentares monitorados na API principal com `qtd_termos`, por exemplo:
+
+```json
+{
+  "free": {"qtd_termos": 1, "qtd_consultas_ia_mes": 0},
+  "default-product": {"qtd_termos": 3, "qtd_consultas_ia_mes": 50},
+  "cidadao-mamute": {"qtd_termos": 10, "qtd_consultas_ia_mes": 200}
+}
+```
+
+O uso é gravado em `chatbot_usage` sem armazenar pergunta ou resposta bruta. Uma consulta conta a partir do momento em que é iniciada, inclusive se for cancelada, falhar ou terminar normalmente.
 
 ### Formato do streaming
 
@@ -149,4 +184,3 @@ Caso utilize LangSmith/LangChain tracing, habilite `LANGCHAIN_TRACING_V2=true` e
 - Verifique o endpoint `POST /chat/chatbot/query` com uma pergunta conhecida para validar a recuperação.
 - Monitore o banco para garantir que o índice vetorial está sendo populado corretamente.
 - Consuma `POST /chat/chatbot/stream` via curl (`curl -N`) e observe o fluxo de tokens.
-

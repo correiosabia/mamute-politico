@@ -1,4 +1,6 @@
-/** Client for Mamute Político chatbot (FastAPI); same-origin POST to `/chat/chatbot/stream` (proxy routes /chat to the chatbot). Do not use the main API `request()` helper (different base, JWT). */
+import { JWT_TOKEN_KEY } from '@/components/auth/config';
+
+/** Client for Mamute Político chatbot (FastAPI); same-origin requests to `/chat/chatbot/*` (proxy routes /chat to the chatbot). */
 
 export interface ChatMessagePayload {
   role: 'user' | 'assistant';
@@ -8,6 +10,15 @@ export interface ChatMessagePayload {
 export interface StreamChatBody {
   question: string;
   history: ChatMessagePayload[];
+}
+
+export interface ChatbotQuota {
+  enabled: boolean;
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  reset_at: string;
+  limit_reached: boolean;
 }
 
 export class ChatbotStreamError extends Error {
@@ -28,9 +39,50 @@ type SsePayload =
 
 /** Relative URL; browser resolves against the page origin. */
 export const CHATBOT_STREAM_PATH = '/chat/chatbot/stream';
+export const CHATBOT_QUOTA_PATH = '/chat/chatbot/quota';
 
 export function getChatbotStreamUrl(): string {
   return CHATBOT_STREAM_PATH;
+}
+
+function getChatbotToken(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return localStorage.getItem(JWT_TOKEN_KEY) ?? undefined;
+}
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const headers: Record<string, string> = {
+    ...(extra as Record<string, string> | undefined),
+  };
+  const token = getChatbotToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function parseErrorResponse(res: Response): Promise<string> {
+  const text = await res.text();
+  let message = text || res.statusText || `Erro ${res.status}`;
+  try {
+    const body = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    if (typeof body.detail === 'string') message = body.detail;
+    else if (Array.isArray(body.detail)) {
+      message = body.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ');
+    } else if (body.message != null) message = String(body.message);
+  } catch {
+    /* use message as text */
+  }
+  return message;
+}
+
+export async function getChatbotQuota(): Promise<ChatbotQuota> {
+  const res = await fetch(CHATBOT_QUOTA_PATH, {
+    method: 'GET',
+    headers: authHeaders({ Accept: 'application/json' }),
+  });
+  if (!res.ok) {
+    throw new ChatbotStreamError(await parseErrorResponse(res), res.status);
+  }
+  return res.json() as Promise<ChatbotQuota>;
 }
 
 export interface StreamChatOptions extends StreamChatBody {
@@ -46,27 +98,16 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 
   const res = await fetch(getChatbotStreamUrl(), {
     method: 'POST',
-    headers: {
+    headers: authHeaders({
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
-    },
+    }),
     body: JSON.stringify({ question, history }),
     signal,
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    let message = text || res.statusText || `Erro ${res.status}`;
-    try {
-      const body = JSON.parse(text) as { detail?: unknown; message?: unknown };
-      if (typeof body.detail === 'string') message = body.detail;
-      else if (Array.isArray(body.detail)) {
-        message = body.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ');
-      } else if (body.message != null) message = String(body.message);
-    } catch {
-      /* use message as text */
-    }
-    throw new ChatbotStreamError(message, res.status);
+    throw new ChatbotStreamError(await parseErrorResponse(res), res.status);
   }
 
   const reader = res.body?.getReader();

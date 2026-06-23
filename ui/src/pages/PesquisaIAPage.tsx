@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Input } from '@/components/ui/input';
@@ -7,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Bot, User, PlusCircle, Send } from 'lucide-react';
 import {
+  getChatbotQuota,
   streamChat,
   ChatbotStreamError,
   type ChatMessagePayload,
@@ -30,6 +32,7 @@ const exampleQuestions = [
 const MIN_QUESTION_LEN = 1;
 
 const PesquisaIAPage = () => {
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -49,6 +52,20 @@ const PesquisaIAPage = () => {
   const messagesRef = useRef<Message[]>(messages);
   messagesRef.current = messages;
   const urlAutoSendConsumed = useRef(false);
+  const quotaQuery = useQuery({
+    queryKey: ['chatbot-quota'],
+    queryFn: () => getChatbotQuota(),
+    retry: false,
+  });
+
+  const quota = quotaQuery.data;
+  const quotaLimitReached = Boolean(quota?.enabled && quota.limit_reached);
+  const quotaLabel =
+    quota?.enabled && typeof quota.limit === 'number'
+      ? `Consultas IA: ${quota.used}/${quota.limit}`
+      : quotaQuery.isError
+        ? 'Consultas IA indisponíveis'
+        : null;
 
   useLayoutEffect(() => {
     const n = messages.length;
@@ -70,6 +87,10 @@ const PesquisaIAPage = () => {
     if (!question) return;
     if (question.length < MIN_QUESTION_LEN) {
       toast.error(`Digite pelo menos ${MIN_QUESTION_LEN} caracteres.`);
+      return;
+    }
+    if (quotaLimitReached) {
+      toast.info('Limite mensal de consultas IA atingido para seu plano.');
       return;
     }
 
@@ -137,6 +158,7 @@ const PesquisaIAPage = () => {
       });
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       flushPending();
+      void queryClient.invalidateQueries({ queryKey: ['chatbot-quota'] });
     } catch (e) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       pending = '';
@@ -151,6 +173,7 @@ const PesquisaIAPage = () => {
           ? e.message
           : 'Falha ao contactar o assistente. Tente novamente.';
       toast.error(msg);
+      void queryClient.invalidateQueries({ queryKey: ['chatbot-quota'] });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId && m.role === 'assistant' && !m.content
@@ -159,7 +182,7 @@ const PesquisaIAPage = () => {
         )
       );
     }
-  }, []);
+  }, [queryClient, quotaLimitReached]);
 
   useEffect(() => {
     if (searchParams.get('autoSend') !== '1') {
@@ -179,7 +202,7 @@ const PesquisaIAPage = () => {
     void sendQuestion(input);
   };
 
-  const canSend = input.trim().length >= MIN_QUESTION_LEN;
+  const canSend = input.trim().length >= MIN_QUESTION_LEN && !quotaLimitReached;
 
   return (
     <div className="min-h-screen" style={{ background: 'linear-gradient(to bottom, #efeeee 0%, #efeeee 70%, #1b76ff 70%, #1b76ff 100%)' }}>
@@ -189,10 +212,17 @@ const PesquisaIAPage = () => {
         {/* Page title */}
         <div className="mb-8 flex flex-col w-full gap-[28px]">
           <h1 className="text-center md:text-left text-[36px] md:text-[48px] leading-none font-bold text-[#383838]">Pesquisa IA</h1>
-          <p className="text-center md:text-left mt-2 max-w-4xl text-[18px] font-normal leading-snug text-[#383838]">
-            Consulte dados legislativos em linguagem natural. Acesse um banco de dados com as proposições, votações e discursos.
-            Combine SQL + processamento de linguagem natural para uma abordagem híbrida.
-          </p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <p className="text-center md:text-left mt-2 max-w-4xl text-[18px] font-normal leading-snug text-[#383838]">
+              Consulte dados legislativos em linguagem natural. Acesse um banco de dados com as proposições, votações e discursos.
+              Combine SQL + processamento de linguagem natural para uma abordagem híbrida.
+            </p>
+            {quotaLabel && (
+              <span className="self-center whitespace-nowrap rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-[#383838] shadow-sm md:self-auto">
+                {quotaLabel}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[5fr_7fr]">

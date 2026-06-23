@@ -21,12 +21,14 @@ _connect_args: dict[str, str] = {}
 if _settings.database_url.startswith("postgresql"):
     _connect_args["application_name"] = _settings.application_name
 
-engine: Engine = create_engine(
-    _settings.database_url,
-    pool_pre_ping=True,
-    future=True,
-    connect_args=_connect_args or None,
-)
+_engine_kwargs: dict[str, object] = {
+    "pool_pre_ping": True,
+    "future": True,
+}
+if _connect_args:
+    _engine_kwargs["connect_args"] = _connect_args
+
+engine: Engine = create_engine(_settings.database_url, **_engine_kwargs)
 
 
 @event.listens_for(engine, "connect")

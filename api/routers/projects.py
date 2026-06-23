@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime, time, timedelta
-from typing import List, Literal, Optional
+import json
+import os
+from typing import Any, List, Literal, Mapping, Optional
 from zoneinfo import ZoneInfo
 import unicodedata
 
@@ -52,6 +54,8 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+TIER_LIMITS_ENV = "MAMUTE_TIER_LIMITS_JSON"
 
 
 class ProjectFavoriteOut(BaseModel):
@@ -387,7 +391,111 @@ def _get_project_favorite_count(db: Session, project_id: int) -> int:
     return int(db.execute(stmt).scalar_one() or 0)
 
 
+def _coerce_mapping(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, Mapping):
+            return parsed
+    return {}
+
+
+def _parse_tier_limits_env() -> Mapping[str, Any]:
+    raw = os.getenv(TIER_LIMITS_ENV, "").strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{TIER_LIMITS_ENV} não é um JSON válido.",
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{TIER_LIMITS_ENV} deve ser um objeto por slug de tier.",
+        )
+    return payload
+
+
+def _project_tier_details(project: Projetos) -> Mapping[str, Any]:
+    tier = getattr(project, "tier", None)
+    return _coerce_mapping(getattr(tier, "detalhes", None))
+
+
+def _project_tier_product_id(project: Projetos) -> str | None:
+    tier = getattr(project, "tier", None)
+    for candidate in (getattr(tier, "product_id", None), getattr(project, "cliente", None)):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _project_tier_slug(project: Projetos) -> str:
+    detalhes = _project_tier_details(project)
+    ghost = _coerce_mapping(detalhes.get("ghost"))
+    slug = ghost.get("slug")
+    if isinstance(slug, str) and slug.strip():
+        return slug.strip()
+    product_id = _project_tier_product_id(project)
+    if product_id == "free":
+        return "free"
+    return product_id or "free"
+
+
+def _coerce_non_negative_int(value: Any, *, field_name: str, slug: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Limite {field_name!r} inválido para o tier {slug!r}.",
+        ) from exc
+    if parsed < 0:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Limite {field_name!r} inválido para o tier {slug!r}.",
+        )
+    return parsed
+
+
+def _tier_limit_from_env(project: Projetos, field_name: str) -> int | None:
+    limits = _parse_tier_limits_env()
+    if not limits:
+        return None
+
+    slug = _project_tier_slug(project)
+    product_id = _project_tier_product_id(project)
+    for lookup_key in (slug, product_id):
+        if not lookup_key or lookup_key not in limits:
+            continue
+        entry = limits[lookup_key]
+        if isinstance(entry, Mapping):
+            if field_name not in entry:
+                continue
+            return _coerce_non_negative_int(
+                entry[field_name],
+                field_name=field_name,
+                slug=lookup_key,
+            )
+        if field_name == "qtd_termos":
+            return _coerce_non_negative_int(
+                entry,
+                field_name=field_name,
+                slug=lookup_key,
+            )
+    return None
+
+
 def _project_favorite_limit(project: Projetos) -> int:
+    env_limit = _tier_limit_from_env(project, "qtd_termos")
+    if env_limit is not None:
+        return env_limit
     return max(0, int(project.qtd_termos or 0))
 
 

@@ -1,7 +1,7 @@
 """Configurações carregadas a partir de variáveis de ambiente."""
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,6 +66,32 @@ class Settings(BaseSettings):
     sql_propositions_limit: int = Field(default=6, alias="SQL_PROPOSITIONS_LIMIT")
 
     rerank_top_k: int = Field(default=5, alias="RERANK_TOP_K", ge=1)
+
+    chatbot_quota_enabled: bool = Field(
+        default=False, alias="MAMUTE_CHATBOT_QUOTA_ENABLED"
+    )
+    chatbot_default_monthly_limit: int = Field(
+        default=0, alias="MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT"
+    )
+    tier_limits_json: str = Field(default="", alias="MAMUTE_TIER_LIMITS_JSON")
+    chatbot_monthly_limits_json: str = Field(
+        default="", alias="MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON"
+    )
+    chatbot_quota_fail_open: bool = Field(
+        default=False, alias="MAMUTE_CHATBOT_QUOTA_FAIL_OPEN"
+    )
+
+    ghost_base_url: Optional[str] = Field(default=None, alias="GHOST_BASE_URL")
+    prefix_url: Optional[str] = Field(default=None, alias="PREFIX_URL")
+    ghost_members_api_audience: Optional[str] = Field(
+        default=None, alias="GHOST_MEMBERS_API_AUDIENCE"
+    )
+    ghost_members_api_issuer: Optional[str] = Field(
+        default=None, alias="GHOST_MEMBERS_API_ISSUER"
+    )
+    ghost_jwks_path: str = Field(
+        default="members/.well-known/jwks.json", alias="GHOST_JWKS_PATH"
+    )
 
     tracing_enabled: bool = Field(default=False, alias="LANGCHAIN_TRACING_V2")
     tracing_project: str = Field(default="mamute-chatbot", alias="LANGCHAIN_PROJECT")

@@ -2,6 +2,7 @@
 
 from .agency import Agency
 from .authors_proposition import AuthorsProposition
+from .chatbot_usage import ChatbotUsage
 from .committee import Committee
 from .committee_attendance import CommitteeAttendance
 from .parliamentarian import Parliamentarian
@@ -21,6 +22,7 @@ from .videos_audios import VideoAudio
 __all__ = [
     "Agency",
     "AuthorsProposition",
+    "ChatbotUsage",
     "Committee",
     "CommitteeAttendance",
     "Parliamentarian",
@@ -40,4 +42,3 @@ __all__ = [
     "Tiers",
     "VideoAudio",
 ]
-

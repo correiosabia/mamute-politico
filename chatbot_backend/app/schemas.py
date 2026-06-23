@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,15 @@ class ChatResponse(BaseModel):
     answer: str
 
 
+class ChatQuotaResponse(BaseModel):
+    enabled: bool
+    limit: Optional[int] = None
+    used: int = 0
+    remaining: Optional[int] = None
+    reset_at: datetime
+    limit_reached: bool = False
+
+
 class HealthcheckResponse(BaseModel):
     status: str = "ok"
     environment: Optional[str] = None
@@ -39,6 +49,7 @@ __all__ = [
     "ChatMessage",
     "ChatFilters",
     "ChatRequest",
+    "ChatQuotaResponse",
     "ChatResponse",
     "HealthcheckResponse",
 ]
