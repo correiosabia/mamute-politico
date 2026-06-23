@@ -69,6 +69,7 @@ SQLALCHEMY_ECHO=0
 APPLICATION_NAME=MAMUTE_POLITICO_API
 GHOST_API_KEY=[[Criar uma API key nas integrações do Ghost e postar aqui]]
 GHOST_ADMIN_URL=https://mamute.voltdata.info/ghost/api/admin
+MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"default-product":{"qtd_termos":3,"qtd_consultas_ia_mes":50},"cidadao-mamute":{"qtd_termos":10,"qtd_consultas_ia_mes":200}}
 ```
 
 - `mamute-chatbot`
@@ -82,6 +83,15 @@ OPENAI_TEMPERATURE=0.2
 OPENAI_MAX_TOKENS=1024
 OPENAI_EMBEDDINGS_MODEL=text-embedding-3-large
 DATABASE_URL=postgresql://user:senha@host:porta/banco-db
+GHOST_BASE_URL=https://mamute.voltdata.info/
+GHOST_MEMBERS_API_AUDIENCE=https://mamute.voltdata.info/members/api
+GHOST_MEMBERS_API_ISSUER=https://mamute.voltdata.info/members/api
+GHOST_JWKS_PATH=members/.well-known/jwks.json
+MAMUTE_CHATBOT_QUOTA_ENABLED=false
+MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT=0
+MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"default-product":{"qtd_termos":3,"qtd_consultas_ia_mes":50},"cidadao-mamute":{"qtd_termos":10,"qtd_consultas_ia_mes":200}}
+MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON=
+MAMUTE_CHATBOT_QUOTA_FAIL_OPEN=false
 PGVECTOR_CONNECTION=postgresql+psycopg://user:senha@host:porta/banco-do-pgvector
 PGVECTOR_COLLECTION=mamute_chatbot_transcripts
 RETRIEVER_K=6
@@ -175,6 +185,57 @@ Após subir a stack, configure o Ghost para redirecionar a home para a aplicaç�
 - Guia completo: [`environments/ghost.md`](environments/ghost.md)
 - Inclui: script de redirecionamento no Code Injection e webhooks `member.*`
   para sincronizar usuarios Ghost -> projetos
+
+## Tiers do Ghost e limites do app
+
+O Ghost é a fonte de autenticação e assinatura dos membros. No Mamute, cada membro sincronizado vira um projeto em `projetos`; o plano do membro é ligado por `projetos.tier_id` à tabela local `tiers`. Para membros gratuitos, o identificador operacional é `free`; para planos pagos, comped ou gift, o identificador vem do tier do Ghost sincronizado para a instância do ambiente.
+
+A forma recomendada de controlar limites por ambiente é `MAMUTE_TIER_LIMITS_JSON`. O JSON deve ser configurado tanto na API (`mamute-api`) quanto no chatbot (`mamute-chatbot`) quando os dois serviços precisarem respeitar os mesmos tiers. As chaves devem ser slugs do Ghost, com fallback para `product_id` quando o slug não existir em `tiers.detalhes.ghost.slug`.
+
+Exemplo completo:
+
+```json
+{
+  "free": {
+    "qtd_termos": 1,
+    "qtd_consultas_ia_mes": 0,
+    "qtd_email": 0,
+    "periodicidade_email": [],
+    "orgao": []
+  },
+  "default-product": {
+    "qtd_termos": 3,
+    "qtd_consultas_ia_mes": 50,
+    "qtd_email": 1,
+    "periodicidade_email": ["week"],
+    "orgao": []
+  },
+  "cidadao-mamute": {
+    "qtd_termos": 10,
+    "qtd_consultas_ia_mes": 200,
+    "qtd_email": 1,
+    "periodicidade_email": ["week", "month"],
+    "orgao": []
+  }
+}
+```
+
+Campos de limite:
+
+| Campo | O que controla | Onde é aplicado hoje |
+|-------|----------------|----------------------|
+| `qtd_termos` | Quantidade máxima de parlamentares monitorados pelo usuário. | API principal em `/api/projects/me/favorites`; a UI mostra o uso e bloqueia novas seleções quando o limite é atingido. |
+| `qtd_consultas_ia_mes` | Quantidade mensal de consultas ao chatbot/IA. | Chatbot quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`; o uso é contado em `chatbot_usage`. |
+| `periodicidade_email` | Quais relatórios de e-mail o tier pode receber: `day`, `week` e/ou `month`. | Scripts de notificação filtram destinatários por esse campo. |
+| `qtd_email` | Quantidade de envios de e-mail prevista pelo plano. | Mantido como entitlement/metadado do tier; a elegibilidade atual do envio usa `periodicidade_email`. |
+| `orgao` | Lista de órgãos permitidos para o tier. Use `[]` para sem restrição. | Reservado para uma limitação futura por órgão; hoje não bloqueia consultas ou monitorados. |
+
+Precedência dos limites:
+
+1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
+2. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
+
+O arquivo local `mamute_scrappers/ghost_tier_entitlements.json` pode ser usado para preparar mapeamentos de tiers em uma máquina ou ambiente específico, mas não deve ser versionado. Em deploy, prefira configurar os limites por variáveis de ambiente.
 
 ## Links rápidos
 

@@ -6,6 +6,7 @@ scripts/notificacao/.env
 mamute_scrappers/scripts/notificacao/.env
 mamute_scrappers/scripts/notificacao/output/
 mamute_scrappers/.env
+mamute_scrappers/ghost_tier_entitlements.json
 api/.env
 api/.venv/
 venv/
