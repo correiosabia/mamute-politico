@@ -6,6 +6,7 @@ import type {
   RollCallVoteOut,
   SpeechesTranscriptOut,
   ProjectFavoriteOut,
+  ProjectFavoriteQuotaOut,
   AuthorsPropositionOut,
   SpeechAnalysisSummaryOut,
   SpeechAnalysisOut,
@@ -280,6 +281,10 @@ export function listMyProjectFavorites(
   if (params.offset != null) sp.set('offset', String(params.offset));
   const q = sp.toString();
   return request<ProjectFavoriteOut[]>(`/projects/me/favorites${q ? `?${q}` : ''}`);
+}
+
+export function getMyProjectFavoritesQuota(): Promise<ProjectFavoriteQuotaOut> {
+  return request<ProjectFavoriteQuotaOut>('/projects/me/favorites/quota');
 }
 
 export function addMyProjectFavorite(parliamentarianId: number): Promise<ProjectFavoriteOut> {

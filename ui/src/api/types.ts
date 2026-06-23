@@ -100,6 +100,13 @@ export interface ProjectFavoriteOut {
   updated_at: string;
 }
 
+export interface ProjectFavoriteQuotaOut {
+  limit: number;
+  used: number;
+  remaining: number;
+  limit_reached: boolean;
+}
+
 export interface DashboardStatsOut {
   propositions_this_week: number;
   attendance_avg_percent?: number | null;

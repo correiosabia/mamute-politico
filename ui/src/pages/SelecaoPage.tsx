@@ -8,6 +8,7 @@ import { SelecaoFooter } from '@/components/selecao/SelecaoFooter';
 import { CasaLegislativa, Parlamentar } from '@/types/parlamentar';
 import {
   listMyProjectFavorites,
+  getMyProjectFavoritesQuota,
   addMyProjectFavorite,
   removeMyProjectFavorite,
   getParliamentarian,
@@ -34,6 +35,11 @@ const SelecaoPage = () => {
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
     queryFn: () => listMyProjectFavorites(),
+    enabled: casaSelecionada != null,
+  });
+  const favoritesQuotaQuery = useQuery({
+    queryKey: ['project-favorites-quota', 'me'],
+    queryFn: () => getMyProjectFavoritesQuota(),
     enabled: casaSelecionada != null,
   });
 
@@ -66,11 +72,18 @@ const SelecaoPage = () => {
     mutationFn: (parlamentar: Parlamentar) => addMyProjectFavorite(Number(parlamentar.id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
+      void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 409) {
         toast.info('Este parlamentar já está nos favoritos.');
         void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
+        void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
+        return;
+      }
+      if (error instanceof ApiError && error.status === 403) {
+        toast.info(error.message);
+        void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
         return;
       }
       const msg =
@@ -83,6 +96,7 @@ const SelecaoPage = () => {
     mutationFn: (id: string) => removeMyProjectFavorite(Number(id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
+      void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
     },
     onError: (error) => {
       const msg =
@@ -161,6 +175,9 @@ const SelecaoPage = () => {
                 monitoradosLoading={monitoradosLoading}
                 monitoradosError={monitoradosError}
                 favoritosMutating={favoritosMutating}
+                monitoradosLimit={favoritesQuotaQuery.data?.limit ?? null}
+                monitoradosUsed={favoritesQuotaQuery.data?.used ?? favoriteIds.length}
+                monitoradosQuotaLoading={favoritesQuotaQuery.isLoading}
               />
             </div>
           </div>

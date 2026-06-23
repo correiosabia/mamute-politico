@@ -62,6 +62,12 @@ interface ParlamentarSelectorProps {
   monitoradosError?: string | null;
   /** Disables add/remove while a favorite mutation is in flight. */
   favoritosMutating?: boolean;
+  /** Maximum number of parliamentarians allowed by the current plan. */
+  monitoradosLimit?: number | null;
+  /** Number of parliamentarians already using the plan quota. */
+  monitoradosUsed?: number | null;
+  /** Shows a neutral quota state while the plan limit is loading. */
+  monitoradosQuotaLoading?: boolean;
 }
 
 export function ParlamentarSelector({
@@ -72,6 +78,9 @@ export function ParlamentarSelector({
   monitoradosLoading = false,
   monitoradosError = null,
   favoritosMutating = false,
+  monitoradosLimit = null,
+  monitoradosUsed = null,
+  monitoradosQuotaLoading = false,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
@@ -147,6 +156,18 @@ export function ParlamentarSelector({
     () => sortByNome(parlamentaresSelecionados),
     [parlamentaresSelecionados],
   );
+  const quotaUsed =
+    typeof monitoradosUsed === 'number' ? monitoradosUsed : parlamentaresSelecionados.length;
+  const monitoradosLimitReached =
+    typeof monitoradosLimit === 'number' &&
+    quotaUsed >= monitoradosLimit;
+  const canAddParlamentar = !favoritosMutating && !monitoradosLimitReached;
+  const quotaLabel =
+    typeof monitoradosLimit === 'number'
+      ? `${quotaUsed}/${monitoradosLimit}`
+      : monitoradosQuotaLoading
+        ? '...'
+        : `+${parlamentaresSelecionados.length}`;
 
   const partidosOptions = useMemo(() => {
     const siglas = new Set((rawList ?? []).map((p) => p.party).filter(Boolean) as string[]);
@@ -359,11 +380,13 @@ export function ParlamentarSelector({
                   <Button
                     variant="ghost"
                     size="icon"
-                    disabled={favoritosMutating}
+                    disabled={!canAddParlamentar}
                     onClick={() => onAddParlamentar(parlamentar)}
-                    className="text-accent hover:text-accent hover:bg-accent/10"
+                    title={monitoradosLimitReached ? 'Limite do plano atingido' : 'Adicionar parlamentar'}
+                    aria-label={monitoradosLimitReached ? 'Limite do plano atingido' : 'Adicionar parlamentar'}
+                    className="text-accent hover:text-accent hover:bg-accent/10 disabled:text-muted-foreground disabled:opacity-50"
                   >
-                    <PlusCircle className="text-[#09e03b]" />
+                    <PlusCircle className={monitoradosLimitReached ? 'text-muted-foreground' : 'text-[#09e03b]'} />
                   </Button>
                 </div>
               ))}
@@ -383,10 +406,12 @@ export function ParlamentarSelector({
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-[32px] leading-none font-bold text-[#090909]">Parlamentares monitorados</CardTitle>
-            <Badge variant="secondary" className="bg-transparent text-[18px] font-medium text-[#7f7c7c]">+{parlamentaresSelecionados.length}</Badge>
+            <Badge variant="secondary" className="min-w-14 justify-center bg-transparent text-[18px] font-medium text-[#7f7c7c]">{quotaLabel}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Clique no parlamentar para acessar seu dashboard completo
+            {monitoradosLimitReached
+              ? 'Limite do plano atingido.'
+              : 'Clique no parlamentar para acessar seu dashboard completo'}
           </p>
         </CardHeader>
         

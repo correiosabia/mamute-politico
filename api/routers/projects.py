@@ -72,6 +72,15 @@ class ProjectFavoriteCreate(BaseModel):
     parliamentarian_id: int
 
 
+class ProjectFavoriteQuotaOut(BaseModel):
+    """Limite de parlamentares monitorados para o projeto autenticado."""
+
+    limit: int
+    used: int
+    remaining: int
+    limit_reached: bool
+
+
 class ProjectDashboardStatsOut(BaseModel):
     """Estatísticas dos últimos 3 meses do dashboard do projeto autenticado."""
 
@@ -326,8 +335,16 @@ def _list_project_dashboard_votes(
     return [_serialize_roll_call_vote(vote) for vote in votes]
 
 
-def _ensure_active_project(db: Session, project_id: int) -> Projetos:
-    project = db.get(Projetos, project_id)
+def _ensure_active_project(
+    db: Session,
+    project_id: int,
+    *,
+    lock_for_update: bool = False,
+) -> Projetos:
+    stmt = select(Projetos).where(Projetos.id == project_id)
+    if lock_for_update:
+        stmt = stmt.with_for_update()
+    project = db.execute(stmt).scalar_one_or_none()
     if project is None or getattr(project, "deleted_at", None) is not None:
         raise HTTPException(status_code=404, detail="Projeto não encontrado.")
     return project
@@ -362,12 +379,48 @@ def _ensure_parliamentarian_exists(db: Session, parliamentarian_id: int) -> Parl
     return parliamentarian
 
 
+def _get_project_favorite_count(db: Session, project_id: int) -> int:
+    stmt = select(func.count(ProjetosParliamentarian.id)).where(
+        ProjetosParliamentarian.projeto_id == project_id,
+        ProjetosParliamentarian.deleted_at.is_(None),
+    )
+    return int(db.execute(stmt).scalar_one() or 0)
+
+
+def _project_favorite_limit(project: Projetos) -> int:
+    return max(0, int(project.qtd_termos or 0))
+
+
+def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavoriteQuotaOut:
+    limit = _project_favorite_limit(project)
+    used = _get_project_favorite_count(db, int(project.id))
+    remaining = max(0, limit - used)
+    return ProjectFavoriteQuotaOut(
+        limit=limit,
+        used=used,
+        remaining=remaining,
+        limit_reached=used >= limit,
+    )
+
+
+def _ensure_project_favorite_quota_available(db: Session, project: Projetos) -> None:
+    quota = _build_project_favorite_quota(db, project)
+    if quota.limit_reached:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Limite de parlamentares monitorados atingido para seu plano "
+                f"({quota.used}/{quota.limit})."
+            ),
+        )
+
+
 def _create_project_favorite(
     db: Session,
     project_id: int,
     parliamentarian_id: int,
 ) -> ProjetosParliamentarian:
-    _ensure_active_project(db, project_id)
+    project = _ensure_active_project(db, project_id, lock_for_update=True)
     _ensure_parliamentarian_exists(db, parliamentarian_id)
 
     existing_stmt = select(ProjetosParliamentarian).where(
@@ -380,6 +433,8 @@ def _create_project_favorite(
             status_code=status.HTTP_409_CONFLICT,
             detail="Parlamentar já está favoritado neste projeto.",
         )
+
+    _ensure_project_favorite_quota_available(db, project)
 
     favorite = ProjetosParliamentarian(
         projeto_id=project_id,
@@ -466,6 +521,20 @@ def list_my_project_favorites(
     stmt = stmt.offset(offset).limit(limit)
     favorites = db.execute(stmt)
     return favorites.scalars().all()
+
+
+@router.get(
+    "/me/favorites/quota",
+    response_model=ProjectFavoriteQuotaOut,
+    summary="Retorna limite de favoritos do projeto autenticado",
+)
+def get_my_project_favorites_quota(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ProjectFavoriteQuotaOut:
+    """Retorna limite, uso e saldo de parlamentares monitorados do projeto."""
+    project = _get_project_from_token_email(request, db)
+    return _build_project_favorite_quota(db, project)
 
 
 @router.post(
