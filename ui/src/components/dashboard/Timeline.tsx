@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import iconProjeto from '@/assets/icon-timeline-projeto.svg';
 import iconVotacaoAprovado from '@/assets/icon-timeline-votacao-aprovado.svg';
 import iconVotacaoRejeitado from '@/assets/icon-timeline-votacao-rejeitado.svg';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
 
 interface TimelineItem {
   id: string;
@@ -179,29 +180,30 @@ export function Timeline({
           Nenhum item na linha do tempo.
         </div>
       ) : (
-        timelineItems.map((item) => (
-          <div
-            key={item.id}
-            role={item.link ? 'link' : undefined}
-            tabIndex={item.link ? 0 : -1}
-            onClick={() => {
-              if (!item.link) return;
-              window.open(item.link, '_blank', 'noopener,noreferrer');
-            }}
-            onKeyDown={(e) => {
-              if (!item.link) return;
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                window.open(item.link, '_blank', 'noopener,noreferrer');
-              }
-            }}
-            className={[
-              'flex items-start gap-5 rounded-[28px] bg-white px-6 py-[22px] shadow-[0_4px_4px_rgba(0,0,0,0.25)]',
-              item.link
-                ? 'cursor-pointer transition-colors hover:bg-[#f9f9f9] focus:outline-none focus:ring-2 focus:ring-[#1b76ff] focus:ring-offset-2'
-                : 'cursor-default',
-            ].join(' ')}
-          >
+        timelineItems.map((item) => {
+          const safeLink = getSafeExternalUrl(item.link);
+          return (
+            <div
+              key={item.id}
+              role={safeLink ? 'link' : undefined}
+              tabIndex={safeLink ? 0 : -1}
+              onClick={() => {
+                openSafeExternalUrl(safeLink);
+              }}
+              onKeyDown={(e) => {
+                if (!safeLink) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openSafeExternalUrl(safeLink);
+                }
+              }}
+              className={[
+                'flex items-start gap-5 rounded-[28px] bg-white px-6 py-[22px] shadow-[0_4px_4px_rgba(0,0,0,0.25)]',
+                safeLink
+                  ? 'cursor-pointer transition-colors hover:bg-[#f9f9f9] focus:outline-none focus:ring-2 focus:ring-[#1b76ff] focus:ring-offset-2'
+                  : 'cursor-default',
+              ].join(' ')}
+            >
             {/* Icon */}
             <div className="shrink-0 flex items-start pt-0.5">
               <img src={getItemIcon(item)} alt="" className="w-[38px] h-[42px] object-contain" />
@@ -239,8 +241,9 @@ export function Timeline({
                 </span>
               </div>
             </div>
-          </div>
-        ))
+            </div>
+          );
+        })
       )}
     </div>
   );

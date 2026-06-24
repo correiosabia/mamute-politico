@@ -3,6 +3,7 @@ import { listPropositions, listPropositionsByParliamentarian } from '@/api/endpo
 import { mapPropositionOutToProposicao } from '@/api/mappers';
 import type { PropositionOut } from '@/api/types';
 import { getProposicaoSituacaoTextClass } from '@/lib/proposicaoSituacao';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
 import { Loader2 } from 'lucide-react';
 
 interface ProposicoesListProps {
@@ -71,60 +72,62 @@ export function ProposicoesList({
 
   return (
     <div className="space-y-[22px]">
-      {proposicoes.map((proposicao) => (
-        <div
-          key={proposicao.id}
-          role={proposicao.link ? 'link' : undefined}
-          tabIndex={proposicao.link ? 0 : -1}
-          onClick={() => {
-            if (!proposicao.link) return;
-            window.open(proposicao.link, '_blank', 'noopener,noreferrer');
-          }}
-          onKeyDown={(e) => {
-            if (!proposicao.link) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              window.open(proposicao.link, '_blank', 'noopener,noreferrer');
-            }
-          }}
-          className={[
-            'rounded-[28px] bg-white px-7 py-[22px] shadow-[0_4px_4px_rgba(0,0,0,0.25)]',
-            proposicao.link
-              ? 'cursor-pointer hover:bg-[#f9f9f9] transition-colors focus:outline-none focus:ring-2 focus:ring-[#1b76ff] focus:ring-offset-2'
-              : 'cursor-default',
-          ].join(' ')}
-        >
-          {/* Row 1: bill + badge + status */}
-          <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
-            <span className="min-w-0 truncate text-[18px] font-semibold leading-none text-[#383838]">
-              {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
-            </span>
-            <span className="shrink-0 rounded-full px-3 py-0.5 text-[11px] font-bold text-white bg-[#1b76ff]">
-              PROJETO
-            </span>
-            <span
-              className={`basis-full text-[11px] font-semibold truncate md:basis-auto ${getProposicaoSituacaoTextClass(proposicao.situacao)}`}
-            >
-              {toTitleCase(proposicao.situacao)}
-            </span>
-          </div>
+      {proposicoes.map((proposicao) => {
+        const safeLink = getSafeExternalUrl(proposicao.link);
+        return (
+          <div
+            key={proposicao.id}
+            role={safeLink ? 'link' : undefined}
+            tabIndex={safeLink ? 0 : -1}
+            onClick={() => {
+              openSafeExternalUrl(safeLink);
+            }}
+            onKeyDown={(e) => {
+              if (!safeLink) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openSafeExternalUrl(safeLink);
+              }
+            }}
+            className={[
+              'rounded-[28px] bg-white px-7 py-[22px] shadow-[0_4px_4px_rgba(0,0,0,0.25)]',
+              safeLink
+                ? 'cursor-pointer hover:bg-[#f9f9f9] transition-colors focus:outline-none focus:ring-2 focus:ring-[#1b76ff] focus:ring-offset-2'
+                : 'cursor-default',
+            ].join(' ')}
+          >
+            {/* Row 1: bill + badge + status */}
+            <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
+              <span className="min-w-0 truncate text-[18px] font-semibold leading-none text-[#383838]">
+                {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
+              </span>
+              <span className="shrink-0 rounded-full px-3 py-0.5 text-[11px] font-bold text-white bg-[#1b76ff]">
+                PROJETO
+              </span>
+              <span
+                className={`basis-full text-[11px] font-semibold truncate md:basis-auto ${getProposicaoSituacaoTextClass(proposicao.situacao)}`}
+              >
+                {toTitleCase(proposicao.situacao)}
+              </span>
+            </div>
 
-          {/* Description */}
-          <p className="text-[11px] text-[#383838] line-clamp-3 mb-2 leading-snug">
-            {proposicao.ementa}
-          </p>
+            {/* Description */}
+            <p className="text-[11px] text-[#383838] line-clamp-3 mb-2 leading-snug">
+              {proposicao.ementa}
+            </p>
 
-          {/* Date + Theme */}
-          <div className="flex flex-col min-w-0">
-            {proposicao.tema && proposicao.tema !== '—' && (
-              <span className="min-w-0 truncate text-[11px] font-semibold text-[#383838]">{proposicao.tema}</span>
-            )}
-            <span className="text-[11px] font-semibold text-[#383838]">
-              {formatDate(proposicao.dataApresentacao)}
-            </span>
+            {/* Date + Theme */}
+            <div className="flex flex-col min-w-0">
+              {proposicao.tema && proposicao.tema !== '—' && (
+                <span className="min-w-0 truncate text-[11px] font-semibold text-[#383838]">{proposicao.tema}</span>
+              )}
+              <span className="text-[11px] font-semibold text-[#383838]">
+                {formatDate(proposicao.dataApresentacao)}
+              </span>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {proposicoes.length === 0 && (
         <div className="text-center py-6 text-[#383838]/60 text-sm">
           Nenhuma proposição encontrada.

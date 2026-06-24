@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
 import {
   ArrowUpDown,
   Ban,
@@ -290,51 +291,53 @@ export function VotacoesTable({ limit = 10, parliamentarianId }: VotacoesTablePr
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {votacoes.map((votacao) => (
-                  <TableRow
-                    key={votacao.id}
-                    role={votacao.proposicaoLink ? 'link' : undefined}
-                    tabIndex={votacao.proposicaoLink ? 0 : -1}
-                    onClick={() => {
-                      if (!votacao.proposicaoLink) return;
-                      window.open(votacao.proposicaoLink, '_blank', 'noopener,noreferrer');
-                    }}
-                    onKeyDown={(e) => {
-                      if (!votacao.proposicaoLink) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        window.open(votacao.proposicaoLink, '_blank', 'noopener,noreferrer');
-                      }
-                    }}
-                    className={[
-                      'hover:bg-muted/50',
-                      votacao.proposicaoLink
-                        ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
-                        : 'cursor-default',
-                    ].join(' ')}
-                  >
-                    <TableCell className="font-medium text-sm max-w-[200px] truncate" title={votacao.proposicao}>
-                      {votacao.proposicao}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {votacao.data ? formatDateOnlyLabel(votacao.data) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 whitespace-nowrap">
-                        {getVotoIcon(votacao.voto)}
-                        <Badge
-                          variant={getVotoBadge(votacao.voto) as 'success' | 'destructive' | 'warning' | 'secondary'}
-                          className="whitespace-nowrap text-[10px]"
-                        >
-                          {votacao.voto}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground">{votacao.descricao || '—'}</span>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {votacoes.map((votacao) => {
+                  const safeLink = getSafeExternalUrl(votacao.proposicaoLink);
+                  return (
+                    <TableRow
+                      key={votacao.id}
+                      role={safeLink ? 'link' : undefined}
+                      tabIndex={safeLink ? 0 : -1}
+                      onClick={() => {
+                        openSafeExternalUrl(safeLink);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!safeLink) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openSafeExternalUrl(safeLink);
+                        }
+                      }}
+                      className={[
+                        'hover:bg-muted/50',
+                        safeLink
+                          ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
+                          : 'cursor-default',
+                      ].join(' ')}
+                    >
+                      <TableCell className="font-medium text-sm max-w-[200px] truncate" title={votacao.proposicao}>
+                        {votacao.proposicao}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {votacao.data ? formatDateOnlyLabel(votacao.data) : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          {getVotoIcon(votacao.voto)}
+                          <Badge
+                            variant={getVotoBadge(votacao.voto) as 'success' | 'destructive' | 'warning' | 'secondary'}
+                            className="whitespace-nowrap text-[10px]"
+                          >
+                            {votacao.voto}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">{votacao.descricao || '—'}</span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             {votacoes.length === 0 && (

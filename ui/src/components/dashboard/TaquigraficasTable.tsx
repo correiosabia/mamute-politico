@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
 import { ArrowUpDown, Filter, Loader2, X } from 'lucide-react';
 
 interface TaquigraficasTableProps {
@@ -309,61 +310,63 @@ export function TaquigraficasTable({ limit = 20, parliamentarianId }: Taquigrafi
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(speeches ?? []).map((speech) => (
-                  <TableRow
-                    key={speech.id}
-                    role={speech.speech_link ? 'link' : undefined}
-                    tabIndex={speech.speech_link ? 0 : -1}
-                    onClick={() => {
-                      if (!speech.speech_link) return;
-                      window.open(speech.speech_link, '_blank', 'noopener,noreferrer');
-                    }}
-                    onKeyDown={(e) => {
-                      if (!speech.speech_link) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        window.open(speech.speech_link, '_blank', 'noopener,noreferrer');
-                      }
-                    }}
-                    className={[
-                      'hover:bg-muted/50',
-                      speech.speech_link
-                        ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
-                        : 'cursor-default',
-                    ].join(' ')}
-                  >
-                    <TableCell className="text-sm text-muted-foreground">
-                      {speech.date ? formatDateOnlyLabel(speech.date) : '—'}
-                    </TableCell>
-                    {/* <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell> */}
-                    <TableCell className="text-sm">{speech.type ?? '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[360px]">
-                      <span className="block line-clamp-3">
-                        {speech.summary ?? speech.speech_text ?? '—'}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {analysisQueries.some((q) => q.isLoading) ? (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Carregando...</span>
-                        </div>
-                      ) : analysisBySpeechId.get(speech.id) ? (
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          {(analysisBySpeechId.get(speech.id)?.keywords[0]?.term ??
-                            analysisBySpeechId.get(speech.id)?.keywords[0]?.keyword) && (
-                            <Badge variant="info" className="whitespace-nowrap text-[10px]">
-                              {(analysisBySpeechId.get(speech.id)?.keywords[0]?.term ??
-                                analysisBySpeechId.get(speech.id)?.keywords[0]?.keyword) as string}
-                            </Badge>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Sem análise</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {(speeches ?? []).map((speech) => {
+                  const safeLink = getSafeExternalUrl(speech.speech_link);
+                  return (
+                    <TableRow
+                      key={speech.id}
+                      role={safeLink ? 'link' : undefined}
+                      tabIndex={safeLink ? 0 : -1}
+                      onClick={() => {
+                        openSafeExternalUrl(safeLink);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!safeLink) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openSafeExternalUrl(safeLink);
+                        }
+                      }}
+                      className={[
+                        'hover:bg-muted/50',
+                        safeLink
+                          ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
+                          : 'cursor-default',
+                      ].join(' ')}
+                    >
+                      <TableCell className="text-sm text-muted-foreground">
+                        {speech.date ? formatDateOnlyLabel(speech.date) : '—'}
+                      </TableCell>
+                      {/* <TableCell className="text-sm">{speech.session_number ?? '—'}</TableCell> */}
+                      <TableCell className="text-sm">{speech.type ?? '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[360px]">
+                        <span className="block line-clamp-3">
+                          {speech.summary ?? speech.speech_text ?? '—'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {analysisQueries.some((q) => q.isLoading) ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Carregando...</span>
+                          </div>
+                        ) : analysisBySpeechId.get(speech.id) ? (
+                          <div className="flex items-center gap-1 whitespace-nowrap">
+                            {(analysisBySpeechId.get(speech.id)?.keywords[0]?.term ??
+                              analysisBySpeechId.get(speech.id)?.keywords[0]?.keyword) && (
+                              <Badge variant="info" className="whitespace-nowrap text-[10px]">
+                                {(analysisBySpeechId.get(speech.id)?.keywords[0]?.term ??
+                                  analysisBySpeechId.get(speech.id)?.keywords[0]?.keyword) as string}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Sem análise</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             {(speeches ?? []).length === 0 && (
