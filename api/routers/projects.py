@@ -376,6 +376,17 @@ def _get_project_from_token_email(request: Request, db: Session) -> Projetos:
     return project
 
 
+def _get_project_from_token_email_for_path(
+    request: Request,
+    db: Session,
+    project_id: int,
+) -> Projetos:
+    project = _get_project_from_token_email(request, db)
+    if int(project.id) != int(project_id):
+        raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+    return project
+
+
 def _ensure_parliamentarian_exists(db: Session, parliamentarian_id: int) -> Parliamentarian:
     parliamentarian = db.get(Parliamentarian, parliamentarian_id)
     if parliamentarian is None:
@@ -713,6 +724,7 @@ def get_my_dashboard_activity(
     summary="Lista favoritos de um projeto",
 )
 def list_project_favorites(
+    request: Request,
     project_id: int,
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=1000),
@@ -743,9 +755,9 @@ def list_project_favorites(
     ),
 ) -> List[ProjetosParliamentarian]:
     """Retorna os parlamentares marcados como favoritos por um projeto específico."""
-    _ensure_active_project(db, project_id)
+    project = _get_project_from_token_email_for_path(request, db, project_id)
 
-    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project_id)
+    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project.id)
     if created_from is not None:
         stmt = stmt.where(ProjetosParliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -774,12 +786,14 @@ def list_project_favorites(
     summary="Adiciona um parlamentar aos favoritos do projeto",
 )
 def add_project_favorite(
+    request: Request,
     project_id: int,
     payload: ProjectFavoriteCreate,
     db: Session = Depends(get_db),
 ) -> ProjetosParliamentarian:
     """Cria o vínculo de favorito entre um projeto e um parlamentar."""
-    return _create_project_favorite(db, project_id, payload.parliamentarian_id)
+    project = _get_project_from_token_email_for_path(request, db, project_id)
+    return _create_project_favorite(db, project.id, payload.parliamentarian_id)
 
 
 @router.delete(
@@ -788,12 +802,14 @@ def add_project_favorite(
     summary="Remove um parlamentar dos favoritos do projeto",
 )
 def remove_project_favorite(
+    request: Request,
     project_id: int,
     parliamentarian_id: int,
     db: Session = Depends(get_db),
 ) -> Response:
     """Remove o vínculo de favorito entre um projeto e um parlamentar."""
-    _delete_project_favorite(db, project_id, parliamentarian_id)
+    project = _get_project_from_token_email_for_path(request, db, project_id)
+    _delete_project_favorite(db, project.id, parliamentarian_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
