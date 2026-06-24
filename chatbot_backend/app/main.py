@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+import logging
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -14,6 +15,8 @@ from .core.database import engine
 from .core.config import get_settings
 from .routers import chat
 from .schemas import HealthcheckResponse
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -68,13 +71,14 @@ def create_app() -> FastAPI:
                     vector_engine.dispose()
 
         except SQLAlchemyError as exc:
+            logger.exception("Chatbot healthcheck database connectivity failed")
             raise HTTPException(
                 status_code=503,
                 detail={
                     "status": "error",
                     "environment": settings.environment,
                     "databases": db_status,
-                    "reason": str(exc),
+                    "reason": "Falha ao verificar conectividade dos bancos.",
                 },
             ) from exc
 
