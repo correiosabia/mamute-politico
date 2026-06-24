@@ -54,6 +54,14 @@ def _normalize_connection_url(connection: str) -> str:
     return url
 
 
+def _safe_connection_display(connection: str) -> str:
+    try:
+        url = make_url(_normalize_connection_url(connection))
+    except ArgumentError:
+        return "<PGVECTOR_CONNECTION inválido>"
+    return url.render_as_string(hide_password=True)
+
+
 def _create_engine(connection: str, application_name: str) -> Engine:
     normalized_connection = _normalize_connection_url(connection)
     try:
@@ -225,7 +233,8 @@ def run(force_dimension: Optional[int] = None, reset: bool = False) -> None:
         print("[debug] Nenhum arquivo .env encontrado nas rotas padrão.")
 
     config = InitCollectionConfig()
-    print("[debug] PGVECTOR_CONNECTION lido:", config.pgvector_connection)
+    safe_connection = _safe_connection_display(config.pgvector_connection)
+    print("[debug] PGVECTOR_CONNECTION lido:", safe_connection)
 
     engine = _create_engine(config.pgvector_connection, config.application_name)
 
@@ -250,7 +259,7 @@ def run(force_dimension: Optional[int] = None, reset: bool = False) -> None:
     _ensure_collection(engine, config.pgvector_collection_name)
 
     print("Coleção vetorial pronta.")
-    print(f"- Connection string: {config.pgvector_connection}")
+    print(f"- Connection string: {safe_connection}")
     print(f"- Collection name: {config.pgvector_collection_name}")
     print(f"- Dimensão do embedding: {target_dimension}")
 
