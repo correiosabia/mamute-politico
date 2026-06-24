@@ -15,6 +15,7 @@ class StubChatbotService:
     def __init__(self) -> None:
         self.invoke_calls = 0
         self.stream_calls = 0
+        self.last_inputs: dict[str, Any] | None = None
 
     async def invoke(
         self,
@@ -22,6 +23,7 @@ class StubChatbotService:
         request_id: str | None = None,
     ) -> str:
         self.invoke_calls += 1
+        self.last_inputs = inputs
         return "resposta autenticada"
 
     async def stream_response(
@@ -92,3 +94,94 @@ def test_chatbot_query_accepts_valid_token_when_quota_is_disabled(
     assert response.status_code == 200
     assert response.json() == {"answer": "resposta autenticada"}
     assert service.invoke_calls == 1
+
+
+def test_chatbot_query_accepts_bounded_history_when_quota_is_disabled(
+    chatbot_client: tuple[TestClient, StubChatbotService],
+) -> None:
+    client, service = chatbot_client
+
+    response = client.post(
+        "/chat/chatbot/query",
+        headers={"Authorization": "Bearer valid-token"},
+        json={
+            "question": "Como foi a sessão?",
+            "history": [
+                {"role": "user", "content": "Oi"},
+                {"role": "assistant", "content": "Olá, como posso ajudar?"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.invoke_calls == 1
+    assert service.last_inputs is not None
+    assert len(service.last_inputs["history"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("path", "service_call_attr"),
+    [
+        ("/chat/chatbot/query", "invoke_calls"),
+        ("/chat/chatbot/stream", "stream_calls"),
+    ],
+)
+def test_chatbot_model_routes_reject_overlong_question_before_service(
+    chatbot_client: tuple[TestClient, StubChatbotService],
+    path: str,
+    service_call_attr: str,
+) -> None:
+    client, service = chatbot_client
+
+    response = client.post(
+        path,
+        headers={"Authorization": "Bearer valid-token"},
+        json={"question": "x" * 2001},
+    )
+
+    assert response.status_code == 422
+    assert getattr(service, service_call_attr) == 0
+
+
+def test_chatbot_query_rejects_too_many_history_messages_before_service(
+    chatbot_client: tuple[TestClient, StubChatbotService],
+) -> None:
+    client, service = chatbot_client
+
+    response = client.post(
+        "/chat/chatbot/query",
+        headers={"Authorization": "Bearer valid-token"},
+        json={
+            "question": "Como foi a sessão?",
+            "history": [
+                {"role": "user", "content": f"mensagem {index}"}
+                for index in range(21)
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert service.invoke_calls == 0
+
+
+def test_chatbot_query_rejects_large_total_context_before_service(
+    chatbot_client: tuple[TestClient, StubChatbotService],
+) -> None:
+    client, service = chatbot_client
+
+    response = client.post(
+        "/chat/chatbot/query",
+        headers={"Authorization": "Bearer valid-token"},
+        json={
+            "question": "q" * 1000,
+            "history": [
+                {"role": "user", "content": "h" * 1900},
+                {"role": "assistant", "content": "h" * 1900},
+                {"role": "user", "content": "h" * 1900},
+                {"role": "assistant", "content": "h" * 1900},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert service.invoke_calls == 0

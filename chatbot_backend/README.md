@@ -129,6 +129,17 @@ O mesmo `MAMUTE_TIER_LIMITS_JSON` também pode controlar o limite de parlamentar
 
 O uso é gravado em `chatbot_usage` sem armazenar pergunta ou resposta bruta. Uma consulta conta a partir do momento em que é iniciada, inclusive se for cancelada, falhar ou terminar normalmente.
 
+## Limites de payload
+
+Antes de iniciar SQL, busca vetorial ou chamada ao LLM, o backend valida:
+
+- pergunta com no máximo 2.000 caracteres;
+- histórico com no máximo 20 mensagens;
+- cada mensagem de histórico com no máximo 2.000 caracteres;
+- soma de pergunta e histórico com no máximo 8.000 caracteres.
+
+Payloads acima desses limites retornam `422` e não consomem cota.
+
 ### Formato do streaming
 
 Cada evento é retornado no padrão SSE, por exemplo:

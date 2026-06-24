@@ -5,12 +5,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+MAX_CHAT_QUESTION_CHARS = 2000
+MAX_CHAT_HISTORY_MESSAGES = 20
+MAX_CHAT_HISTORY_MESSAGE_CHARS = 2000
+MAX_CHAT_REQUEST_CHARS = 8000
 
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., min_length=1, max_length=MAX_CHAT_HISTORY_MESSAGE_CHARS)
 
 
 class ChatFilters(BaseModel):
@@ -21,9 +27,23 @@ class ChatFilters(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., min_length=3)
-    history: List[ChatMessage] = Field(default_factory=list)
+    question: str = Field(..., min_length=3, max_length=MAX_CHAT_QUESTION_CHARS)
+    history: List[ChatMessage] = Field(
+        default_factory=list,
+        max_length=MAX_CHAT_HISTORY_MESSAGES,
+    )
     filters: Optional[ChatFilters] = None
+
+    @model_validator(mode="after")
+    def validate_total_context_size(self) -> "ChatRequest":
+        total_chars = len(self.question or "") + sum(
+            len(message.content or "") for message in self.history
+        )
+        if total_chars > MAX_CHAT_REQUEST_CHARS:
+            raise ValueError(
+                f"question plus history must have at most {MAX_CHAT_REQUEST_CHARS} characters"
+            )
+        return self
 
 
 class ChatResponse(BaseModel):
