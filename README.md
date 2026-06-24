@@ -225,7 +225,7 @@ Campos de limite:
 | Campo | O que controla | Onde é aplicado hoje |
 |-------|----------------|----------------------|
 | `qtd_termos` | Quantidade máxima de parlamentares monitorados pelo usuário. | API principal em `/api/projects/me/favorites`; a UI mostra o uso e bloqueia novas seleções quando o limite é atingido. |
-| `qtd_consultas_ia_mes` | Quantidade mensal de consultas ao chatbot/IA. | Chatbot quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`; o uso é contado em `chatbot_usage`. |
+| `qtd_consultas_ia_mes` | Quantidade mensal de consultas ao chatbot/IA. | Chatbot quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`; as rotas de modelo continuam exigindo JWT mesmo com quota desligada. O uso é contado em `chatbot_usage`. |
 | `periodicidade_email` | Quais relatórios de e-mail o tier pode receber: `day`, `week` e/ou `month`. | Scripts de notificação filtram destinatários por esse campo. |
 | `qtd_email` | Quantidade de envios de e-mail prevista pelo plano. | Mantido como entitlement/metadado do tier; a elegibilidade atual do envio usa `periodicidade_email`. |
 | `orgao` | Lista de órgãos permitidos para o tier. Use `[]` para sem restrição. | Reservado para uma limitação futura por órgão; hoje não bloqueia consultas ou monitorados. |
@@ -234,6 +234,8 @@ Precedência dos limites:
 
 1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
 2. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
+
+`MAMUTE_CHATBOT_QUOTA_ENABLED=false` desliga apenas a reserva e gravação mensal de uso; não transforma `/chat/chatbot/query` ou `/chat/chatbot/stream` em endpoints públicos.
 
 O arquivo local `mamute_scrappers/ghost_tier_entitlements.json` pode ser usado para preparar mapeamentos de tiers em uma máquina ou ambiente específico, mas não deve ser versionado. Em deploy, prefira configurar os limites por variáveis de ambiente.
 
