@@ -34,6 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getProposicaoSituacaoBadgeVariant } from '@/lib/proposicaoSituacao';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
 import { ArrowUpDown, Filter, Loader2, X } from 'lucide-react';
 
 interface ProposicoesTableProps {
@@ -352,60 +353,62 @@ export function ProposicoesTable({ limit = 10, parliamentarianId }: ProposicoesT
               </TableRow>
             </TableHeader>
             <TableBody>
-              {proposicoes.map((proposicao) => (
-                <TableRow
-                  key={proposicao.id}
-                  role={proposicao.link ? 'link' : undefined}
-                  tabIndex={proposicao.link ? 0 : -1}
-                  onClick={() => {
-                    if (!proposicao.link) return;
-                    window.open(proposicao.link, '_blank', 'noopener,noreferrer');
-                  }}
-                  onKeyDown={(e) => {
-                    if (!proposicao.link) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      window.open(proposicao.link, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                  className={[
-                    'hover:bg-muted/50',
-                    proposicao.link ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2' : 'cursor-default',
-                  ].join(' ')}
-                >
-                  <TableCell className="text-sm text-muted-foreground">
-                    {proposicao.dataApresentacao
-                      ? formatDateOnlyLabel(proposicao.dataApresentacao)
-                      : '—'}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
-                  </TableCell>
-                  <TableCell className="max-w-[300px] text-sm text-muted-foreground">
-                    <span className="block line-clamp-3">
-                      {proposicao.ementa}
-                    </span>
-                  </TableCell>
-                  <TableCell className="max-w-[210px]">
-                    <Badge
-                      variant="secondary"
-                      className="max-w-[190px] overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
-                      title={proposicao.tema !== '—' ? proposicao.tema : undefined}
-                    >
-                      {proposicao.tema}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="w-[220px] min-w-[220px] max-w-[220px]">
-                    <Badge
-                      variant={getProposicaoSituacaoBadgeVariant(proposicao.situacao)}
-                      className="max-w-full min-w-0 text-[10px]"
-                      title={proposicao.situacao !== '—' ? proposicao.situacao : undefined}
-                    >
-                      <span className="min-w-0 truncate">{proposicao.situacao}</span>
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {proposicoes.map((proposicao) => {
+                const safeLink = getSafeExternalUrl(proposicao.link);
+                return (
+                  <TableRow
+                    key={proposicao.id}
+                    role={safeLink ? 'link' : undefined}
+                    tabIndex={safeLink ? 0 : -1}
+                    onClick={() => {
+                      openSafeExternalUrl(safeLink);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!safeLink) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openSafeExternalUrl(safeLink);
+                      }
+                    }}
+                    className={[
+                      'hover:bg-muted/50',
+                      safeLink ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2' : 'cursor-default',
+                    ].join(' ')}
+                  >
+                    <TableCell className="text-sm text-muted-foreground">
+                      {proposicao.dataApresentacao
+                        ? formatDateOnlyLabel(proposicao.dataApresentacao)
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {proposicao.tipo} {proposicao.numero}/{proposicao.ano}
+                    </TableCell>
+                    <TableCell className="max-w-[300px] text-sm text-muted-foreground">
+                      <span className="block line-clamp-3">
+                        {proposicao.ementa}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[210px]">
+                      <Badge
+                        variant="secondary"
+                        className="max-w-[190px] overflow-hidden text-ellipsis whitespace-nowrap text-[10px]"
+                        title={proposicao.tema !== '—' ? proposicao.tema : undefined}
+                      >
+                        {proposicao.tema}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="w-[220px] min-w-[220px] max-w-[220px]">
+                      <Badge
+                        variant={getProposicaoSituacaoBadgeVariant(proposicao.situacao)}
+                        className="max-w-full min-w-0 text-[10px]"
+                        title={proposicao.situacao !== '—' ? proposicao.situacao : undefined}
+                      >
+                        <span className="min-w-0 truncate">{proposicao.situacao}</span>
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           {proposicoes.length === 0 && (

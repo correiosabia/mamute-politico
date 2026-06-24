@@ -75,6 +75,7 @@ _configure_sqlalchemy_logging(_SQL_LOG_LEVEL)
 
 BASE_URL = "https://www25.senado.leg.br/web/atividade/pronunciamentos/-/p/parlamentar"
 BASE_SITE = "https://www25.senado.leg.br"
+BASE_SITE_HOST = "www25.senado.leg.br"
 SENADO_MATERIA_ENDPOINT = "https://legis.senado.leg.br/dadosabertos/materia"
 
 DEFAULT_HEADERS = {
@@ -575,6 +576,19 @@ def _extract_materia_code(url: Optional[str]) -> Optional[int]:
         return None
 
 
+def _resolve_senado_site_url(href: Optional[str]) -> Optional[str]:
+    if not href:
+        return None
+
+    absolute = urljoin(BASE_SITE, href.strip())
+    parsed = urlparse(absolute)
+    host = parsed.hostname.lower() if parsed.hostname else None
+    if parsed.scheme != "https" or host != BASE_SITE_HOST:
+        logger.warning("Ignorando link fora do site do Senado: %s", absolute)
+        return None
+    return absolute
+
+
 def _build_soup(response: requests.Response) -> BeautifulSoup:
     return BeautifulSoup(response.text, "html.parser")
 
@@ -621,7 +635,7 @@ def _parse_list_row(tr: Any) -> Optional[SpeechPayload]:
         return None
 
     link_tag = cells[0].find("a")
-    link = urljoin(BASE_SITE, link_tag["href"]) if link_tag and link_tag.get("href") else None
+    link = _resolve_senado_site_url(link_tag.get("href") if link_tag else None)
     if link is None:
         return None
 
@@ -671,7 +685,7 @@ def _extract_publication(soup: BeautifulSoup) -> tuple[Optional[str], Optional[s
         return None, None
     text = _normalize_text(dd.get_text(" ", strip=True))
     link_tag = dd.find("a")
-    link = urljoin(BASE_SITE, link_tag["href"]) if link_tag and link_tag.get("href") else None
+    link = _resolve_senado_site_url(link_tag.get("href") if link_tag else None)
     return text, link
 
 
@@ -699,7 +713,7 @@ def _extract_referenced_propositions(soup: BeautifulSoup) -> List[int]:
     codes: List[int] = []
     for anchor in dd.find_all("a"):
         href = anchor.get("href")
-        absolute = urljoin(BASE_SITE, href) if href else None
+        absolute = _resolve_senado_site_url(href)
         code = _extract_materia_code(absolute)
         if code is not None and code not in codes:
             codes.append(code)

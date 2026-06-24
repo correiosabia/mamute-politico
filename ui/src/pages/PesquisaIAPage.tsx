@@ -194,9 +194,10 @@ const PesquisaIAPage = () => {
     if (urlAutoSendConsumed.current) return;
 
     urlAutoSendConsumed.current = true;
+    setInput(pergunta);
     setSearchParams({}, { replace: true });
-    void sendQuestion(pergunta);
-  }, [searchParams, setSearchParams, sendQuestion]);
+    queueMicrotask(() => messageInputRef.current?.focus());
+  }, [searchParams, setSearchParams]);
 
   const handleSend = () => {
     void sendQuestion(input);
