@@ -60,11 +60,11 @@ def _start_usage_or_raise(
     request_id: str,
     question: str,
 ) -> int | None:
+    token_email = _token_email_from_header(authorization)
     if not _quota_enabled():
         return None
 
     settings = get_settings()
-    token_email = _token_email_from_header(authorization)
     try:
         with get_session() as session:
             usage = start_chat_usage(

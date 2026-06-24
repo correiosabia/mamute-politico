@@ -97,8 +97,8 @@ def _extract_token(authorization_header: Optional[str]) -> str:
 def verify_token_header(authorization_header: Optional[str]) -> Dict[str, Any]:
     """Validate a Ghost Members JWT from an Authorization header."""
 
-    settings = get_ghost_settings()
     token = _extract_token(authorization_header)
+    settings = get_ghost_settings()
     public_key = get_public_key()
 
     try:

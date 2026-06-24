@@ -94,7 +94,10 @@ Endpoints principais:
 
 ## Quota mensal por tier
 
-O chatbot pode exigir JWT do Ghost Members e limitar consultas IA por mês. Por padrão, a quota fica desligada para manter compatibilidade com deployments existentes:
+As rotas `stream` e `query` sempre exigem `Authorization: Bearer <Ghost Members JWT>`.
+`MAMUTE_CHATBOT_QUOTA_ENABLED` controla apenas a contabilização mensal de uso. Por padrão,
+a quota fica desligada para manter compatibilidade com deployments existentes, mas isso não
+abre os endpoints de IA para chamadas anônimas:
 
 ```bash
 MAMUTE_CHATBOT_QUOTA_ENABLED=false
@@ -104,7 +107,7 @@ MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON=
 MAMUTE_CHATBOT_QUOTA_FAIL_OPEN=false
 ```
 
-Quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`, as rotas `stream` e `query` passam a exigir `Authorization: Bearer <Ghost Members JWT>`. O serviço resolve o projeto pelo e-mail (`sub`) do token, descobre o slug do tier em `tiers.detalhes.ghost.slug` e aplica o limite mensal.
+Quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`, o serviço resolve o projeto pelo e-mail (`sub`) do token, descobre o slug do tier em `tiers.detalhes.ghost.slug` e aplica o limite mensal.
 
 Precedência do limite:
 
