@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Parlamentar } from '@/types/parlamentar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getSafeExternalUrl } from '@/lib/safeExternalUrl';
 import {
   Mail,
   Phone,
@@ -62,14 +63,23 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
   const showNomeCompleto =
     parlamentar.nomeCompleto.trim().length > 0 &&
     parlamentar.nomeCompleto.trim().toLowerCase() !== parlamentar.nome.trim().toLowerCase();
+  const biografiaHref = getSafeExternalUrl(parlamentar.biografiaLink);
+  const siteHref = getSafeExternalUrl(parlamentar.site);
+  const safeRedesSociais =
+    parlamentar.redesSociais
+      ?.map((rede) => ({
+        name: rede.name,
+        profileUrl: getSafeExternalUrl(rede.profileUrl),
+      }))
+      .filter((rede): rede is { name: string; profileUrl: string } => Boolean(rede.profileUrl)) ?? [];
 
   const hasMandato = parlamentar.legislatura > 0 || parlamentar.situacao;
   const hasPessoal =
     Boolean(parlamentar.naturalidade) ||
     Boolean(parlamentar.escolaridade) ||
-    Boolean(parlamentar.biografiaLink) ||
+    Boolean(biografiaHref) ||
     Boolean(parlamentar.biografiaTexto);
-  const hasContato = Boolean(parlamentar.email) || Boolean(parlamentar.telefone) || Boolean(parlamentar.site);
+  const hasContato = Boolean(parlamentar.email) || Boolean(parlamentar.telefone) || Boolean(siteHref);
   const gabinete = parlamentar.gabineteDetalhes;
   const hasGabinete =
     Boolean(gabinete?.predio) ||
@@ -77,7 +87,7 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
     Boolean(gabinete?.andar) ||
     Boolean(gabinete?.nome) ||
     Boolean(parlamentar.emailGabinete);
-  const hasRedesSociais = (parlamentar.redesSociais?.length ?? 0) > 0;
+  const hasRedesSociais = safeRedesSociais.length > 0;
 
   return (
     <div className="space-y-4">
@@ -131,8 +141,8 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
               <span>{parlamentar.escolaridade}</span>
             </InfoRow>
           )}
-          {parlamentar.biografiaLink && (
-            <ExternalLinkRow href={parlamentar.biografiaLink} label="Ver biografia oficial" />
+          {biografiaHref && (
+            <ExternalLinkRow href={biografiaHref} label="Ver biografia oficial" />
           )}
           {parlamentar.biografiaTexto && (
             <InfoRow icon={<ExternalLink className="h-3.5 w-3.5" />}>
@@ -154,10 +164,10 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
               <span>{parlamentar.telefone}</span>
             </InfoRow>
           )}
-          {parlamentar.site && (
+          {siteHref && (
             <InfoRow icon={<Globe className="h-3.5 w-3.5" />}>
               <a
-                href={parlamentar.site}
+                href={siteHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="truncate text-[#1b76ff] hover:underline"
@@ -201,7 +211,7 @@ export function ParlamentarInfo({ parlamentar }: ParlamentarInfoProps) {
 
       {hasRedesSociais && (
         <InfoGroup title="Redes sociais">
-          {parlamentar.redesSociais?.map((rede) => (
+          {safeRedesSociais.map((rede) => (
             <InfoRow key={`${rede.name}-${rede.profileUrl}`} icon={<Share2 className="h-3.5 w-3.5" />}>
               <a
                 href={rede.profileUrl}
