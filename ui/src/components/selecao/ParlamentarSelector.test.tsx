@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,6 +19,11 @@ class MockIntersectionObserver {
 }
 
 const mockListParliamentarians = vi.mocked(listParliamentarians);
+
+type RenderSelectorOptions = {
+  onAddParlamentar?: ReturnType<typeof vi.fn>;
+  selectorProps?: Partial<ComponentProps<typeof ParlamentarSelector>>;
+};
 
 const parliamentarian: ParliamentarianOut = {
   id: 42,
@@ -48,7 +54,10 @@ const parliamentarian: ParliamentarianOut = {
   updated_at: '2026-06-25T00:00:00Z',
 };
 
-function renderSelector(onAddParlamentar = vi.fn()) {
+function renderSelector({
+  onAddParlamentar = vi.fn(),
+  selectorProps = {},
+}: RenderSelectorOptions = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -63,6 +72,7 @@ function renderSelector(onAddParlamentar = vi.fn()) {
           parlamentaresSelecionados={[]}
           onAddParlamentar={onAddParlamentar}
           onRemoveParlamentar={vi.fn()}
+          {...selectorProps}
         />
       </MemoryRouter>
     </QueryClientProvider>
@@ -79,7 +89,7 @@ describe('ParlamentarSelector', () => {
 
   it('adds a parliamentarian when the available card text is tapped', async () => {
     const onAddParlamentar = vi.fn();
-    renderSelector(onAddParlamentar);
+    renderSelector({ onAddParlamentar });
 
     fireEvent.click(await screen.findByText('Alan Rick'));
 
@@ -89,5 +99,27 @@ describe('ParlamentarSelector', () => {
         nome: 'Alan Rick',
       })
     );
+  });
+
+  it('shows the plan upgrade message immediately when adding is blocked by the limit', async () => {
+    renderSelector({
+      selectorProps: {
+        monitoradosLimit: 1,
+        monitoradosUsed: 1,
+      },
+    });
+
+    const blockedButton = await screen.findByRole('button', {
+      name: 'Limite do plano atingido para Alan Rick',
+    });
+
+    expect(blockedButton).toBeDisabled();
+    expect(blockedButton).not.toHaveAttribute('title');
+
+    fireEvent.pointerMove(blockedButton.parentElement ?? blockedButton);
+
+    expect(
+      await screen.findByText("Limite atingido. Faça um upgrade do plano em 'Conta'."),
+    ).toBeVisible();
   });
 });
