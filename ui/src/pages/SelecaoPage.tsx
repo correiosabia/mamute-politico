@@ -70,7 +70,8 @@ const SelecaoPage = () => {
 
   const addMutation = useMutation({
     mutationFn: (parlamentar: Parlamentar) => addMyProjectFavorite(Number(parlamentar.id)),
-    onSuccess: () => {
+    onSuccess: (_favorite, parlamentar) => {
+      toast.success(`${parlamentar.nome} adicionado aos monitorados.`);
       void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
       void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
     },

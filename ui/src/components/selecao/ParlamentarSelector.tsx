@@ -351,19 +351,28 @@ export function ParlamentarSelector({
             {!isLoading && !isError && (
             <div className="space-y-2">
               {parlamentaresDisponiveis.map((parlamentar) => (
-                <div
+                <button
                   key={parlamentar.id}
-                  className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                  type="button"
+                  disabled={!canAddParlamentar}
+                  onClick={() => onAddParlamentar(parlamentar)}
+                  title={monitoradosLimitReached ? 'Limite do plano atingido' : `Adicionar ${parlamentar.nome}`}
+                  aria-label={
+                    monitoradosLimitReached
+                      ? `Limite do plano atingido para ${parlamentar.nome}`
+                      : `Adicionar ${parlamentar.nome} aos parlamentares monitorados`
+                  }
+                  className="group flex min-h-[72px] w-full items-center justify-between rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 active:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <LazyAvatarImage
                       className="h-10 w-10"
                       src={parlamentar.foto}
                       alt={parlamentar.nome}
                       fallback={parlamentar.nome[0]}
                     />
-                    <div>
-                      <p className="font-medium text-sm">{parlamentar.nome}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{parlamentar.nome}</p>
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant={parlamentar.casa === 'camara' ? 'camara' : 'senado'} className="text-[10px] px-1.5 py-0">
                           {parlamentar.casa === 'camara' ? 'Câmara' : 'Senado'}
@@ -377,18 +386,14 @@ export function ParlamentarSelector({
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={!canAddParlamentar}
-                    onClick={() => onAddParlamentar(parlamentar)}
-                    title={monitoradosLimitReached ? 'Limite do plano atingido' : 'Adicionar parlamentar'}
-                    aria-label={monitoradosLimitReached ? 'Limite do plano atingido' : 'Adicionar parlamentar'}
-                    className="text-accent hover:text-accent hover:bg-accent/10 disabled:text-muted-foreground disabled:opacity-50"
+                  <span
+                    aria-hidden="true"
+                    className="ml-3 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-full bg-[#09e03b]/10 px-3 text-xs font-semibold text-[#116b25] transition-colors group-hover:bg-[#09e03b]/20 group-disabled:bg-muted group-disabled:text-muted-foreground"
                   >
-                    <PlusCircle className={monitoradosLimitReached ? 'text-muted-foreground' : 'text-[#09e03b]'} />
-                  </Button>
-                </div>
+                    <PlusCircle className="h-4 w-4" />
+                    <span>{monitoradosLimitReached ? 'Limite' : 'Adicionar'}</span>
+                  </span>
+                </button>
               ))}
               {parlamentaresDisponiveis.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
