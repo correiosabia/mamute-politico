@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Parlamentar, CasaLegislativa } from '@/types/parlamentar';
 import { listParliamentarians } from '@/api/endpoints';
@@ -23,6 +23,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
@@ -36,6 +42,10 @@ const SITUACAO_FILTER_LABELS: Record<SituacaoFilter, string> = {
   fim_de_mandato: 'Fim de mandato',
   todos: 'Todas as situações',
 };
+
+const MONITORADOS_LIMIT_MESSAGE = "Limite atingido. Faça um upgrade do plano em 'Conta'.";
+const LIST_SCROLL_AREA_CLASS =
+  'h-full [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!min-w-0 [&_[data-radix-scroll-area-viewport]>div]:!w-full';
 
 const SITUACAO_FILTER_TO_SITUACAO: Record<
   Exclude<SituacaoFilter, 'todos'>,
@@ -331,7 +341,7 @@ export function ParlamentarSelector({
         </CardHeader>
         
         <CardContent className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full pr-4">
+          <ScrollArea className={LIST_SCROLL_AREA_CLASS}>
             {isLoading && (
               <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -349,58 +359,77 @@ export function ParlamentarSelector({
               </div>
             )}
             {!isLoading && !isError && (
-            <div className="space-y-2">
-              {parlamentaresDisponiveis.map((parlamentar) => (
-                <button
-                  key={parlamentar.id}
-                  type="button"
-                  disabled={!canAddParlamentar}
-                  onClick={() => onAddParlamentar(parlamentar)}
-                  title={monitoradosLimitReached ? 'Limite do plano atingido' : `Adicionar ${parlamentar.nome}`}
-                  aria-label={
-                    monitoradosLimitReached
-                      ? `Limite do plano atingido para ${parlamentar.nome}`
-                      : `Adicionar ${parlamentar.nome} aos parlamentares monitorados`
-                  }
-                  className="group flex min-h-[72px] w-full items-center justify-between rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 active:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <LazyAvatarImage
-                      className="h-10 w-10"
-                      src={parlamentar.foto}
-                      alt={parlamentar.nome}
-                      fallback={parlamentar.nome[0]}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{parlamentar.nome}</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant={parlamentar.casa === 'camara' ? 'camara' : 'senado'} className="text-[10px] px-1.5 py-0">
-                          {parlamentar.casa === 'camara' ? 'Câmara' : 'Senado'}
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {getSituacaoLabel(parlamentar.situacao)}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {parlamentar.partido.sigla} - {parlamentar.uf}
+              <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                <div className="flex flex-col gap-2 pr-4">
+                  {parlamentaresDisponiveis.map((parlamentar) => {
+                    const addButton = (
+                      <button
+                        type="button"
+                        disabled={!canAddParlamentar}
+                        onClick={() => onAddParlamentar(parlamentar)}
+                        aria-label={
+                          monitoradosLimitReached
+                            ? `Limite do plano atingido para ${parlamentar.nome}`
+                            : `Adicionar ${parlamentar.nome} aos parlamentares monitorados`
+                        }
+                        className="group flex min-h-[72px] min-w-0 w-full items-center justify-between rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 active:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <LazyAvatarImage
+                            className="h-10 w-10"
+                            src={parlamentar.foto}
+                            alt={parlamentar.nome}
+                            fallback={parlamentar.nome[0]}
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{parlamentar.nome}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant={parlamentar.casa === 'camara' ? 'camara' : 'senado'} className="text-[10px] px-1.5 py-0">
+                                {parlamentar.casa === 'camara' ? 'Câmara' : 'Senado'}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                {getSituacaoLabel(parlamentar.situacao)}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {parlamentar.partido.sigla} - {parlamentar.uf}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          aria-hidden="true"
+                          className="ml-3 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-full bg-[#09e03b]/10 px-3 text-xs font-semibold text-[#116b25] transition-colors group-hover:bg-[#09e03b]/20 group-disabled:bg-muted group-disabled:text-muted-foreground"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          <span>{monitoradosLimitReached ? 'Limite' : 'Adicionar'}</span>
                         </span>
-                      </div>
+                      </button>
+                    );
+
+                    if (!monitoradosLimitReached) {
+                      return <Fragment key={parlamentar.id}>{addButton}</Fragment>;
+                    }
+
+                    return (
+                      <Tooltip key={parlamentar.id}>
+                        <TooltipTrigger asChild>
+                          <span className="block min-w-0 w-full cursor-not-allowed">
+                            {addButton}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" align="center" className="max-w-64 text-balance">
+                          {MONITORADOS_LIMIT_MESSAGE}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                  {parlamentaresDisponiveis.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>Nenhum parlamentar encontrado com os filtros selecionados.</p>
                     </div>
-                  </div>
-                  <span
-                    aria-hidden="true"
-                    className="ml-3 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-full bg-[#09e03b]/10 px-3 text-xs font-semibold text-[#116b25] transition-colors group-hover:bg-[#09e03b]/20 group-disabled:bg-muted group-disabled:text-muted-foreground"
-                  >
-                    <PlusCircle className="h-4 w-4" />
-                    <span>{monitoradosLimitReached ? 'Limite' : 'Adicionar'}</span>
-                  </span>
-                </button>
-              ))}
-              {parlamentaresDisponiveis.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Nenhum parlamentar encontrado com os filtros selecionados.</p>
+                  )}
                 </div>
-              )}
-            </div>
+              </TooltipProvider>
             )}
           </ScrollArea>
         </CardContent>
@@ -415,13 +444,13 @@ export function ParlamentarSelector({
           </div>
           <p className="text-sm text-muted-foreground">
             {monitoradosLimitReached
-              ? 'Limite do plano atingido.'
+              ? MONITORADOS_LIMIT_MESSAGE
               : 'Clique no parlamentar para acessar seu dashboard completo'}
           </p>
         </CardHeader>
         
         <CardContent className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full pr-4">
+          <ScrollArea className={LIST_SCROLL_AREA_CLASS}>
             {monitoradosLoading ? (
               <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -432,7 +461,7 @@ export function ParlamentarSelector({
                 <p>{monitoradosError}</p>
               </div>
             ) : (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2 pr-4">
               {parlamentaresSelecionadosOrdenados.map((parlamentar) => (
                 <div
                   key={parlamentar.id}
