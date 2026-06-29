@@ -337,8 +337,8 @@ def _upsert_speech(
         )
         return None, False
 
-    # Buscar discurso existente por link
-    speech_link = payload.get("speech_link")
+    # Buscar discurso existente
+    speech_link = payload.get("speech_link") or None
     record = None
     created = False
 
@@ -351,6 +351,25 @@ def _upsert_speech(
             session.query(SpeechesTranscript)
             .filter(SpeechesTranscript.parliamentarian_id == parliamentarian.id)
             .filter(SpeechesTranscript.speech_link == speech_link)
+            .order_by(SpeechesTranscript.id)
+            .first()
+        )
+    else:
+        # Muitos discursos da Câmara (ex.: 'PELA ORDEM', 'BREVES COMUNICAÇÕES')
+        # não têm urlTexto -> speech_link nulo. Sem chave de dedup, cada passada
+        # do crawler reinsere o mesmo discurso (duplicação massiva). Deduplicar
+        # pela chave natural: parlamentar + data + hora + tipo + texto.
+        record = (
+            session.query(SpeechesTranscript)
+            .filter(SpeechesTranscript.parliamentarian_id == parliamentarian.id)
+            .filter(SpeechesTranscript.speech_link.is_(None))
+            .filter(SpeechesTranscript.date == payload.get("date"))
+            .filter(SpeechesTranscript.hour_minute == payload.get("hour_minute"))
+            .filter(SpeechesTranscript.type == payload.get("type"))
+            .filter(
+                func.coalesce(SpeechesTranscript.speech_text, "")
+                == (payload.get("speech_text") or "")
+            )
             .order_by(SpeechesTranscript.id)
             .first()
         )
