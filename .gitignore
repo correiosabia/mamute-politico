@@ -9,4 +9,5 @@ mamute_scrappers/.env
 mamute_scrappers/ghost_tier_entitlements.json
 api/.env
 api/.venv/
+chatbot_backend/.venv/
 venv/

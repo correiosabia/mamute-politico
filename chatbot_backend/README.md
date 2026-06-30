@@ -15,7 +15,7 @@ Projeto pai: [README raiz](../README.md)
 
 1. Python 3.11+
 2. Banco PostgreSQL com extensão [`pgvector`](https://github.com/pgvector/pgvector) habilitada
-3. Chave de API do OpenAI (modelo GPT e embeddings)
+3. Chave de API do OpenAI, ou de endpoint OpenAI-compatible como OpenRouter (modelo GPT e embeddings)
 
 ## Inicialização
 
@@ -25,7 +25,7 @@ Projeto pai: [README raiz](../README.md)
    cp chatbot_backend/.env.example chatbot_backend/.env
    ```
 
-   Edite o `.env` com suas credenciais de banco e chaves do OpenAI. Os campos `APPLICATION_NAME` (PostgreSQL) e `RERANK_TOP_K` (reranqueador) permitem ajustes de monitoramento e qualidade das respostas.
+   Edite o `.env` com suas credenciais de banco e chaves do OpenAI. Para usar OpenRouter ou outro endpoint OpenAI-compatible, defina `OPENAI_BASE_URL` (por exemplo, `https://openrouter.ai/api/v1`). Os campos `APPLICATION_NAME` (PostgreSQL) e `RERANK_TOP_K` (reranqueador) permitem ajustes de monitoramento e qualidade das respostas.
 
 2. Crie um ambiente virtual e instale as dependências:
 
