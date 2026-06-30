@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         default="mamute_chatbot_backend", alias="APPLICATION_NAME"
     )
     openai_api_key: SecretStr = Field(..., alias="OPENAI_API_KEY")
+    openai_base_url: Optional[str] = Field(default=None, alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     openai_temperature: float = Field(default=0.2, alias="OPENAI_TEMPERATURE")
     openai_max_tokens: int = Field(default=1024, alias="OPENAI_MAX_TOKENS")

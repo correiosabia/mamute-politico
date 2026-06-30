@@ -78,6 +78,8 @@ MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"defau
 APP_ENV=local
 APPLICATION_NAME=mamute_chatbot_backend
 OPENAI_API_KEY=[[chave da OpenAI aqui]]
+# Opcional: use https://openrouter.ai/api/v1 para OpenRouter ou outro endpoint OpenAI-compatible
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.2
 OPENAI_MAX_TOKENS=1024

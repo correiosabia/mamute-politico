@@ -34,6 +34,7 @@ def get_embeddings() -> OpenAIEmbeddings:
     return OpenAIEmbeddings(
         api_key=settings.openai_api_key.get_secret_value(),
         model=settings.openai_embeddings_model,
+        base_url=settings.openai_base_url or None,
     )
 
 

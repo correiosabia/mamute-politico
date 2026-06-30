@@ -200,6 +200,7 @@ class ChatbotService:
             max_tokens=settings.openai_max_tokens,
             streaming=True,
             api_key=settings.openai_api_key.get_secret_value(),
+            base_url=settings.openai_base_url or None,
         )
 
         retriever_chain = RunnableLambda(self._retrieve_and_rerank)

@@ -42,6 +42,7 @@ class InitCollectionConfig(BaseSettings):
         default="mamute_chatbot_backend", alias="APPLICATION_NAME"
     )
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
+    openai_base_url: Optional[str] = Field(default=None, alias="OPENAI_BASE_URL")
     openai_embeddings_model: str = Field(
         default="text-embedding-3-large", alias="OPENAI_EMBEDDINGS_MODEL"
     )
@@ -94,6 +95,7 @@ def _get_embedding_dimension(
     embeddings = OpenAIEmbeddings(
         api_key=config.openai_api_key,
         model=config.openai_embeddings_model,
+        base_url=config.openai_base_url or None,
     )
     sample_vector = embeddings.embed_query("teste de dimensão")
     return len(sample_vector)
