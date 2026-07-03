@@ -203,8 +203,13 @@ def _fetch_speeches_list(
     deputado_id: int,
     data_inicio: str,
     page: int = 1,
+    data_fim: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Busca lista paginada de discursos de um deputado."""
+    """Busca lista paginada de discursos de um deputado.
+
+    A API da Câmara rejeita (HTTP 400) intervalos maiores que 4 anos entre
+    dataInicio e dataFim. Por isso o backfill fatia por janelas e envia dataFim.
+    """
     url = f"{CAMARA_API_BASE_URL}/deputados/{deputado_id}/discursos"
     params = {
         "dataInicio": data_inicio,
@@ -213,6 +218,8 @@ def _fetch_speeches_list(
         "pagina": page,
         "itens": PAGE_SIZE,
     }
+    if data_fim:
+        params["dataFim"] = data_fim
 
     logger.debug(
         "Buscando discursos (deputado=%s, dataInicio=%s, página=%s)",
@@ -226,13 +233,14 @@ def _fetch_speeches_list(
 def _iter_speeches_paginated(
     deputado_id: int,
     data_inicio: str,
+    data_fim: Optional[str] = None,
 ) -> Iterable[Dict[str, Any]]:
     """Itera sobre discursos de um deputado com paginação."""
     page = 1
     total_fetched = 0
 
     while True:
-        data = _fetch_speeches_list(deputado_id, data_inicio, page)
+        data = _fetch_speeches_list(deputado_id, data_inicio, page, data_fim=data_fim)
 
         if data is None:
             logger.warning("Falha ao buscar página %s (deputado %s)", page, deputado_id)
@@ -395,6 +403,7 @@ def speeches_transcripts(
     *,
     deputado_id: Optional[int] = None,
     data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     persist: bool = True,
     interactive: bool = False,
 ) -> None:
@@ -468,7 +477,7 @@ def speeches_transcripts(
 
                 dep_processed = 0
 
-                for discurso in _iter_speeches_paginated(dep_id, start_date):
+                for discurso in _iter_speeches_paginated(dep_id, start_date, data_fim=data_fim):
                     payload = _build_speech_payload(dep_id, discurso)
 
                     if payload is None:
@@ -542,6 +551,11 @@ if __name__ == "__main__":
         help="Data inicial no formato YYYY-MM-DD (default: últimos 90 dias ou última data)",
     )
     parser.add_argument(
+        "--data-fim",
+        type=str,
+        help="Data final YYYY-MM-DD (a API rejeita intervalos > 4 anos).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Não persiste no banco; apenas exibe os payloads.",
@@ -557,6 +571,7 @@ if __name__ == "__main__":
     speeches_transcripts(
         deputado_id=args.deputado_id,
         data_inicio=args.data_inicio,
+        data_fim=args.data_fim,
         persist=not args.dry_run,
         interactive=args.interactive,
     )
