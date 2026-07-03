@@ -138,17 +138,27 @@ def _senado_votes_chunks() -> List[Dict[str, Any]]:
 
 
 def _camara_speeches_chunks() -> List[Dict[str, Any]]:
-    """Discursos da Câmara: um chunk por deputado, desde SINCE_YEAR."""
-    start = date(SINCE_YEAR, 1, 1).isoformat()
-    return [
-        {
-            "id": f"cam-speech-{code}-since{SINCE_YEAR}",
-            "kind": "camara_speeches",
-            "code": code,
-            "data_inicio": start,
-        }
-        for code in _parliamentarian_codes("Deputado")
-    ]
+    """Discursos da Câmara: um chunk por (deputado, ano).
+
+    A API de discursos rejeita (HTTP 400) intervalos > 4 anos; por isso não dava
+    para pedir 2018→hoje de uma vez — era exatamente o motivo de 2018-2021
+    ficarem vazios (a chamada falhava silenciosamente). Fatiamos por ano.
+    """
+    chunks: List[Dict[str, Any]] = []
+    for year in range(BACKFILL_END_YEAR, SINCE_YEAR - 1, -1):
+        ini = date(year, 1, 1).isoformat()
+        fim = date(year, 12, 31).isoformat()
+        for code in _parliamentarian_codes("Deputado"):
+            chunks.append(
+                {
+                    "id": f"cam-speech-{code}-{year}",
+                    "kind": "camara_speeches",
+                    "code": code,
+                    "data_inicio": ini,
+                    "data_fim": fim,
+                }
+            )
+    return chunks
 
 
 def _senado_speeches_chunks() -> List[Dict[str, Any]]:
@@ -208,6 +218,7 @@ def _chunk_command(chunk: Dict[str, Any]) -> List[str]:
             sys.executable, "-m", "mamute_scrappers.camara_crawler.speeches_transcripts",
             "--deputado-id", str(chunk["code"]),
             "--data-inicio", chunk["data_inicio"],
+            "--data-fim", chunk["data_fim"],
         ]
     if kind == "senado_speeches":
         return [
