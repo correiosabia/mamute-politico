@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     # Permite execução como pacote (api.main).
     from .routers import (
+        admin,
         analysis,
         authors_proposition,
         ghost_webhooks,
@@ -21,6 +22,7 @@ try:
 except ImportError:
     # Permite execução dentro do diretório api/ (python main.py / uvicorn main:app).
     from routers import (
+        admin,
         analysis,
         authors_proposition,
         ghost_webhooks,
@@ -58,6 +60,7 @@ def create_app() -> FastAPI:
     api_router = APIRouter(prefix="/api")
 
     api_router.include_router(ghost_webhooks.router)
+    api_router.include_router(admin.router)
 
     api_router.include_router(analysis.router, dependencies=auth_dependencies)
     api_router.include_router(parliamentarians.router, dependencies=auth_dependencies)

@@ -31,6 +31,7 @@ def test_all_routers_importable() -> None:
     imports relativos quebrando porque o pacote nao foi instalado certo.
     """
     routers = [
+        "admin",
         "analysis",
         "authors_proposition",
         "ghost_webhooks",
