@@ -503,7 +503,20 @@ def _tier_limit_from_env(project: Projetos, field_name: str) -> int | None:
     return None
 
 
+def _tier_limit_from_db(project: Projetos, field_name: str) -> int | None:
+    detalhes = _project_tier_details(project)
+    raw = detalhes.get(field_name)
+    if raw is None:
+        return None
+    return _coerce_non_negative_int(
+        raw, field_name=field_name, slug=_project_tier_slug(project)
+    )
+
+
 def _project_favorite_limit(project: Projetos) -> int:
+    db_limit = _tier_limit_from_db(project, "qtd_termos")
+    if db_limit is not None:
+        return db_limit
     env_limit = _tier_limit_from_env(project, "qtd_termos")
     if env_limit is not None:
         return env_limit
