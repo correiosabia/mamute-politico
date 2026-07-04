@@ -10,6 +10,7 @@ import ParlamentarDashboard from "./pages/ParlamentarDashboard";
 import DashboardPage from "./pages/DashboardPage";
 import PesquisaIAPage from "./pages/PesquisaIAPage";
 import AdminPage from "./pages/AdminPage";
+import AdminTiersPage from "./pages/AdminTiersPage";
 import NotFound from "./pages/NotFound";
 import { useGhostAuth } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -80,9 +81,14 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function RequireAdmin({ children }: { children: JSX.Element }) {
+  // PREVIEW LOCAL (NÃO COMMITAR): libera acesso quando VITE_ADMIN_DEV_BYPASS=true.
+  const bypass = import.meta.env.VITE_ADMIN_DEV_BYPASS === 'true';
   const token = useGhostAuth();
   const { isAdmin, isLoading } = useIsAdmin();
 
+  if (bypass) {
+    return children;
+  }
   if (!token) {
     return <Navigate to="/" replace />;
   }
@@ -142,6 +148,14 @@ const App = () => (
                 element={
                   <RequireAdmin>
                     <AdminPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/tiers"
+                element={
+                  <RequireAdmin>
+                    <AdminTiersPage />
                   </RequireAdmin>
                 }
               />

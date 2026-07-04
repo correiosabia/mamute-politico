@@ -1,15 +1,16 @@
-import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { Link } from 'react-router-dom';
 
 export default function AdminPage() {
-  const { isAdmin } = useIsAdmin();
-
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-8 space-y-4">
       <h1 className="text-2xl font-semibold">Painel administrativo</h1>
-      <p className="mt-4 text-muted-foreground">
-        Acesso confirmado{isAdmin ? '' : '?'}. Painéis de gestão e métricas serão
-        adicionados aqui.
-      </p>
+      <ul className="list-disc pl-6">
+        <li>
+          <Link to="/admin/tiers" className="text-primary underline">
+            Gestão de Tiers
+          </Link>
+        </li>
+      </ul>
     </main>
   );
 }

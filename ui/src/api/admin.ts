@@ -9,3 +9,31 @@ export interface WhoamiResponse {
 export function fetchWhoami(): Promise<WhoamiResponse> {
   return request<WhoamiResponse>('/admin/whoami');
 }
+
+export interface TierDetails {
+  qtd_termos?: number;
+  qtd_consultas_ia_mes?: number;
+  qtd_email?: number;
+  periodicidade_email?: string[];
+  orgao?: string[];
+  preco_mensal?: number;
+  [key: string]: unknown;
+}
+
+export interface Tier {
+  id: number;
+  tier_name_debug: string;
+  product_id: string;
+  detalhes: TierDetails;
+}
+
+export function fetchTiers(): Promise<Tier[]> {
+  return request<Tier[]>('/admin/tiers');
+}
+
+export function updateTier(id: number, patch: TierDetails): Promise<Tier> {
+  return request<Tier>(`/admin/tiers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
