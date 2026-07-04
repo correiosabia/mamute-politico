@@ -63,29 +63,53 @@ class EmailBranding:
     manage_url: str
 
 
-def get_smtp_config() -> SmtpConfig:
-    user = os.getenv("SMTP_USER", "").strip()
-    password = os.getenv("SMTP_PASSWD", "").strip()
-    sender = os.getenv("SMTP_SENDER", "").strip()
-    server = os.getenv("SMTP_SERVER", "").strip()
-    port_raw = os.getenv("SMTP_PORT", "587").strip()
-    from_name = os.getenv("SMTP_FROM_NAME", "Mamute Político").strip()
+# Prefixo de env por provedor. MAIL_PROVIDER=mailgun|ses seleciona o conjunto de
+# credenciais; qualquer valor ausente cai no legado SMTP_* (retrocompatibilidade).
+_PROVIDER_PREFIX = {"mailgun": "MAILGUN_", "ses": "SES_"}
 
+
+def _resolve_provider() -> str:
+    return os.getenv("MAIL_PROVIDER", "").strip().lower()
+
+
+def _smtp_env(prefix: str, suffix: str, default: str = "") -> str:
+    """Valor específico do provedor ({PREFIX}SMTP_{suffix}); se vazio, cai no
+    legado SMTP_{suffix}."""
+    value = ""
+    if prefix:
+        value = os.getenv(f"{prefix}SMTP_{suffix}", "").strip()
+    if not value:
+        value = os.getenv(f"SMTP_{suffix}", "").strip()
+    return value or default
+
+
+def get_smtp_config() -> SmtpConfig:
+    provider = _resolve_provider()
+    prefix = _PROVIDER_PREFIX.get(provider, "")
+
+    user = _smtp_env(prefix, "USER")
+    password = _smtp_env(prefix, "PASSWD")
+    sender = _smtp_env(prefix, "SENDER")
+    server = _smtp_env(prefix, "SERVER")
+    port_raw = _smtp_env(prefix, "PORT", "587")
+    from_name = _smtp_env(prefix, "FROM_NAME", "Mamute Político")
+
+    active = f"{prefix}SMTP_*" if prefix else "SMTP_*"
     missing = [
         name
         for name, value in [
-            ("SMTP_USER", user),
-            ("SMTP_PASSWD", password),
-            ("SMTP_SENDER", sender),
-            ("SMTP_SERVER", server),
+            ("USER", user),
+            ("PASSWD", password),
+            ("SENDER", sender),
+            ("SERVER", server),
         ]
         if not value
     ]
     if missing:
         raise RuntimeError(
-            "Variáveis SMTP ausentes: "
+            f"Variáveis SMTP ausentes (provedor '{provider or 'legado'}', {active}): "
             + ", ".join(missing)
-            + ". Copie mamute_scrappers/.env.example e preencha SMTP_*."
+            + ". Veja mamute_scrappers/.env.example (MAIL_PROVIDER + credenciais)."
         )
 
     return SmtpConfig(
