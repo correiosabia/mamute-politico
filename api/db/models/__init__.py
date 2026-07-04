@@ -1,5 +1,6 @@
 """Exposição dos modelos declarativos do projeto."""
 
+from .admin_audit_log import AdminAuditLog
 from .agency import Agency
 from .authors_proposition import AuthorsProposition
 from .chatbot_usage import ChatbotUsage
@@ -20,6 +21,7 @@ from .speeches_transcripts_proposition import SpeechesTranscriptsProposition
 from .videos_audios import VideoAudio
 
 __all__ = [
+    "AdminAuditLog",
     "Agency",
     "AuthorsProposition",
     "ChatbotUsage",
