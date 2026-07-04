@@ -9,8 +9,10 @@ import SelecaoPage from "./pages/SelecaoPage";
 import ParlamentarDashboard from "./pages/ParlamentarDashboard";
 import DashboardPage from "./pages/DashboardPage";
 import PesquisaIAPage from "./pages/PesquisaIAPage";
+import AdminPage from "./pages/AdminPage";
 import NotFound from "./pages/NotFound";
 import { useGhostAuth } from "@/components/auth/ghost-auth/react/useGhostAuth";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { AccountModalProvider } from "@/components/auth/AccountModalProvider";
 import { LoginModalProvider } from "@/components/auth/LoginModalProvider";
 import { useLoginModal } from "@/components/auth/useLoginModal";
@@ -77,6 +79,22 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return children;
 }
 
+function RequireAdmin({ children }: { children: JSX.Element }) {
+  const token = useGhostAuth();
+  const { isAdmin, isLoading } = useIsAdmin();
+
+  if (!token) {
+    return <Navigate to="/" replace />;
+  }
+  if (isLoading) {
+    return null;
+  }
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -117,6 +135,14 @@ const App = () => (
                   <RequireAuth>
                     <PesquisaIAPage />
                   </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <RequireAdmin>
+                    <AdminPage />
+                  </RequireAdmin>
                 }
               />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
