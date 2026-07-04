@@ -127,7 +127,8 @@ def test_quota_uses_env_limit_by_ghost_slug(monkeypatch: pytest.MonkeyPatch) -> 
         limits_json='{"default-product": 7}',
         default_limit=1,
     )
-    session = _make_session(tier_details={"ghost": {"slug": "default-product"}, "qtd_consultas_ia_mes": 3})
+    # DB sem qtd_consultas_ia_mes → env (slug) é o fallback vigente.
+    session = _make_session(tier_details={"ghost": {"slug": "default-product"}})
     try:
         current = quota.get_chat_quota(session, "assinante@example.com")
 
@@ -156,7 +157,8 @@ def test_quota_uses_generic_tier_limit_env(monkeypatch: pytest.MonkeyPatch) -> N
         tier_limits_json='{"default-product": {"qtd_consultas_ia_mes": 9}}',
         default_limit=1,
     )
-    session = _make_session(tier_details={"ghost": {"slug": "default-product"}, "qtd_consultas_ia_mes": 3})
+    # DB sem qtd_consultas_ia_mes → MAMUTE_TIER_LIMITS_JSON (env) é o fallback vigente.
+    session = _make_session(tier_details={"ghost": {"slug": "default-product"}})
     try:
         current = quota.get_chat_quota(session, "assinante@example.com")
 

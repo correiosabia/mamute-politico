@@ -159,21 +159,11 @@ def _tier_slug(product_id: Optional[str], detalhes: Mapping[str, Any]) -> str:
 
 
 def resolve_monthly_limit(project: ChatProject) -> int:
-    """Resolve the monthly chatbot quota for a project."""
+    """Resolve the monthly chatbot quota for a project (DB > env > default)."""
 
     settings = get_settings()
-    env_limits = _parse_monthly_limits(settings.chatbot_monthly_limits_json)
-    for key in (project.tier_slug, project.product_id):
-        if key and key in env_limits:
-            return env_limits[key]
 
-    tier_env_limit = _limit_from_tier_entitlements(
-        project,
-        _parse_tier_entitlement_limits(settings.tier_limits_json),
-    )
-    if tier_env_limit is not None:
-        return tier_env_limit
-
+    # 1) DB (tier.detalhes) vence.
     for detail_key in ("qtd_consultas_ia_mes", "ai_queries_monthly_limit"):
         raw_limit = project.tier_details.get(detail_key)
         if raw_limit is None:
@@ -185,6 +175,21 @@ def resolve_monthly_limit(project: ChatProject) -> int:
                 f"Valor inválido de {detail_key} para o tier {project.tier_slug!r}."
             ) from exc
 
+    # 2) Env: override por slug do chatbot.
+    env_limits = _parse_monthly_limits(settings.chatbot_monthly_limits_json)
+    for key in (project.tier_slug, project.product_id):
+        if key and key in env_limits:
+            return env_limits[key]
+
+    # 3) Env: MAMUTE_TIER_LIMITS_JSON.
+    tier_env_limit = _limit_from_tier_entitlements(
+        project,
+        _parse_tier_entitlement_limits(settings.tier_limits_json),
+    )
+    if tier_env_limit is not None:
+        return tier_env_limit
+
+    # 4) Default.
     return max(0, int(settings.chatbot_default_monthly_limit))
 
 
