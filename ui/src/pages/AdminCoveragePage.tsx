@@ -63,8 +63,8 @@ export default function AdminCoveragePage() {
                     <th className="py-2 pr-3 text-right font-semibold">Câmara</th>
                     <th className="py-2 pr-3 text-right font-semibold">Senado</th>
                     <th className="py-2 pr-3 text-right font-semibold">Total</th>
-                    <th className="py-2 pr-3 text-right font-semibold">API Câmara</th>
                     <th className="py-2 pr-3 text-right font-semibold">% Câmara</th>
+                    <th className="py-2 pr-3 text-right font-semibold">% Senado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -74,11 +74,17 @@ export default function AdminCoveragePage() {
                       <td className="py-2 pr-3 text-right">{num(r.camara)}</td>
                       <td className="py-2 pr-3 text-right">{num(r.senado)}</td>
                       <td className="py-2 pr-3 text-right font-semibold">{num(r.total)}</td>
-                      <td className="py-2 pr-3 text-right text-[#383838]/60">
-                        {r.api_camara != null ? num(r.api_camara) : '—'}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-semibold text-[#090909]">
+                      <td
+                        className="py-2 pr-3 text-right font-semibold text-[#1b76ff]"
+                        title={r.api_camara != null ? `API Câmara: ${num(r.api_camara)}` : undefined}
+                      >
                         {r.cobertura_camara_pct != null ? `${r.cobertura_camara_pct}%` : '—'}
+                      </td>
+                      <td
+                        className="py-2 pr-3 text-right font-semibold text-[#09a03b]"
+                        title={r.api_senado != null ? `API Senado: ${num(r.api_senado)}` : undefined}
+                      >
+                        {r.cobertura_senado_pct != null ? `${r.cobertura_senado_pct}%` : '—'}
                       </td>
                     </tr>
                   ))}
@@ -103,9 +109,9 @@ export default function AdminCoveragePage() {
           </div>
 
           <div className="mp-card bg-white p-4 text-[12px] text-[#383838]/50">
-            "% Câmara" = nossas proposições da Câmara ÷ total da API aberta da Câmara
-            no ano (via job de sync). Senado é a próxima etapa. A casa é derivada da
-            casa do autor da proposição.
+            "% Câmara/Senado" = nossas proposições de cada casa ÷ total da API aberta
+            da casa no ano (via job de sync; passe o mouse para ver a contagem da API).
+            A casa é derivada da casa do autor da proposição.
           </div>
         </>
       )}

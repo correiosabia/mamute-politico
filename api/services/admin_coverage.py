@@ -55,27 +55,27 @@ def db_coverage(db: Session) -> dict[str, Any]:
         house = row["house"] if row["house"] in bucket else "desconhecido"
         bucket[house] += int(row["n"])
 
-    # Contagens da API aberta da Câmara por ano (se já sincronizadas).
+    # Contagens das APIs abertas (Câmara/Senado) por ano (se já sincronizadas).
     api_rows = (
         db.execute(
             text(
-                "SELECT year, SUM(api_count) AS n FROM api_coverage "
-                "WHERE source = 'camara' GROUP BY year"
+                "SELECT source, year, SUM(api_count) AS n FROM api_coverage "
+                "GROUP BY source, year"
             )
         )
         .mappings()
         .all()
     )
-    api_camara_by_year = {row["year"]: int(row["n"] or 0) for row in api_rows}
+    api_camara_by_year: dict[Any, int] = {}
+    api_senado_by_year: dict[Any, int] = {}
+    for row in api_rows:
+        target = api_senado_by_year if row["source"] == "senado" else api_camara_by_year
+        target[row["year"]] = int(row["n"] or 0)
 
     by_year_house = []
     for year, v in by_year.items():
         api_camara = api_camara_by_year.get(year)
-        cobertura_pct = (
-            round(v["camara"] / api_camara * 100, 1)
-            if api_camara
-            else None
-        )
+        api_senado = api_senado_by_year.get(year)
         by_year_house.append(
             {
                 "year": year,
@@ -84,7 +84,13 @@ def db_coverage(db: Session) -> dict[str, Any]:
                 "desconhecido": v["desconhecido"],
                 "total": v["camara"] + v["senado"] + v["desconhecido"],
                 "api_camara": api_camara,
-                "cobertura_camara_pct": cobertura_pct,
+                "cobertura_camara_pct": (
+                    round(v["camara"] / api_camara * 100, 1) if api_camara else None
+                ),
+                "api_senado": api_senado,
+                "cobertura_senado_pct": (
+                    round(v["senado"] / api_senado * 100, 1) if api_senado else None
+                ),
             }
         )
     by_year_house.sort(key=lambda r: (r["year"] is None, r["year"]), reverse=True)

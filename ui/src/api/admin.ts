@@ -155,6 +155,8 @@ export interface Coverage {
     total: number;
     api_camara: number | null;
     cobertura_camara_pct: number | null;
+    api_senado: number | null;
+    cobertura_senado_pct: number | null;
   }[];
   by_type: { type: string; count: number }[];
   totals: { proposicoes: number; votacoes: number; discursos: number };

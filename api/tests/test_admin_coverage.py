@@ -6,13 +6,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.services.admin_coverage import db_coverage
-from scripts.sync_api_coverage import parse_last_page
+from scripts.sync_api_coverage import count_senado_materias, parse_last_page
 
 
 def test_parse_last_page() -> None:
     payload = {"links": [{"rel": "last", "href": "https://x/api?ano=2025&pagina=6520&itens=1"}]}
     assert parse_last_page(payload) == 6520
     assert parse_last_page({"dados": [1, 2, 3]}) == 3
+
+
+def test_count_senado_materias() -> None:
+    payload = {"PesquisaBasicaMateria": {"Materias": {"Materia": [{}, {}, {}]}}}
+    assert count_senado_materias(payload) == 3
+    assert count_senado_materias({"PesquisaBasicaMateria": {}}) == 0
 
 
 def _session() -> Session:
@@ -44,7 +50,8 @@ def _session() -> Session:
         )
         # API Câmara diz 2 PL em 2025; nós temos 1 câmara → 50%
         conn.exec_driver_sql(
-            "insert into api_coverage (source, year, sigla_type, api_count) values ('camara',2025,'PL',2)"
+            "insert into api_coverage (source, year, sigla_type, api_count) values "
+            "('camara',2025,'PL',2),('senado',2025,'PL',4)"
         )
 
         conn.exec_driver_sql(
@@ -77,6 +84,9 @@ def test_coverage_by_year_house_type() -> None:
     # comparação vs API Câmara: 1 nossa / 2 da API = 50%
     assert by_year[2025]["api_camara"] == 2
     assert by_year[2025]["cobertura_camara_pct"] == 50.0
+    # Senado: 1 nossa / 4 da API = 25%
+    assert by_year[2025]["api_senado"] == 4
+    assert by_year[2025]["cobertura_senado_pct"] == 25.0
     assert by_year[2024]["api_camara"] is None
 
     by_type = {t["type"]: t["count"] for t in cov["by_type"]}

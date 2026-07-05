@@ -17,7 +17,29 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 CAMARA_URL = "https://dadosabertos.camara.leg.br/api/v2/proposicoes"
+SENADO_URL = "https://legis.senado.leg.br/dadosabertos/materia/pesquisa/lista"
 DEFAULT_TYPES = ["PL", "PEC", "PDL", "PLP", "MPV", "PLV"]
+
+
+def count_senado_materias(payload: dict[str, Any]) -> int:
+    """Conta matérias na resposta do Senado (lista Materia)."""
+    node = payload.get("PesquisaBasicaMateria") or {}
+    materias = node.get("Materias") if isinstance(node, dict) else None
+    materia = materias.get("Materia") if isinstance(materias, dict) else None
+    if isinstance(materia, list):
+        return len(materia)
+    return 1 if materia else 0
+
+
+def fetch_senado_count(year: int, sigla: str, http_get: Callable[..., Any]) -> int:
+    resp = http_get(
+        SENADO_URL,
+        params={"ano": year, "sigla": sigla},
+        headers={"accept": "application/json"},
+        timeout=25,
+    )
+    resp.raise_for_status()
+    return count_senado_materias(resp.json())
 
 
 def parse_last_page(payload: dict[str, Any]) -> int:
@@ -75,10 +97,12 @@ def main() -> None:
         total = 0
         for year in range(start, end + 1):
             for sigla in DEFAULT_TYPES:
-                count = fetch_camara_count(year, sigla, requests.get)
-                upsert_api_coverage(session, "camara", year, sigla, count)
-                total += 1
-                print(f"camara {year} {sigla}: {count}")
+                camara = fetch_camara_count(year, sigla, requests.get)
+                upsert_api_coverage(session, "camara", year, sigla, camara)
+                senado = fetch_senado_count(year, sigla, requests.get)
+                upsert_api_coverage(session, "senado", year, sigla, senado)
+                total += 2
+                print(f"{year} {sigla}: camara={camara} senado={senado}")
         session.commit()
         print(f"api_coverage sincronizado: {total} combinações.")
     finally:
