@@ -67,3 +67,16 @@ PYTHONPATH=/app
 
 # Presença em plenário da Câmara (diário às 06h10, janela padrão de 30 dias)
 10 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-plenary-attendance -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.plenary_attendance >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# --- Relatórios por e-mail (Amazon SES) ---
+# Só entrega de fato quando: (a) a conta SES estiver FORA do sandbox (production
+# access) e (b) os tiers tiverem `periodicidade_email` configurado em tiers.detalhes.
+# Enquanto faltar (a) ou (b), o job roda mas não envia nada.
+# Horários em UTC (container TZ=UTC): 11:00 UTC = 08:00 BRT.
+# NÃO agendar `total` (é modo de teste/preview, manda para todos os projetos).
+
+# Relatório semanal — segundas, 11:00 UTC (08:00 BRT)
+0 11 * * 1 cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-week -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade week >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Relatório mensal — dia 1, 11:00 UTC (08:00 BRT)
+0 11 1 * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-month -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade month >> /proc/1/fd/1 2>> /proc/1/fd/2
