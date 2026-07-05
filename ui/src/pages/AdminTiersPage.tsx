@@ -1,77 +1,141 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { AdminShell } from '@/components/layout/AdminShell';
 import { useTiers, useUpdateTier } from '@/hooks/useTiers';
-import type { Tier } from '@/api/admin';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import type { Tier, TierDetails } from '@/api/admin';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 
-const NUM_FIELDS: {
-  key: 'qtd_termos' | 'qtd_consultas_ia_mes' | 'qtd_email' | 'preco_mensal';
+type FieldType = 'number' | 'list';
+
+interface FieldDef {
+  key: string;
   label: string;
-}[] = [
-  { key: 'qtd_termos', label: 'Parlamentares (qtd_termos)' },
-  { key: 'qtd_consultas_ia_mes', label: 'Consultas IA/mês' },
-  { key: 'qtd_email', label: 'E-mails (qtd_email)' },
-  { key: 'preco_mensal', label: 'Preço mensal (R$)' },
+  hint?: string;
+  type: FieldType;
+  step?: string;
+}
+
+const GROUPS: { title: string; fields: FieldDef[] }[] = [
+  {
+    title: 'Limites do plano',
+    fields: [
+      { key: 'qtd_termos', label: 'Parlamentares monitorados', hint: 'Máximo por plano', type: 'number' },
+      { key: 'qtd_consultas_ia_mes', label: 'Consultas de IA / mês', hint: 'Cota mensal do chatbot', type: 'number' },
+      { key: 'preco_mensal', label: 'Preço mensal (R$)', hint: 'Base do cálculo de margem', type: 'number', step: '0.01' },
+    ],
+  },
+  {
+    title: 'E-mails e órgãos',
+    fields: [
+      { key: 'qtd_email', label: 'Qtd. de e-mails', hint: 'Ainda não usado no envio', type: 'number' },
+      { key: 'periodicidade_email', label: 'Periodicidade de e-mail', hint: 'Ex.: diario, semanal — separe por vírgula', type: 'list' },
+      { key: 'orgao', label: 'Órgãos', hint: 'Separe por vírgula — ainda não usado', type: 'list' },
+    ],
+  },
 ];
+
+const ALL_FIELDS = GROUPS.flatMap((g) => g.fields);
+
+function initialForm(tier: Tier): Record<string, string> {
+  const state: Record<string, string> = {};
+  for (const f of ALL_FIELDS) {
+    const value = tier.detalhes[f.key];
+    if (f.type === 'list') {
+      state[f.key] = Array.isArray(value) ? (value as string[]).join(', ') : '';
+    } else {
+      state[f.key] = value != null ? String(value) : '';
+    }
+  }
+  return state;
+}
 
 function TierCard({ tier }: { tier: Tier }) {
   const update = useUpdateTier();
   const { toast } = useToast();
-  const [form, setForm] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      NUM_FIELDS.map((f) => [
-        f.key,
-        tier.detalhes[f.key] != null ? String(tier.detalhes[f.key]) : '',
-      ]),
-    ),
-  );
+  const [form, setForm] = useState<Record<string, string>>(() => initialForm(tier));
+
+  const set = (key: string, value: string) =>
+    setForm((s) => ({ ...s, [key]: value }));
 
   const save = async () => {
-    const patch: Record<string, number> = {};
-    for (const f of NUM_FIELDS) {
-      if (form[f.key] !== '') patch[f.key] = Number(form[f.key]);
+    const patch: TierDetails = {};
+    for (const f of ALL_FIELDS) {
+      const raw = form[f.key];
+      if (f.type === 'list') {
+        const arr = raw.split(',').map((x) => x.trim()).filter(Boolean);
+        if (arr.length) patch[f.key] = arr;
+      } else if (raw !== '') {
+        patch[f.key] = Number(raw);
+      }
     }
     try {
       await update.mutateAsync({ id: tier.id, patch });
-      toast({ title: 'Tier atualizado', description: tier.product_id });
+      toast({ title: 'Plano atualizado', description: tier.tier_name_debug });
     } catch (e) {
       toast({
-        title: 'Erro ao salvar',
-        description: String(e),
+        title: 'Não foi possível salvar',
+        description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
     }
   };
 
   return (
-    <Card className="p-6 space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">{tier.tier_name_debug}</h2>
-        <p className="text-sm text-muted-foreground">{tier.product_id}</p>
+    <div className="mp-card space-y-6 bg-white p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[24px] font-bold leading-none text-[#090909]">
+          {tier.tier_name_debug}
+        </h2>
+        <span className="rounded-full bg-[#1b76ff]/10 px-3 py-1 text-[11px] font-bold text-[#1b76ff]">
+          {tier.product_id}
+        </span>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        {NUM_FIELDS.map((f) => (
-          <div key={f.key} className="space-y-1">
-            <Label htmlFor={`${tier.id}-${f.key}`}>{f.label}</Label>
-            <Input
-              id={`${tier.id}-${f.key}`}
-              type="number"
-              min={0}
-              value={form[f.key]}
-              onChange={(e) =>
-                setForm((s) => ({ ...s, [f.key]: e.target.value }))
-              }
-            />
+
+      {GROUPS.map((group) => (
+        <div key={group.title} className="space-y-3">
+          <h3 className="text-[12px] font-bold uppercase tracking-wide text-[#383838]/50">
+            {group.title}
+          </h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {group.fields.map((f) => (
+              <div key={f.key} className="space-y-1.5">
+                <Label
+                  htmlFor={`${tier.id}-${f.key}`}
+                  className="text-[13px] font-semibold text-[#383838]"
+                >
+                  {f.label}
+                </Label>
+                <Input
+                  id={`${tier.id}-${f.key}`}
+                  type={f.type === 'number' ? 'number' : 'text'}
+                  min={f.type === 'number' ? 0 : undefined}
+                  step={f.step}
+                  value={form[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  className="rounded-xl border-[#383838]/15"
+                />
+                {f.hint && (
+                  <p className="text-[11px] text-[#383838]/50">{f.hint}</p>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <Button onClick={save} disabled={update.isPending}>
-        {update.isPending ? 'Salvando…' : 'Salvar'}
-      </Button>
-    </Card>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={save}
+        disabled={update.isPending}
+        className="inline-flex items-center gap-2 rounded-full bg-[#1b76ff] px-6 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {update.isPending ? 'Salvando…' : 'Salvar alterações'}
+      </button>
+    </div>
   );
 }
 
@@ -79,13 +143,42 @@ export default function AdminTiersPage() {
   const { data: tiers, isLoading, error } = useTiers();
 
   return (
-    <main className="mx-auto max-w-3xl p-8 space-y-6">
-      <h1 className="text-2xl font-semibold">Gestão de Tiers</h1>
-      {isLoading && <p className="text-muted-foreground">Carregando…</p>}
-      {error && <p className="text-destructive">Erro ao carregar tiers.</p>}
-      {tiers?.map((tier) => (
-        <TierCard key={tier.id} tier={tier} />
-      ))}
-    </main>
+    <AdminShell footer="green">
+      <div className="flex flex-col gap-4">
+        <Link
+          to="/admin"
+          className="inline-flex w-fit items-center gap-1.5 rounded-full border border-[#383838]/20 px-3 py-1 text-[12px] font-semibold text-[#383838] no-underline transition-colors hover:bg-[#383838]/10"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Painel administrativo
+        </Link>
+        <div>
+          <h1 className="text-[36px] font-bold leading-none text-[#393939] md:text-[48px]">
+            Gestão de Tiers
+          </h1>
+          <p className="mt-1 text-[18px] font-normal text-[#383838]">
+            Edite os limites e o preço de cada plano. As mudanças valem na hora, sem redeploy.
+          </p>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="mp-card flex items-center gap-2 bg-white p-6 text-[#383838]/60">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Carregando planos…
+        </div>
+      )}
+      {error && (
+        <div className="mp-card bg-white p-6 text-destructive">
+          Não foi possível carregar os planos. Recarregue a página.
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {tiers?.map((tier) => (
+          <TierCard key={tier.id} tier={tier} />
+        ))}
+      </div>
+    </AdminShell>
   );
 }
