@@ -6,6 +6,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.services.admin_coverage import db_coverage
+from scripts.sync_api_coverage import parse_last_page
+
+
+def test_parse_last_page() -> None:
+    payload = {"links": [{"rel": "last", "href": "https://x/api?ano=2025&pagina=6520&itens=1"}]}
+    assert parse_last_page(payload) == 6520
+    assert parse_last_page({"dados": [1, 2, 3]}) == 3
 
 
 def _session() -> Session:
@@ -31,6 +38,14 @@ def _session() -> Session:
         )
         conn.exec_driver_sql("create table roll_call_votes (id integer primary key)")
         conn.exec_driver_sql("create table speeches_transcripts (id integer primary key)")
+        conn.exec_driver_sql(
+            "create table api_coverage (id integer primary key, source text, year integer, "
+            "sigla_type text, api_count integer, synced_at datetime)"
+        )
+        # API Câmara diz 2 PL em 2025; nós temos 1 câmara → 50%
+        conn.exec_driver_sql(
+            "insert into api_coverage (source, year, sigla_type, api_count) values ('camara',2025,'PL',2)"
+        )
 
         conn.exec_driver_sql(
             "insert into parliamentarian (id, type) values (1,'deputado'),(2,'senador')"
@@ -59,6 +74,10 @@ def test_coverage_by_year_house_type() -> None:
     assert by_year[2025]["senado"] == 1
     assert by_year[2025]["total"] == 2
     assert by_year[2024]["desconhecido"] == 1
+    # comparação vs API Câmara: 1 nossa / 2 da API = 50%
+    assert by_year[2025]["api_camara"] == 2
+    assert by_year[2025]["cobertura_camara_pct"] == 50.0
+    assert by_year[2024]["api_camara"] is None
 
     by_type = {t["type"]: t["count"] for t in cov["by_type"]}
     assert by_type["PL"] == 2

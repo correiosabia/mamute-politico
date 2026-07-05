@@ -2,6 +2,7 @@
 
 from .admin_audit_log import AdminAuditLog
 from .agency import Agency
+from .api_coverage import ApiCoverage
 from .authors_proposition import AuthorsProposition
 from .chatbot_usage import ChatbotUsage
 from .committee import Committee
@@ -25,6 +26,7 @@ from .videos_audios import VideoAudio
 __all__ = [
     "AdminAuditLog",
     "Agency",
+    "ApiCoverage",
     "AuthorsProposition",
     "ChatbotUsage",
     "Committee",

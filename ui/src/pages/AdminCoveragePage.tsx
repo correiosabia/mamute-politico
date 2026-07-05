@@ -62,8 +62,9 @@ export default function AdminCoveragePage() {
                     <th className="py-2 pr-3 font-semibold">Ano</th>
                     <th className="py-2 pr-3 text-right font-semibold">Câmara</th>
                     <th className="py-2 pr-3 text-right font-semibold">Senado</th>
-                    <th className="py-2 pr-3 text-right font-semibold">S/ casa</th>
                     <th className="py-2 pr-3 text-right font-semibold">Total</th>
+                    <th className="py-2 pr-3 text-right font-semibold">API Câmara</th>
+                    <th className="py-2 pr-3 text-right font-semibold">% Câmara</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -72,8 +73,13 @@ export default function AdminCoveragePage() {
                       <td className="py-2 pr-3 font-medium text-[#090909]">{r.year ?? '—'}</td>
                       <td className="py-2 pr-3 text-right">{num(r.camara)}</td>
                       <td className="py-2 pr-3 text-right">{num(r.senado)}</td>
-                      <td className="py-2 pr-3 text-right text-[#383838]/50">{num(r.desconhecido)}</td>
                       <td className="py-2 pr-3 text-right font-semibold">{num(r.total)}</td>
+                      <td className="py-2 pr-3 text-right text-[#383838]/60">
+                        {r.api_camara != null ? num(r.api_camara) : '—'}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-semibold text-[#090909]">
+                        {r.cobertura_camara_pct != null ? `${r.cobertura_camara_pct}%` : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -97,9 +103,9 @@ export default function AdminCoveragePage() {
           </div>
 
           <div className="mp-card bg-white p-4 text-[12px] text-[#383838]/50">
-            Comparação percentual com as APIs abertas (Câmara / Senado) — próxima
-            etapa. Aqui estão as contagens do nosso banco; a casa é derivada da casa
-            do autor da proposição.
+            "% Câmara" = nossas proposições da Câmara ÷ total da API aberta da Câmara
+            no ano (via job de sync). Senado é a próxima etapa. A casa é derivada da
+            casa do autor da proposição.
           </div>
         </>
       )}

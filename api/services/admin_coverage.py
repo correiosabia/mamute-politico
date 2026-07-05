@@ -55,16 +55,38 @@ def db_coverage(db: Session) -> dict[str, Any]:
         house = row["house"] if row["house"] in bucket else "desconhecido"
         bucket[house] += int(row["n"])
 
-    by_year_house = [
-        {
-            "year": year,
-            "camara": v["camara"],
-            "senado": v["senado"],
-            "desconhecido": v["desconhecido"],
-            "total": v["camara"] + v["senado"] + v["desconhecido"],
-        }
-        for year, v in by_year.items()
-    ]
+    # Contagens da API aberta da Câmara por ano (se já sincronizadas).
+    api_rows = (
+        db.execute(
+            text(
+                "SELECT year, SUM(api_count) AS n FROM api_coverage "
+                "WHERE source = 'camara' GROUP BY year"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    api_camara_by_year = {row["year"]: int(row["n"] or 0) for row in api_rows}
+
+    by_year_house = []
+    for year, v in by_year.items():
+        api_camara = api_camara_by_year.get(year)
+        cobertura_pct = (
+            round(v["camara"] / api_camara * 100, 1)
+            if api_camara
+            else None
+        )
+        by_year_house.append(
+            {
+                "year": year,
+                "camara": v["camara"],
+                "senado": v["senado"],
+                "desconhecido": v["desconhecido"],
+                "total": v["camara"] + v["senado"] + v["desconhecido"],
+                "api_camara": api_camara,
+                "cobertura_camara_pct": cobertura_pct,
+            }
+        )
     by_year_house.sort(key=lambda r: (r["year"] is None, r["year"]), reverse=True)
 
     type_rows = (
