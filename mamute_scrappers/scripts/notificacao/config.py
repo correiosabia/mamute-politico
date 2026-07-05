@@ -24,7 +24,7 @@ for _path in _ENV_CANDIDATES:
         load_dotenv(_path, override=False)
 
 # Produção: filtradas pelo tier (`periodicidade_email`).
-PERIODICIDADES_PRODUCAO = frozenset({"day", "week", "month"})
+PERIODICIDADES_PRODUCAO = frozenset({"day", "week", "fortnight", "month"})
 # Teste: amostra limitada, sem filtro de tier.
 PERIODICIDADE_TESTE = "total"
 PERIODICIDADES_VALIDAS = PERIODICIDADES_PRODUCAO | {PERIODICIDADE_TESTE}
@@ -32,6 +32,7 @@ PERIODICIDADES_VALIDAS = PERIODICIDADES_PRODUCAO | {PERIODICIDADE_TESTE}
 PERIOD_DAYS: dict[str, int | None] = {
     "day": 1,
     "week": 7,
+    "fortnight": 15,
     "month": 30,
     "total": None,
 }
@@ -39,6 +40,7 @@ PERIOD_DAYS: dict[str, int | None] = {
 DEFAULT_HIGHLIGHT_LIMIT = {
     "day": 9,
     "week": 9,
+    "fortnight": 9,
     "month": 9,
     "total": 10,
 }
@@ -148,6 +150,7 @@ def subject_for_periodicidade(periodicidade: str) -> str:
     labels = {
         "day": "Relatório diário",
         "week": "Relatório semanal",
+        "fortnight": "Relatório quinzenal",
         "month": "Relatório mensal",
         "total": "Relatório (amostra de teste)",
     }

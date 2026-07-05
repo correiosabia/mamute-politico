@@ -37,6 +37,7 @@ _TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "report.html"
 _PERIOD_LABELS = {
     "day": "último dia",
     "week": "últimos 7 dias",
+    "fortnight": "últimos 15 dias",
     "month": "últimos 30 dias",
     "total": "amostra recente (teste, até 10 itens por parlamentar)",
 }

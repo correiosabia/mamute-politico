@@ -73,15 +73,24 @@ PYTHONPATH=/app
 10 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh camara-plenary-attendance -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.plenary_attendance >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # --- Relatórios por e-mail (provedor definido por MAIL_PROVIDER; hoje: Mailgun) ---
-# Só entrega de fato quando: (a) MAIL_PROVIDER + credenciais do provedor estiverem
-# no .env (Mailgun entrega a usuários reais, sem o sandbox que o SES exigia) e
-# (b) os tiers tiverem `periodicidade_email` em tiers.detalhes. Sem (a) ou (b), o
-# job roda mas não envia nada.
+# Uma linha por periodicidade: CADA job roda no seu horário e só envia aos projetos
+# cujo tier tem aquela periodicidade em `tiers.detalhes.periodicidade_email`. Assim
+# o cron é maleável — quem manda no envio é a config de cada plano, não o cron. Um
+# projeto sem a periodicidade correspondente simplesmente não entra na query.
+# Só entrega de fato quando: (a) MAIL_PROVIDER + credenciais no .env (Mailgun entrega
+# a usuários reais, sem o sandbox que o SES exigia) e (b) o tier tiver periodicidade_email.
 # Horários em UTC (container TZ=UTC): 11:00 UTC = 08:00 BRT.
 # NÃO agendar `total` (é modo de teste/preview, manda para todos os projetos).
 
+# Relatório diário — todo dia, 11:00 UTC (08:00 BRT)
+0 11 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-day -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade day >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # Relatório semanal — segundas, 11:00 UTC (08:00 BRT)
 0 11 * * 1 cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-week -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade week >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Relatório quinzenal — dias 1 e 16, 11:00 UTC (08:00 BRT). Cron não faz "a cada 15
+# dias"; dias 1/16 aproximam bem (janela do relatório é fixa em 15 dias).
+0 11 1,16 * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-fortnight -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade fortnight >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Relatório mensal — dia 1, 11:00 UTC (08:00 BRT)
 0 11 1 * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-month -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade month >> /proc/1/fd/1 2>> /proc/1/fd/2

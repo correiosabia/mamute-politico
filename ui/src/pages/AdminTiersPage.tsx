@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 
-type FieldType = 'number' | 'list';
+type FieldType = 'number' | 'list' | 'multiselect';
 
 interface FieldDef {
   key: string;
@@ -16,7 +16,16 @@ interface FieldDef {
   hint?: string;
   type: FieldType;
   step?: string;
+  options?: { value: string; label: string }[];
 }
+
+// Valores canônicos que o envio (mamute_scrappers.scripts.notificacao) entende.
+const PERIODICITY_OPTIONS = [
+  { value: 'day', label: 'Diário' },
+  { value: 'week', label: 'Semanal' },
+  { value: 'fortnight', label: 'Quinzenal' },
+  { value: 'month', label: 'Mensal' },
+];
 
 const GROUPS: { title: string; fields: FieldDef[] }[] = [
   {
@@ -30,11 +39,13 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
   {
     title: 'E-mails e órgãos',
     fields: [
-      { key: 'periodicidade_email', label: 'Periodicidade de e-mail', hint: 'Ex.: diario, semanal — separe por vírgula', type: 'list' },
+      { key: 'periodicidade_email', label: 'Periodicidade de e-mail', hint: 'Frequências de relatório que este plano recebe', type: 'multiselect', options: PERIODICITY_OPTIONS },
       { key: 'orgao', label: 'Órgãos', hint: 'Separe por vírgula — ainda não usado', type: 'list' },
     ],
   },
 ];
+
+const isListLike = (t: FieldType) => t === 'list' || t === 'multiselect';
 
 const ALL_FIELDS = GROUPS.flatMap((g) => g.fields);
 
@@ -42,13 +53,57 @@ function initialForm(tier: Tier): Record<string, string> {
   const state: Record<string, string> = {};
   for (const f of ALL_FIELDS) {
     const value = tier.detalhes[f.key];
-    if (f.type === 'list') {
+    if (isListLike(f.type)) {
       state[f.key] = Array.isArray(value) ? (value as string[]).join(', ') : '';
     } else {
       state[f.key] = value != null ? String(value) : '';
     }
   }
   return state;
+}
+
+/** Toggle de chips. Guarda os valores selecionados como CSV (mesma forma que os
+ * campos 'list'), preservando a ordem canônica das opções. */
+function MultiSelectChips({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (csv: string) => void;
+}) {
+  const selected = new Set(
+    value.split(',').map((x) => x.trim()).filter(Boolean),
+  );
+  const toggle = (val: string) => {
+    const next = new Set(selected);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onChange(options.filter((o) => next.has(o.value)).map((o) => o.value).join(', '));
+  };
+  return (
+    <div className="flex flex-wrap gap-2 pt-1">
+      {options.map((o) => {
+        const on = selected.has(o.value);
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => toggle(o.value)}
+            className={
+              on
+                ? 'rounded-full bg-[#1b76ff] px-3 py-1 text-[12px] font-semibold text-white'
+                : 'rounded-full border border-[#383838]/20 px-3 py-1 text-[12px] font-semibold text-[#383838] transition-colors hover:bg-[#383838]/10'
+            }
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function TierCard({ tier }: { tier: Tier }) {
@@ -63,7 +118,7 @@ function TierCard({ tier }: { tier: Tier }) {
     const patch: TierDetails = {};
     for (const f of ALL_FIELDS) {
       const raw = form[f.key];
-      if (f.type === 'list') {
+      if (isListLike(f.type)) {
         const arr = raw.split(',').map((x) => x.trim()).filter(Boolean);
         if (arr.length) patch[f.key] = arr;
       } else if (raw !== '') {
@@ -107,15 +162,23 @@ function TierCard({ tier }: { tier: Tier }) {
                 >
                   {f.label}
                 </Label>
-                <Input
-                  id={`${tier.id}-${f.key}`}
-                  type={f.type === 'number' ? 'number' : 'text'}
-                  min={f.type === 'number' ? 0 : undefined}
-                  step={f.step}
-                  value={form[f.key]}
-                  onChange={(e) => set(f.key, e.target.value)}
-                  className="rounded-xl border-[#383838]/15"
-                />
+                {f.type === 'multiselect' ? (
+                  <MultiSelectChips
+                    options={f.options ?? []}
+                    value={form[f.key]}
+                    onChange={(v) => set(f.key, v)}
+                  />
+                ) : (
+                  <Input
+                    id={`${tier.id}-${f.key}`}
+                    type={f.type === 'number' ? 'number' : 'text'}
+                    min={f.type === 'number' ? 0 : undefined}
+                    step={f.step}
+                    value={form[f.key]}
+                    onChange={(e) => set(f.key, e.target.value)}
+                    className="rounded-xl border-[#383838]/15"
+                  />
+                )}
                 {f.hint && (
                   <p className="text-[11px] text-[#383838]/50">{f.hint}</p>
                 )}
