@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -47,12 +47,12 @@ def _resolve_projeto_id(db: Session, email: Optional[str]) -> Optional[int]:
     return int(row[0]) if row else None
 
 
-@router.post("", status_code=204)
+@router.post("", status_code=status.HTTP_204_NO_CONTENT)
 def ingest_events(
     batch: EventsBatch,
     payload: dict = Depends(verify_token),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     email = (payload.get("sub") or "").strip().lower() or None
     projeto_id = _resolve_projeto_id(db, email)
     for event in batch.events:
@@ -68,4 +68,4 @@ def ingest_events(
             )
         )
     db.commit()
-    return None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
