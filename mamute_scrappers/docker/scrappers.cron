@@ -47,6 +47,10 @@ PYTHONPATH=/app
 # Tipos de proposição (diário às 04h)
 25 4 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-proposition-types -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.proposition_type >> /proc/1/fd/1 2>> /proc/1/fd/2
 
+# Caches dos painéis admin (diário às 04h): api_coverage + snapshot da cobertura
+# do banco (pesado ao vivo) + cotação USD→BRL do dia. A API só lê essas tabelas.
+0 4 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh admin-caches -- /usr/local/bin/python -m mamute_scrappers.scripts.refresh_admin_caches >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # Votações nominais do Senado (a cada 3h)
 12 */3 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh senado-roll-call-votes -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.roll_call_votes >> /proc/1/fd/1 2>> /proc/1/fd/2
 

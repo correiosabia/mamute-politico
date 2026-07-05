@@ -36,6 +36,16 @@ export default function AdminCoveragePage() {
         <p className="mt-1 text-[18px] font-normal text-[#383838]">
           Quanto temos preenchido, por ano, casa e tipo.
         </p>
+        {data?.computed_at && (
+          <p className="mt-1 text-[13px] font-normal text-[#383838]/60">
+            Atualizado em{' '}
+            {new Date(data.computed_at).toLocaleString('pt-BR', {
+              dateStyle: 'short',
+              timeStyle: 'short',
+            })}{' '}
+            · recalculado 1x/dia
+          </p>
+        )}
       </div>
 
       {isLoading && (

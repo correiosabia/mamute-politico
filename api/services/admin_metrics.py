@@ -5,6 +5,7 @@ diferenças de acesso a JSON entre PostgreSQL e SQLite (usado nos testes).
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from datetime import date
@@ -12,6 +13,8 @@ from typing import Any, Optional
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("admin_metrics")
 
 _PAGE_LABELS = {
     "inicio": "Início",
@@ -29,15 +32,49 @@ def _page_label(page: Optional[str]) -> str:
 def _house_of(ptype: Optional[str]) -> str:
     return "senado" if ptype and "senad" in ptype.lower() else "camara"
 
-_DEFAULT_USD_BRL = 5.40
 _USD_BRL_URL = "https://economia.awesomeapi.com.br/last/USD-BRL"
 _RATE_TTL_SECONDS = 1800
 _rate_cache: dict[str, Any] = {"value": None, "at": 0.0}
+# Emergência de cold-start APENAS: sem env, sem linha em usd_brl_rate e API fora.
+# Em regime a taxa vem da tabela usd_brl_rate (real, atualizada 1x/dia às 04h
+# por mamute_scrappers.scripts.refresh_admin_caches). Sem valor fixo "de fachada".
+_COLD_START_USD_BRL = 6.0
 
 
-def get_usd_brl_rate() -> float:
-    """Taxa USD→BRL. Override por env; senão busca ao vivo (cache 30min);
-    fallback para o último valor conhecido ou o default (fail-soft)."""
+def _fetch_live_usd_brl() -> Optional[float]:
+    try:
+        import requests
+
+        resp = requests.get(_USD_BRL_URL, timeout=4)
+        resp.raise_for_status()
+        return float(resp.json()["USDBRL"]["bid"])
+    except Exception:  # noqa: BLE001 — câmbio nunca pode quebrar as métricas
+        return None
+
+
+def _latest_rate_from_db(db: Optional[Session]) -> Optional[float]:
+    if db is None:
+        return None
+    try:
+        row = db.execute(
+            text("SELECT bid FROM usd_brl_rate ORDER BY rate_date DESC LIMIT 1")
+        ).first()
+    except Exception:  # noqa: BLE001 — tabela ausente (migration/testes) → ignora
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def get_usd_brl_rate(db: Optional[Session] = None) -> float:
+    """Taxa USD→BRL real do dia.
+
+    Ordem: env (pin p/ testes) → cache em memória (30min) → tabela usd_brl_rate
+    (fonte da verdade, preenchida diariamente) → busca ao vivo (bootstrap) →
+    último valor conhecido. Sem fallback fixo desatualizado no caminho normal.
+    """
     override = os.getenv("MAMUTE_USD_BRL_RATE")
     if override:
         try:
@@ -50,15 +87,19 @@ def get_usd_brl_rate() -> float:
     if cached is not None and now - _rate_cache["at"] < _RATE_TTL_SECONDS:
         return float(cached)
 
-    rate = float(cached) if cached is not None else _DEFAULT_USD_BRL
-    try:
-        import requests
-
-        resp = requests.get(_USD_BRL_URL, timeout=4)
-        resp.raise_for_status()
-        rate = float(resp.json()["USDBRL"]["bid"])
-    except Exception:  # noqa: BLE001 — câmbio nunca pode quebrar as métricas
-        pass
+    rate = _latest_rate_from_db(db)
+    if rate is None:
+        rate = _fetch_live_usd_brl()
+    if rate is None:
+        # Sem banco nem rede: usa o último valor conhecido em memória; se não há
+        # nenhum (cold start absoluto), emergência logada — some no 1º ciclo.
+        if cached is not None:
+            return float(cached)
+        logger.warning(
+            "Câmbio USD→BRL indisponível (sem env/tabela/rede); usando cold-start %.2f",
+            _COLD_START_USD_BRL,
+        )
+        return _COLD_START_USD_BRL
 
     _rate_cache["value"] = rate
     _rate_cache["at"] = now

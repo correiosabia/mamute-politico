@@ -69,7 +69,6 @@ class TierOut(BaseModel):
 class TierDetailsUpdate(BaseModel):
     qtd_termos: Optional[int] = Field(default=None, ge=0)
     qtd_consultas_ia_mes: Optional[int] = Field(default=None, ge=0)
-    qtd_email: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
     preco_mensal: Optional[float] = Field(default=None, ge=0)
@@ -142,7 +141,7 @@ def metrics_overview_route(
     db: Session = Depends(get_db),
     _admin: str = Depends(require_ghost_admin),
 ) -> dict[str, Any]:
-    return metrics_overview(db, current_period_start(), get_usd_brl_rate())
+    return metrics_overview(db, current_period_start(), get_usd_brl_rate(db))
 
 
 @router.get("/metrics/users")
@@ -153,7 +152,7 @@ def metrics_users_route(
     _admin: str = Depends(require_ghost_admin),
 ) -> dict[str, Any]:
     period = current_period_start()
-    rate = get_usd_brl_rate()
+    rate = get_usd_brl_rate(db)
     return {
         "period_start": period.isoformat(),
         "usd_brl_rate": round(rate, 4),
@@ -191,7 +190,7 @@ def metrics_ia_route(
     db: Session = Depends(get_db),
     _admin: str = Depends(require_ghost_admin),
 ) -> dict[str, Any]:
-    return metrics_ia(db, current_period_start(), get_usd_brl_rate())
+    return metrics_ia(db, current_period_start(), get_usd_brl_rate(db))
 
 
 @router.get("/coverage")
@@ -209,7 +208,7 @@ def metrics_user_detail_route(
     _admin: str = Depends(require_ghost_admin),
 ) -> dict[str, Any]:
     detail = metrics_user_detail(
-        db, projeto_id, current_period_start(), get_usd_brl_rate()
+        db, projeto_id, current_period_start(), get_usd_brl_rate(db)
     )
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")

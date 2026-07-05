@@ -6,9 +6,12 @@ seguinte — aqui ficam as contagens do nosso banco.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 # Casa por proposição: senado se houver autor senador; senão câmara se houver
@@ -30,6 +33,42 @@ _HOUSE_EXPR = """
 
 
 def db_coverage(db: Session) -> dict[str, Any]:
+    """Cobertura do banco. Serve o snapshot pré-computado pela rotina diária
+    (mamute_scrappers.scripts.refresh_admin_caches, 04h) — resposta instantânea.
+    Se ainda não houver snapshot (deploy novo, testes), computa ao vivo."""
+    cached = _read_snapshot(db)
+    if cached is not None:
+        return cached
+    result = _compute_coverage(db)
+    result["computed_at"] = None
+    return result
+
+
+def _read_snapshot(db: Session) -> dict[str, Any] | None:
+    try:
+        row = db.execute(
+            text(
+                "SELECT payload, computed_at FROM coverage_snapshot "
+                "ORDER BY computed_at DESC LIMIT 1"
+            )
+        ).first()
+    except SQLAlchemyError:
+        # Tabela ainda não existe (migration não aplicada) — cai pro cálculo vivo.
+        db.rollback()
+        return None
+    if row is None:
+        return None
+    payload = row[0]
+    if isinstance(payload, str):  # SQLite/JSON-como-texto
+        payload = json.loads(payload)
+    computed_at = row[1]
+    payload["computed_at"] = (
+        computed_at.isoformat() if isinstance(computed_at, datetime) else computed_at
+    )
+    return payload
+
+
+def _compute_coverage(db: Session) -> dict[str, Any]:
     year_house_rows = (
         db.execute(
             text(

@@ -121,6 +121,45 @@ def test_get_usd_brl_rate_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert get_usd_brl_rate() == 5.42
 
 
+def _rate_session() -> Session:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "create table usd_brl_rate (rate_date date primary key, bid numeric, "
+            "fetched_at datetime)"
+        )
+        conn.exec_driver_sql(
+            "insert into usd_brl_rate (rate_date, bid) values "
+            "('2026-07-04', 6.10), ('2026-07-05', 6.25)"
+        )
+    return sessionmaker(bind=engine, expire_on_commit=False)()
+
+
+def test_get_usd_brl_rate_from_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sem env, a taxa vem da linha mais recente de usd_brl_rate (real do dia)."""
+    from api.services import admin_metrics
+
+    monkeypatch.delenv("MAMUTE_USD_BRL_RATE", raising=False)
+    monkeypatch.setattr(admin_metrics, "_rate_cache", {"value": None, "at": 0.0})
+    assert admin_metrics.get_usd_brl_rate(_rate_session()) == 6.25
+
+
+def test_get_usd_brl_rate_no_db_uses_live_not_540(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sem env e sem tabela: cai na busca ao vivo — nunca no antigo fixo 5.40."""
+    from api.services import admin_metrics
+
+    monkeypatch.delenv("MAMUTE_USD_BRL_RATE", raising=False)
+    monkeypatch.setattr(admin_metrics, "_rate_cache", {"value": None, "at": 0.0})
+    monkeypatch.setattr(admin_metrics, "_fetch_live_usd_brl", lambda: 5.73)
+    assert admin_metrics.get_usd_brl_rate(None) == 5.73
+
+
 def test_metrics_routes_admin_gated(client: TestClient) -> None:
     assert client.get("/api/admin/metrics/overview").status_code == 200
     body = client.get("/api/admin/metrics/users").json()

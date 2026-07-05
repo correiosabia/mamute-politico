@@ -30,7 +30,6 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
   {
     title: 'E-mails e órgãos',
     fields: [
-      { key: 'qtd_email', label: 'Qtd. de e-mails', hint: 'Ainda não usado no envio', type: 'number' },
       { key: 'periodicidade_email', label: 'Periodicidade de e-mail', hint: 'Ex.: diario, semanal — separe por vírgula', type: 'list' },
       { key: 'orgao', label: 'Órgãos', hint: 'Separe por vírgula — ainda não usado', type: 'list' },
     ],
