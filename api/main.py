@@ -10,6 +10,7 @@ try:
         admin,
         analysis,
         authors_proposition,
+        events,
         ghost_webhooks,
         projects,
         parliamentarians,
@@ -25,6 +26,7 @@ except ImportError:
         admin,
         analysis,
         authors_proposition,
+        events,
         ghost_webhooks,
         projects,
         parliamentarians,
@@ -61,6 +63,7 @@ def create_app() -> FastAPI:
 
     api_router.include_router(ghost_webhooks.router)
     api_router.include_router(admin.router)
+    api_router.include_router(events.router)
 
     api_router.include_router(analysis.router, dependencies=auth_dependencies)
     api_router.include_router(parliamentarians.router, dependencies=auth_dependencies)

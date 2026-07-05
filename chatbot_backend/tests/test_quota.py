@@ -78,6 +78,9 @@ def _make_session(
                 question_chars integer not null default 0,
                 answer_chars integer not null default 0,
                 model text,
+                prompt_tokens integer,
+                completion_tokens integer,
+                cost_usd numeric,
                 created_at datetime not null default current_timestamp,
                 updated_at datetime not null default current_timestamp
             )

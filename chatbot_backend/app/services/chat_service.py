@@ -19,6 +19,7 @@ from ..core.config import get_settings
 from .prompts import build_prompt
 from .reranker import LLMReranker
 from .sql_context import fetch_sql_context
+from .usage_extract import extract_usage
 from .vector_store import get_retriever
 
 settings = get_settings()
@@ -30,6 +31,7 @@ class JSONTokenStreamingHandler(AsyncCallbackHandler):
 
     def __init__(self, iterator_handler: AsyncIteratorCallbackHandler) -> None:
         self.iterator_handler = iterator_handler
+        self.usage: Dict[str, Any] | None = None
 
     async def on_llm_new_token(
         self,
@@ -40,6 +42,10 @@ class JSONTokenStreamingHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         await self.iterator_handler.on_llm_new_token(token, run_id=run_id, **kwargs)
+
+    async def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        # Captura os tokens de uso do chunk final (stream_usage=True). Fail-soft.
+        self.usage = extract_usage(response)
 
 
 class ChatbotService:
@@ -199,6 +205,7 @@ class ChatbotService:
             temperature=settings.openai_temperature,
             max_tokens=settings.openai_max_tokens,
             streaming=True,
+            stream_usage=True,
             api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url or None,
         )
@@ -299,6 +306,8 @@ class ChatbotService:
             effective_request_id,
             (perf_counter() - started_at) * 1000,
         )
+        if json_handler.usage:
+            yield {"type": "usage", **json_handler.usage}
         yield {"type": "end"}
 
     async def invoke(self, inputs: Dict[str, Any], request_id: str | None = None) -> str:

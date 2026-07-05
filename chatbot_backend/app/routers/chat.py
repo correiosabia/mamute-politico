@@ -94,7 +94,14 @@ def _start_usage_or_raise(
         ) from exc
 
 
-def _mark_usage(usage_id: int | None, *, status_value: str, answer_chars: int = 0) -> None:
+def _mark_usage(
+    usage_id: int | None,
+    *,
+    status_value: str,
+    answer_chars: int = 0,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+) -> None:
     if usage_id is None:
         return
     try:
@@ -104,6 +111,8 @@ def _mark_usage(usage_id: int | None, *, status_value: str, answer_chars: int = 
                 usage_id,
                 status_value=status_value,
                 answer_chars=answer_chars,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
     except SQLAlchemyError as exc:  # pragma: no cover - only observability on cleanup
         logger.exception(
@@ -176,13 +185,27 @@ async def stream_chat(
             len(request.history),
             bool(filters),
         )
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
         try:
             async for chunk in service.stream_response(inputs, request_id=request_id):
+                chunk_type = chunk.get("type")
+                if chunk_type == "usage":
+                    # Evento interno: guarda os tokens e NÃO repassa ao cliente.
+                    prompt_tokens = chunk.get("prompt_tokens")
+                    completion_tokens = chunk.get("completion_tokens")
+                    continue
                 value = chunk.get("value")
-                if chunk.get("type") == "token" and isinstance(value, str):
+                if chunk_type == "token" and isinstance(value, str):
                     answer_chars += len(value)
                 yield _sse_event_stream(chunk)
-            _mark_usage(usage_id, status_value="completed", answer_chars=answer_chars)
+            _mark_usage(
+                usage_id,
+                status_value="completed",
+                answer_chars=answer_chars,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
             elapsed = perf_counter() - started_at
             logger.info(
                 "✅ Stream request completed | request_id=%s | elapsed_ms=%.2f",

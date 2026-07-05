@@ -34,6 +34,7 @@ def test_all_routers_importable() -> None:
         "admin",
         "analysis",
         "authors_proposition",
+        "events",
         "ghost_webhooks",
         "parliamentarians",
         "projects",

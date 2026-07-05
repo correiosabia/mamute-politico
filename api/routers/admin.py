@@ -16,11 +16,35 @@ try:
     from ..dependencies import get_db
     from ..db.models.project import Tiers
     from ..db.models.admin_audit_log import AdminAuditLog
+    from ..services.admin_coverage import db_coverage
+    from ..services.admin_metrics import (
+        current_period_start,
+        get_usd_brl_rate,
+        metrics_ia,
+        metrics_overview,
+        metrics_parliamentarians,
+        metrics_sections,
+        metrics_tools,
+        metrics_user_detail,
+        metrics_users,
+    )
 except ImportError:  # execução dentro de api/
     from security import require_ghost_admin
     from dependencies import get_db
     from db.models.project import Tiers
     from db.models.admin_audit_log import AdminAuditLog
+    from services.admin_coverage import db_coverage
+    from services.admin_metrics import (
+        current_period_start,
+        get_usd_brl_rate,
+        metrics_ia,
+        metrics_overview,
+        metrics_parliamentarians,
+        metrics_sections,
+        metrics_tools,
+        metrics_user_detail,
+        metrics_users,
+    )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -111,3 +135,82 @@ def update_tier(
     db.commit()
     db.refresh(tier)
     return tier
+
+
+@router.get("/metrics/overview")
+def metrics_overview_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return metrics_overview(db, current_period_start(), get_usd_brl_rate())
+
+
+@router.get("/metrics/users")
+def metrics_users_route(
+    limit: Optional[int] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    period = current_period_start()
+    rate = get_usd_brl_rate()
+    return {
+        "period_start": period.isoformat(),
+        "usd_brl_rate": round(rate, 4),
+        "users": metrics_users(db, period, rate, limit=limit, search=search),
+    }
+
+
+@router.get("/metrics/tools")
+def metrics_tools_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return {"tools": metrics_tools(db)}
+
+
+@router.get("/metrics/sections")
+def metrics_sections_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return {"sections": metrics_sections(db)}
+
+
+@router.get("/metrics/parliamentarians")
+def metrics_parliamentarians_route(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return metrics_parliamentarians(db, limit=limit)
+
+
+@router.get("/metrics/ia")
+def metrics_ia_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return metrics_ia(db, current_period_start(), get_usd_brl_rate())
+
+
+@router.get("/coverage")
+def coverage_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return db_coverage(db)
+
+
+@router.get("/metrics/users/{projeto_id}")
+def metrics_user_detail_route(
+    projeto_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    detail = metrics_user_detail(
+        db, projeto_id, current_period_start(), get_usd_brl_rate()
+    )
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")
+    return detail
