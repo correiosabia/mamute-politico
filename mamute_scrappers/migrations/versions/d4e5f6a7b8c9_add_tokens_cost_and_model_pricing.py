@@ -47,7 +47,7 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO model_pricing (model, input_usd_per_1m, output_usd_per_1m, currency, source)
-        VALUES ('gemini-2.5-flash', 0.30, 2.50, 'USD', 'seed')
+        VALUES ('google/gemini-2.5-flash', 0.30, 2.50, 'USD', 'seed')
         ON CONFLICT (model) DO NOTHING
         """
     )
