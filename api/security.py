@@ -85,14 +85,12 @@ def _extract_token(authorization_header: str) -> str:
     return parts[1]
 
 
-def verify_token(request: Request, authorization: str = Header(...)) -> Dict[str, Any]:
-    """Valida o JWT emitido pelo Ghost Members."""
+def _decode_ghost_jwt(token: str) -> Dict[str, Any]:
+    """Decodifica o JWT Ghost, com um retry em caso de rotação de chave."""
     settings = get_ghost_settings()
-    token = _extract_token(authorization)
     public_key = get_public_key()
-
     try:
-        decoded_token = jwt.decode(
+        return jwt.decode(
             token,
             public_key,
             algorithms=[JWT_ALGORITHM],
@@ -103,13 +101,20 @@ def verify_token(request: Request, authorization: str = Header(...)) -> Dict[str
         # Possível rotação de chave: limpa o cache e tenta novamente uma vez.
         get_public_key.cache_clear()  # type: ignore[attr-defined]
         public_key = get_public_key()
-        decoded_token = jwt.decode(
+        return jwt.decode(
             token,
             public_key,
             algorithms=[JWT_ALGORITHM],
             audience=settings["audience"],
             issuer=settings["issuer"],
         )
+
+
+def verify_token(request: Request, authorization: str = Header(...)) -> Dict[str, Any]:
+    """Valida o JWT emitido pelo Ghost Members."""
+    token = _extract_token(authorization)
+    try:
+        decoded_token = _decode_ghost_jwt(token)
     except ExpiredSignatureError as exc:
         raise HTTPException(status_code=401, detail="O token expirou.") from exc
     except InvalidTokenError as exc:
@@ -122,4 +127,52 @@ def verify_token(request: Request, authorization: str = Header(...)) -> Dict[str
     return decoded_token
 
 
-__all__ = ["verify_token", "get_ghost_settings", "get_public_key"]
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_admin_settings() -> Dict[str, Any]:
+    """Lê a config do gate admin do ambiente (sem cache: barato e testável)."""
+    raw = os.getenv("MAMUTE_ADMIN_EMAILS", "")
+    emails = frozenset(e.strip().lower() for e in raw.split(",") if e.strip())
+    return {"enabled": _env_flag("MAMUTE_ADMIN_PANELS_ENABLED"), "emails": emails}
+
+
+def require_ghost_admin(
+    request: Request, authorization: str | None = Header(default=None)
+) -> str:
+    """Gate único de admin. Qualquer falha vira 404 (esconde a superfície)."""
+    cfg = get_admin_settings()
+    not_found = HTTPException(status_code=404, detail="Not Found")
+
+    if not cfg["enabled"] or not authorization:
+        raise not_found
+
+    try:
+        token = _extract_token(authorization)
+        decoded = _decode_ghost_jwt(token)
+    except HTTPException:
+        raise not_found
+    except Exception:  # noqa: BLE001 — qualquer erro de token vira 404
+        raise not_found
+
+    email = (decoded.get("sub") or "").strip().lower()
+    if not email or email not in cfg["emails"]:
+        raise not_found
+
+    request.state.token_payload = decoded
+    request.state.token_email = email
+    request.state.is_admin = True
+    return email
+
+
+__all__ = [
+    "verify_token",
+    "get_ghost_settings",
+    "get_public_key",
+    "get_admin_settings",
+    "require_ghost_admin",
+]
