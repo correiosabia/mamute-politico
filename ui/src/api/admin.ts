@@ -86,8 +86,7 @@ export function fetchMetricsUsers(params?: {
   const qs = new URLSearchParams();
   if (params?.limit != null) qs.set('limit', String(params.limit));
   if (params?.search) qs.set('search', params.search);
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
-  return request<MetricsUsersResponse>(`/admin/metrics/users${suffix}`);
+  return request<MetricsUsersResponse>(`/admin/metrics/users?${qs.toString()}`);
 }
 
 export interface ToolUsage {
