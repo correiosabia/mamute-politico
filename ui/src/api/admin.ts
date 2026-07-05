@@ -13,7 +13,6 @@ export function fetchWhoami(): Promise<WhoamiResponse> {
 export interface TierDetails {
   qtd_termos?: number;
   qtd_consultas_ia_mes?: number;
-  qtd_email?: number;
   periodicidade_email?: string[];
   orgao?: string[];
   preco_mensal?: number;
@@ -159,6 +158,8 @@ export interface Coverage {
   }[];
   by_type: { type: string; count: number }[];
   totals: { proposicoes: number; votacoes: number; discursos: number };
+  /** ISO do último cálculo (rotina diária). null = computado ao vivo agora. */
+  computed_at?: string | null;
 }
 
 export function fetchCoverage(): Promise<Coverage> {

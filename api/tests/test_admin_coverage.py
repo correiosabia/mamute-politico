@@ -1,6 +1,8 @@
 """Cobertura do banco: contagens por ano, casa (via autor) e tipo."""
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -96,3 +98,35 @@ def test_coverage_by_year_house_type() -> None:
     assert cov["totals"]["proposicoes"] == 3
     assert cov["totals"]["votacoes"] == 2
     assert cov["totals"]["discursos"] == 0
+    # Sem snapshot → computado ao vivo (computed_at nulo).
+    assert cov["computed_at"] is None
+
+
+def test_coverage_serves_snapshot_when_present() -> None:
+    """Havendo coverage_snapshot, db_coverage devolve o JSON pronto (rápido) e
+    NÃO recomputa — nem precisa das tabelas de proposição."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    payload = {
+        "by_year_house": [{"year": 2025, "camara": 42, "senado": 0, "total": 42}],
+        "by_type": [{"type": "PL", "count": 42}],
+        "totals": {"proposicoes": 42, "votacoes": 0, "discursos": 0},
+    }
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "create table coverage_snapshot (id integer primary key, "
+            "payload text not null, computed_at text)"
+        )
+        conn.exec_driver_sql(
+            "insert into coverage_snapshot (payload, computed_at) values (:p, :t)",
+            {"p": json.dumps(payload), "t": "2026-07-05T04:00:00"},
+        )
+    session = sessionmaker(bind=engine, expire_on_commit=False)()
+
+    cov = db_coverage(session)
+    assert cov["totals"]["proposicoes"] == 42
+    assert cov["by_year_house"][0]["camara"] == 42
+    assert cov["computed_at"] == "2026-07-05T04:00:00"
