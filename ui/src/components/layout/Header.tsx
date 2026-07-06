@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Menu, User, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useAccountModal } from '@/components/auth/useAccountModal';
 import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
@@ -24,10 +25,14 @@ const navItems: NavItem[] = [
 export function Header() {
   const location = useLocation();
   const token = useGhostAuth();
+  const { isAdmin } = useIsAdmin();
   const { openLogin } = useLoginModal();
   const { openAccount } = useAccountModal();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const visibleNavItems = token ? navItems : navItems//.filter((item) => item.path === '/');
+  const baseNavItems = token ? navItems : navItems;//.filter((item) => item.path === '/');
+  const visibleNavItems: NavItem[] = isAdmin
+    ? [...baseNavItems, { id: 'admin', path: '/admin', label: 'Admin' }]
+    : baseNavItems;
 
   const handleAuthClick = () => {
     if (token) {

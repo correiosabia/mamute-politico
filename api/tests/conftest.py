@@ -22,3 +22,8 @@ if str(REPO_ROOT) not in sys.path:
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg2://test:test@localhost:5432/test_db"
 )
+
+# Câmbio fixo nos testes: evita que rotas que chamam get_usd_brl_rate tentem
+# rede (o valor real vem da tabela usd_brl_rate em prod). Testes que exercitam
+# a resolução via banco/rede removem esta env explicitamente (monkeypatch.delenv).
+os.environ.setdefault("MAMUTE_USD_BRL_RATE", "5.0")

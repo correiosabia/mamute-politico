@@ -27,8 +27,9 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=sorted(PERIODICIDADES_VALIDAS),
         default="week",
         help=(
-            "Periodicidade: day/week/month filtram pelo tier.periodicidade_email; "
-            "total é modo teste (todos os projetos, até 10 destaques)."
+            "Periodicidade: day/week/fortnight/month filtram pelo "
+            "tier.periodicidade_email; total é modo teste (todos os projetos, "
+            "até 10 destaques)."
         ),
     )
     parser.add_argument(

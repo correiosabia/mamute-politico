@@ -24,7 +24,7 @@ for _path in _ENV_CANDIDATES:
         load_dotenv(_path, override=False)
 
 # Produção: filtradas pelo tier (`periodicidade_email`).
-PERIODICIDADES_PRODUCAO = frozenset({"day", "week", "month"})
+PERIODICIDADES_PRODUCAO = frozenset({"day", "week", "fortnight", "month"})
 # Teste: amostra limitada, sem filtro de tier.
 PERIODICIDADE_TESTE = "total"
 PERIODICIDADES_VALIDAS = PERIODICIDADES_PRODUCAO | {PERIODICIDADE_TESTE}
@@ -32,6 +32,7 @@ PERIODICIDADES_VALIDAS = PERIODICIDADES_PRODUCAO | {PERIODICIDADE_TESTE}
 PERIOD_DAYS: dict[str, int | None] = {
     "day": 1,
     "week": 7,
+    "fortnight": 15,
     "month": 30,
     "total": None,
 }
@@ -39,6 +40,7 @@ PERIOD_DAYS: dict[str, int | None] = {
 DEFAULT_HIGHLIGHT_LIMIT = {
     "day": 9,
     "week": 9,
+    "fortnight": 9,
     "month": 9,
     "total": 10,
 }
@@ -63,29 +65,53 @@ class EmailBranding:
     manage_url: str
 
 
-def get_smtp_config() -> SmtpConfig:
-    user = os.getenv("SMTP_USER", "").strip()
-    password = os.getenv("SMTP_PASSWD", "").strip()
-    sender = os.getenv("SMTP_SENDER", "").strip()
-    server = os.getenv("SMTP_SERVER", "").strip()
-    port_raw = os.getenv("SMTP_PORT", "587").strip()
-    from_name = os.getenv("SMTP_FROM_NAME", "Mamute Político").strip()
+# Prefixo de env por provedor. MAIL_PROVIDER=mailgun|ses seleciona o conjunto de
+# credenciais; qualquer valor ausente cai no legado SMTP_* (retrocompatibilidade).
+_PROVIDER_PREFIX = {"mailgun": "MAILGUN_", "ses": "SES_"}
 
+
+def _resolve_provider() -> str:
+    return os.getenv("MAIL_PROVIDER", "").strip().lower()
+
+
+def _smtp_env(prefix: str, suffix: str, default: str = "") -> str:
+    """Valor específico do provedor ({PREFIX}SMTP_{suffix}); se vazio, cai no
+    legado SMTP_{suffix}."""
+    value = ""
+    if prefix:
+        value = os.getenv(f"{prefix}SMTP_{suffix}", "").strip()
+    if not value:
+        value = os.getenv(f"SMTP_{suffix}", "").strip()
+    return value or default
+
+
+def get_smtp_config() -> SmtpConfig:
+    provider = _resolve_provider()
+    prefix = _PROVIDER_PREFIX.get(provider, "")
+
+    user = _smtp_env(prefix, "USER")
+    password = _smtp_env(prefix, "PASSWD")
+    sender = _smtp_env(prefix, "SENDER")
+    server = _smtp_env(prefix, "SERVER")
+    port_raw = _smtp_env(prefix, "PORT", "587")
+    from_name = _smtp_env(prefix, "FROM_NAME", "Mamute Político")
+
+    active = f"{prefix}SMTP_*" if prefix else "SMTP_*"
     missing = [
         name
         for name, value in [
-            ("SMTP_USER", user),
-            ("SMTP_PASSWD", password),
-            ("SMTP_SENDER", sender),
-            ("SMTP_SERVER", server),
+            ("USER", user),
+            ("PASSWD", password),
+            ("SENDER", sender),
+            ("SERVER", server),
         ]
         if not value
     ]
     if missing:
         raise RuntimeError(
-            "Variáveis SMTP ausentes: "
+            f"Variáveis SMTP ausentes (provedor '{provider or 'legado'}', {active}): "
             + ", ".join(missing)
-            + ". Copie mamute_scrappers/.env.example e preencha SMTP_*."
+            + ". Veja mamute_scrappers/.env.example (MAIL_PROVIDER + credenciais)."
         )
 
     return SmtpConfig(
@@ -124,6 +150,7 @@ def subject_for_periodicidade(periodicidade: str) -> str:
     labels = {
         "day": "Relatório diário",
         "week": "Relatório semanal",
+        "fortnight": "Relatório quinzenal",
         "month": "Relatório mensal",
         "total": "Relatório (amostra de teste)",
     }

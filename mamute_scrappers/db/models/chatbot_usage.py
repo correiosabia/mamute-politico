@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Index, Integer, Numeric, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -29,6 +29,9 @@ class ChatbotUsage(Base):
     question_chars = Column(Integer, nullable=False, server_default="0")
     answer_chars = Column(Integer, nullable=False, server_default="0")
     model = Column(Text, nullable=True)
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    cost_usd = Column(Numeric(12, 6), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),

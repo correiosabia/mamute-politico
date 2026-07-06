@@ -159,21 +159,11 @@ def _tier_slug(product_id: Optional[str], detalhes: Mapping[str, Any]) -> str:
 
 
 def resolve_monthly_limit(project: ChatProject) -> int:
-    """Resolve the monthly chatbot quota for a project."""
+    """Resolve the monthly chatbot quota for a project (DB > env > default)."""
 
     settings = get_settings()
-    env_limits = _parse_monthly_limits(settings.chatbot_monthly_limits_json)
-    for key in (project.tier_slug, project.product_id):
-        if key and key in env_limits:
-            return env_limits[key]
 
-    tier_env_limit = _limit_from_tier_entitlements(
-        project,
-        _parse_tier_entitlement_limits(settings.tier_limits_json),
-    )
-    if tier_env_limit is not None:
-        return tier_env_limit
-
+    # 1) DB (tier.detalhes) vence.
     for detail_key in ("qtd_consultas_ia_mes", "ai_queries_monthly_limit"):
         raw_limit = project.tier_details.get(detail_key)
         if raw_limit is None:
@@ -185,6 +175,21 @@ def resolve_monthly_limit(project: ChatProject) -> int:
                 f"Valor inválido de {detail_key} para o tier {project.tier_slug!r}."
             ) from exc
 
+    # 2) Env: override por slug do chatbot.
+    env_limits = _parse_monthly_limits(settings.chatbot_monthly_limits_json)
+    for key in (project.tier_slug, project.product_id):
+        if key and key in env_limits:
+            return env_limits[key]
+
+    # 3) Env: MAMUTE_TIER_LIMITS_JSON.
+    tier_env_limit = _limit_from_tier_entitlements(
+        project,
+        _parse_tier_entitlement_limits(settings.tier_limits_json),
+    )
+    if tier_env_limit is not None:
+        return tier_env_limit
+
+    # 4) Default.
     return max(0, int(settings.chatbot_default_monthly_limit))
 
 
@@ -360,23 +365,75 @@ def start_chat_usage(
     )
 
 
+def compute_cost_usd(
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+    input_usd_per_1m: float,
+    output_usd_per_1m: float,
+) -> Optional[float]:
+    """Custo em US$ a partir dos tokens e do preço por 1M. None se sem tokens."""
+
+    prompt = prompt_tokens or 0
+    completion = completion_tokens or 0
+    if prompt == 0 and completion == 0:
+        return None
+    cost = prompt / 1_000_000 * input_usd_per_1m + completion / 1_000_000 * output_usd_per_1m
+    return round(cost, 6)
+
+
+def _cost_for_usage(
+    session: Session,
+    usage_id: int,
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+) -> Optional[float]:
+    """Busca o preço do modelo da linha e calcula o custo (fail-soft => None)."""
+
+    if prompt_tokens is None and completion_tokens is None:
+        return None
+    row = session.execute(
+        text("SELECT model FROM chatbot_usage WHERE id = :id"), {"id": usage_id}
+    ).first()
+    model = row[0] if row else None
+    if not model:
+        return None
+    pricing = session.execute(
+        text(
+            "SELECT input_usd_per_1m, output_usd_per_1m "
+            "FROM model_pricing WHERE model = :model"
+        ),
+        {"model": model},
+    ).first()
+    if pricing is None:
+        return None
+    return compute_cost_usd(
+        prompt_tokens, completion_tokens, float(pricing[0]), float(pricing[1])
+    )
+
+
 def mark_chat_usage(
     session: Session,
     usage_id: Optional[int],
     *,
     status_value: str,
     answer_chars: int = 0,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
 ) -> None:
-    """Update the status of a previously reserved usage row."""
+    """Update the status of a previously reserved usage row (+ tokens/custo)."""
 
     if usage_id is None:
         return
+    cost_usd = _cost_for_usage(session, usage_id, prompt_tokens, completion_tokens)
     session.execute(
         text(
             """
             UPDATE chatbot_usage
             SET status = :status,
                 answer_chars = :answer_chars,
+                prompt_tokens = COALESCE(:prompt_tokens, prompt_tokens),
+                completion_tokens = COALESCE(:completion_tokens, completion_tokens),
+                cost_usd = COALESCE(:cost_usd, cost_usd),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :usage_id
             """
@@ -385,6 +442,9 @@ def mark_chat_usage(
             "usage_id": usage_id,
             "status": status_value,
             "answer_chars": max(0, answer_chars),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cost_usd": cost_usd,
         },
     )
     session.commit()
@@ -393,6 +453,7 @@ def mark_chat_usage(
 __all__ = [
     "ChatQuotaConfigError",
     "ChatUsageStart",
+    "compute_cost_usd",
     "current_period_start",
     "disabled_quota_response",
     "get_chat_quota",

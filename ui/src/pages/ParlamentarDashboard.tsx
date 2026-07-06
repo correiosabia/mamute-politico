@@ -12,6 +12,8 @@ import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
+import { TrackSection } from '@/components/TrackSection';
+import { sendSectionView } from '@/api/events';
 import {
   getMyParliamentarianDashboardStats,
   getParliamentarian,
@@ -178,21 +180,25 @@ const ParlamentarDashboard = () => {
           </div>
 
           {/* Temas do discurso */}
-          <div className="mp-card bg-white p-6">
+          <TrackSection page="parlamentar" section="temas-discurso" className="mp-card bg-white p-6">
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Temas do discurso</h2>
             <WordCloud parliamentarianId={parliamentarianCode} parlamentarNome={parlamentar.nome} />
-          </div>
+          </TrackSection>
 
           {/* Últimas ações */}
-          <div className="mp-card bg-white p-6">
+          <TrackSection page="parlamentar" section="ultimas-acoes" className="mp-card bg-white p-6">
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Últimas ações</h2>
             <ProposicoesList limit={4} parliamentarianId={id} />
-          </div>
+          </TrackSection>
         </div>
 
         {/* Bottom: Proposições do Parlamentar with tabs */}
-        <div className="mp-card bg-white">
-          <Tabs defaultValue="votacoes" className="w-full">
+        <TrackSection page="parlamentar" section="atividades" className="mp-card bg-white">
+          <Tabs
+            defaultValue="votacoes"
+            className="w-full"
+            onValueChange={(value) => sendSectionView('parlamentar', value)}
+          >
             <div className="flex flex-col gap-4 border-b border-black/[0.06] px-6 pt-6 pb-4">
               <div className="-mx-6 w-[calc(100%+3rem)] max-w-none overflow-x-auto overflow-y-visible px-6 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
                 <TabsList className="inline-flex h-auto w-max min-w-max shrink-0 flex-nowrap items-center gap-2 bg-transparent p-0">
@@ -219,7 +225,7 @@ const ParlamentarDashboard = () => {
               <TaquigraficasTable parliamentarianId={numericId} />
             </TabsContent>
           </Tabs>
-        </div>
+        </TrackSection>
       </main>
       <SelecaoFooter />
     </div>

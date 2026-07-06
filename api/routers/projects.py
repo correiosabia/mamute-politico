@@ -23,6 +23,7 @@ try:
     from ..db.models.plenary_attendance import PlenaryAttendance
     from ..db.models.proposition import Proposition
     from ..db.models.project import Projetos, ProjetosParliamentarian
+    from ..db.models.usage_event import UsageEvent
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
@@ -41,6 +42,7 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.plenary_attendance import PlenaryAttendance
     from db.models.proposition import Proposition
     from db.models.project import Projetos, ProjetosParliamentarian
+    from db.models.usage_event import UsageEvent
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
@@ -503,7 +505,20 @@ def _tier_limit_from_env(project: Projetos, field_name: str) -> int | None:
     return None
 
 
+def _tier_limit_from_db(project: Projetos, field_name: str) -> int | None:
+    detalhes = _project_tier_details(project)
+    raw = detalhes.get(field_name)
+    if raw is None:
+        return None
+    return _coerce_non_negative_int(
+        raw, field_name=field_name, slug=_project_tier_slug(project)
+    )
+
+
 def _project_favorite_limit(project: Projetos) -> int:
+    db_limit = _tier_limit_from_db(project, "qtd_termos")
+    if db_limit is not None:
+        return db_limit
     env_limit = _tier_limit_from_env(project, "qtd_termos")
     if env_limit is not None:
         return env_limit
@@ -534,6 +549,27 @@ def _ensure_project_favorite_quota_available(db: Session, project: Projetos) -> 
         )
 
 
+def _log_favorite_event(
+    db: Session,
+    project: Projetos,
+    parliamentarian_id: int,
+    event_type: str,
+) -> None:
+    """Registra add/remove de favorito para métricas. Fail-soft."""
+    try:
+        db.add(
+            UsageEvent(
+                projeto_id=int(project.id),
+                email=getattr(project, "email", None),
+                event_type=event_type,
+                parliamentarian_id=parliamentarian_id,
+            )
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 — métrica nunca pode quebrar a ação
+        db.rollback()
+
+
 def _create_project_favorite(
     db: Session,
     project_id: int,
@@ -562,11 +598,12 @@ def _create_project_favorite(
     db.add(favorite)
     db.commit()
     db.refresh(favorite)
+    _log_favorite_event(db, project, parliamentarian_id, "favorite_added")
     return favorite
 
 
 def _delete_project_favorite(db: Session, project_id: int, parliamentarian_id: int) -> None:
-    _ensure_active_project(db, project_id)
+    project = _ensure_active_project(db, project_id)
     stmt = select(ProjetosParliamentarian).where(
         ProjetosParliamentarian.projeto_id == project_id,
         ProjetosParliamentarian.parliamentarian_id == parliamentarian_id,
@@ -581,6 +618,7 @@ def _delete_project_favorite(db: Session, project_id: int, parliamentarian_id: i
 
     db.delete(favorite)
     db.commit()
+    _log_favorite_event(db, project, parliamentarian_id, "favorite_removed")
 
 
 @router.get(
