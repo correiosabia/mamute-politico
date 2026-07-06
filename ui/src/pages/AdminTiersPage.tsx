@@ -17,6 +17,8 @@ interface FieldDef {
   type: FieldType;
   step?: string;
   options?: { value: string; label: string }[];
+  /** Só-leitura: sincronizado do Ghost, não editável nem enviado no PUT. */
+  readOnly?: boolean;
 }
 
 // Valores canônicos que o envio (mamute_scrappers.scripts.notificacao) entende.
@@ -33,7 +35,7 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
     fields: [
       { key: 'qtd_termos', label: 'Parlamentares monitorados', hint: 'Máximo por plano', type: 'number' },
       { key: 'qtd_consultas_ia_mes', label: 'Consultas de IA / mês', hint: 'Cota mensal do chatbot', type: 'number' },
-      { key: 'preco_mensal', label: 'Preço mensal (R$)', hint: 'Base do cálculo de margem', type: 'number', step: '0.01' },
+      { key: 'preco_mensal', label: 'Preço mensal (R$)', hint: 'Sincronizado do Ghost — base da margem', type: 'number', step: '0.01', readOnly: true },
     ],
   },
   {
@@ -117,6 +119,7 @@ function TierCard({ tier }: { tier: Tier }) {
   const save = async () => {
     const patch: TierDetails = {};
     for (const f of ALL_FIELDS) {
+      if (f.readOnly) continue; // fonte Ghost — não editável pela API
       const raw = form[f.key];
       if (isListLike(f.type)) {
         const arr = raw.split(',').map((x) => x.trim()).filter(Boolean);
@@ -162,7 +165,11 @@ function TierCard({ tier }: { tier: Tier }) {
                 >
                   {f.label}
                 </Label>
-                {f.type === 'multiselect' ? (
+                {f.readOnly ? (
+                  <div className="flex h-10 items-center rounded-xl border border-dashed border-[#383838]/20 bg-[#383838]/[0.03] px-3 text-[14px] font-semibold text-[#383838]">
+                    {form[f.key] !== '' ? `R$ ${form[f.key]}` : '—'}
+                  </div>
+                ) : f.type === 'multiselect' ? (
                   <MultiSelectChips
                     options={f.options ?? []}
                     value={form[f.key]}
@@ -219,7 +226,7 @@ export default function AdminTiersPage() {
             Gestão de Tiers
           </h1>
           <p className="mt-1 text-[18px] font-normal text-[#383838]">
-            Edite os limites e o preço de cada plano. As mudanças valem na hora, sem redeploy.
+            Edite os limites de cada plano. Nome e preço vêm do Ghost (sincronizados 1x/dia). As mudanças de limite valem na hora, sem redeploy.
           </p>
         </div>
       </div>

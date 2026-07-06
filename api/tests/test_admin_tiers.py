@@ -85,18 +85,25 @@ def test_list_tiers(client: TestClient) -> None:
 def test_update_tier_merges_and_audits(client: TestClient) -> None:
     resp = client.put(
         "/api/admin/tiers/1",
-        json={"qtd_consultas_ia_mes": 500, "preco_mensal": 49.9},
+        json={"qtd_consultas_ia_mes": 500, "periodicidade_email": ["week", "month"]},
     )
     assert resp.status_code == 200
     body = resp.json()
-    # merge: mantém qtd_termos, atualiza a consulta e adiciona preço
+    # merge: mantém qtd_termos, atualiza a consulta e adiciona a periodicidade
     assert body["detalhes"]["qtd_termos"] == 10
     assert body["detalhes"]["qtd_consultas_ia_mes"] == 500
-    assert body["detalhes"]["preco_mensal"] == 49.9
+    assert body["detalhes"]["periodicidade_email"] == ["week", "month"]
 
     # segunda chamada: confere persistência + auditoria
     again = client.get("/api/admin/tiers").json()
     assert again[0]["detalhes"]["qtd_consultas_ia_mes"] == 500
+
+
+def test_update_ignores_preco_mensal_read_only(client: TestClient) -> None:
+    """preco_mensal vem do Ghost — o PUT admin não deve gravá-lo."""
+    resp = client.put("/api/admin/tiers/1", json={"preco_mensal": 49.9})
+    assert resp.status_code == 200
+    assert "preco_mensal" not in resp.json()["detalhes"]
 
 
 def test_update_rejects_negative(client: TestClient) -> None:
