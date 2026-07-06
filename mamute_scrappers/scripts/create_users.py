@@ -81,7 +81,10 @@ def generate_token() -> str:
 
 
 def _request_ghost_members(token: str, page: int) -> Response:
-    url = f"{GHOST_ADMIN_URL.rstrip('/')}/members/?limit=all&page={page}"
+    url = (
+        f"{GHOST_ADMIN_URL.rstrip('/')}/members/"
+        f"?limit=all&page={page}&include=tiers,subscriptions"
+    )
     headers = {"Authorization": f"Ghost {token}"}
     response = requests.get(url, headers=headers, timeout=30)
 
@@ -131,15 +134,19 @@ def fetch_ghost_members() -> List[GhostMember]:
 
 
 def _resolve_product_id(member: dict) -> str:
+    subscriptions = member.get("subscriptions") or []
+    if subscriptions:
+        tier_info = subscriptions[-1].get("tier") or {}
+        return tier_info.get("id", "free")
+
+    tiers = member.get("tiers") or []
+    if tiers:
+        return tiers[-1].get("id") or "free"
+
     if member.get("status") == "free":
         return "free"
 
-    subscriptions = member.get("subscriptions") or []
-    if not subscriptions:
-        return "free"
-
-    tier_info = subscriptions[-1].get("tier") or {}
-    return tier_info.get("id", "free")
+    return "free"
 
 
 def _resolve_label(member: dict) -> Optional[str]:
@@ -269,4 +276,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
