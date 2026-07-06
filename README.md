@@ -234,7 +234,7 @@ Campos de limite:
 
 Precedência dos limites:
 
-1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
+1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `tiers.detalhes.qtd_termos`; se também ausente, usa `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
 2. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
 
 `MAMUTE_CHATBOT_QUOTA_ENABLED=false` desliga apenas a reserva e gravação mensal de uso; não transforma `/chat/chatbot/query` ou `/chat/chatbot/stream` em endpoints públicos.

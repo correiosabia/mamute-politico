@@ -516,12 +516,12 @@ def _tier_limit_from_db(project: Projetos, field_name: str) -> int | None:
 
 
 def _project_favorite_limit(project: Projetos) -> int:
-    db_limit = _tier_limit_from_db(project, "qtd_termos")
-    if db_limit is not None:
-        return db_limit
     env_limit = _tier_limit_from_env(project, "qtd_termos")
     if env_limit is not None:
         return env_limit
+    db_limit = _tier_limit_from_db(project, "qtd_termos")
+    if db_limit is not None:
+        return db_limit
     return max(0, int(project.qtd_termos or 0))
 
 
