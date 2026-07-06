@@ -70,7 +70,14 @@ APPLICATION_NAME=MAMUTE_POLITICO_API
 GHOST_API_KEY=[[Criar uma API key nas integrações do Ghost e postar aqui]]
 GHOST_ADMIN_URL=https://mamute.voltdata.info/ghost/api/admin
 MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"default-product":{"qtd_termos":3,"qtd_consultas_ia_mes":50},"cidadao-mamute":{"qtd_termos":10,"qtd_consultas_ia_mes":200}}
+MAMUTE_GHOST_RECONCILE_ON_STARTUP=true
 ```
+
+Com `GHOST_API_KEY` e `GHOST_ADMIN_URL` configurados, a API faz uma
+reconciliação idempotente Ghost -> tiers/projetos no startup. Isso garante que
+mudanças em `MAMUTE_TIER_LIMITS_JSON` passem a valer após redeploy mesmo para
+usuários já existentes, desde que o tier atual esteja refletido no Ghost. O
+webhook `member.*` continua sincronizando alterações pontuais de tier.
 
 - `mamute-chatbot`
 

@@ -88,7 +88,9 @@ python -m mamute_scrappers.scripts.create_users
 ```
 
 Esse comando é um backfill manual. A sincronização contínua Ghost -> projetos é
-recebida pela API em `POST /api/webhooks/ghost/members`.
+recebida pela API em `POST /api/webhooks/ghost/members`; a própria API também
+faz uma reconciliação Ghost -> tiers/projetos no startup quando
+`GHOST_API_KEY`/`GHOST_ADMIN_URL` estão configurados.
 
 No container dos scrappers, a reconciliação Ghost -> tiers/projetos roda também
 no startup por padrão, antes do cron ficar em foreground:

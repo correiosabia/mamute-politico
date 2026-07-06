@@ -1,5 +1,10 @@
 """Aplicação FastAPI para exposição dos dados coletados."""
 
+from contextlib import asynccontextmanager
+import logging
+import os
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +24,9 @@ try:
         speeches_transcripts,
         speeches_transcripts_proposition,
     )
+    from .db.engine import SessionLocal
     from .security import verify_token
+    from .services.ghost_reconcile import run_ghost_reconciliation
 except ImportError:
     # Permite execução dentro do diretório api/ (python main.py / uvicorn main:app).
     from routers import (
@@ -35,7 +42,45 @@ except ImportError:
         speeches_transcripts,
         speeches_transcripts_proposition,
     )
+    from db.engine import SessionLocal
     from security import verify_token
+    from services.ghost_reconcile import run_ghost_reconciliation
+
+
+logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def _reconcile_ghost_on_startup() -> None:
+    if not _env_bool("MAMUTE_GHOST_RECONCILE_ON_STARTUP", True):
+        logger.info("Reconciliação Ghost no startup da API desabilitada.")
+        return
+
+    session = SessionLocal()
+    try:
+        result = run_ghost_reconciliation(session)
+    except Exception:
+        logger.warning(
+            "Falha na reconciliação Ghost no startup da API; seguindo boot.",
+            exc_info=True,
+        )
+    else:
+        if result.action == "skipped":
+            logger.info("Reconciliação Ghost no startup da API pulada: %s", result.reason)
+    finally:
+        session.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _reconcile_ghost_on_startup()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -47,6 +92,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         redoc_url="/api/redoc",
+        lifespan=lifespan,
     )
 
     app.add_middleware(

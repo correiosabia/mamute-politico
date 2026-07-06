@@ -88,6 +88,69 @@ def test_receive_member_current_payload_syncs_project(monkeypatch: Any) -> None:
     assert calls == [(payload["member"]["current"], {})]
 
 
+def test_receive_member_webhook_enriches_current_member_before_sync(monkeypatch: Any) -> None:
+    from api.main import app
+    from api.routers import ghost_webhooks
+    from api.services.ghost_member_sync import GhostMemberProjectSyncResult
+
+    monkeypatch.setenv("GHOST_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("GHOST_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS", "0")
+    _install_db_override(app, ghost_webhooks.get_db)
+
+    enriched = {
+        "email": "assinante@example.com",
+        "name": "Assinante",
+        "status": "free",
+        "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+    }
+    fetched: list[str] = []
+    synced: list[dict[str, Any]] = []
+
+    def fake_fetch(email: str) -> dict[str, Any]:
+        fetched.append(email)
+        return enriched
+
+    def fake_sync(
+        db: object,
+        current: dict[str, Any],
+        previous: dict[str, Any],
+    ) -> GhostMemberProjectSyncResult:
+        synced.append(current)
+        return GhostMemberProjectSyncResult(
+            action="updated",
+            email=current["email"],
+            project_id=42,
+            product_id="cidadao-mamute",
+        )
+
+    monkeypatch.setattr(ghost_webhooks, "fetch_ghost_member_by_email_from_env", fake_fetch)
+    monkeypatch.setattr(ghost_webhooks, "sync_member_project", fake_sync)
+
+    payload = {
+        "member": {
+            "current": {
+                "email": "assinante@example.com",
+                "status": "free",
+            },
+            "previous": {},
+        }
+    }
+    raw_body = _body(payload)
+
+    response = TestClient(app).post(
+        "/api/webhooks/ghost/members",
+        content=raw_body,
+        headers={"X-Ghost-Signature": _signature(raw_body)},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["product_id"] == "cidadao-mamute"
+    assert fetched == ["assinante@example.com"]
+    assert synced == [enriched]
+
+
 def test_receive_member_deleted_payload_soft_deletes_project(monkeypatch: Any) -> None:
     from api.main import app
     from api.routers import ghost_webhooks
