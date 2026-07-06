@@ -53,9 +53,6 @@ def normalize_email(value: Any) -> Optional[str]:
 
 
 def resolve_product_id(member: dict[str, Any]) -> str:
-    if member.get("status") == "free":
-        return "free"
-
     subscriptions = member.get("subscriptions") or []
     if subscriptions:
         tier_info = subscriptions[-1].get("tier") or {}
@@ -64,6 +61,9 @@ def resolve_product_id(member: dict[str, Any]) -> str:
     tiers = member.get("tiers") or []
     if tiers:
         return tiers[-1].get("id") or "free"
+
+    if member.get("status") == "free":
+        return "free"
 
     return "free"
 

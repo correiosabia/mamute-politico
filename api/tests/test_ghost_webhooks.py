@@ -217,3 +217,23 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
     assert new_project.qtd_termos == 5
     assert new_project.tag_ghost == "cliente"
     assert previous_project.deleted_at is not None
+
+
+def test_resolve_product_id_prefers_explicit_tier_over_free_status() -> None:
+    from api.services.ghost_member_sync import resolve_product_id
+
+    assert (
+        resolve_product_id(
+            {
+                "status": "free",
+                "tiers": [{"id": "ghost-paid-tier-id"}],
+            }
+        )
+        == "ghost-paid-tier-id"
+    )
+
+
+def test_resolve_product_id_keeps_free_when_no_paid_tier_is_present() -> None:
+    from api.services.ghost_member_sync import resolve_product_id
+
+    assert resolve_product_id({"status": "free", "tiers": []}) == "free"
