@@ -51,6 +51,7 @@ if not GHOST_API_KEY:
 class GhostMember:
     email: str
     product_id: str
+    product_ids: Tuple[str, ...]
     name: Optional[str]
     label: Optional[str]
 
@@ -117,11 +118,12 @@ def fetch_ghost_members() -> List[GhostMember]:
             if not email:
                 continue
 
-            product_id = _resolve_product_id(member)
+            product_ids = _resolve_product_ids(member)
             members.append(
                 GhostMember(
                     email=email.lower(),
-                    product_id=product_id,
+                    product_id=product_ids[0],
+                    product_ids=tuple(product_ids),
                     name=member.get("name"),
                     label=_resolve_label(member),
                 )
@@ -133,20 +135,43 @@ def fetch_ghost_members() -> List[GhostMember]:
     return members
 
 
-def _resolve_product_id(member: dict) -> str:
+def _append_candidate(candidates: List[str], value: object) -> None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+
+def _tier_candidates(tier_info: dict) -> List[str]:
+    candidates: List[str] = []
+    _append_candidate(candidates, tier_info.get("id"))
+    _append_candidate(candidates, tier_info.get("tier_id"))
+    _append_candidate(candidates, tier_info.get("slug"))
+    return candidates
+
+
+def _resolve_product_ids(member: dict) -> List[str]:
     subscriptions = member.get("subscriptions") or []
     if subscriptions:
         tier_info = subscriptions[-1].get("tier") or {}
-        return tier_info.get("id", "free")
+        candidates = _tier_candidates(tier_info)
+        if candidates:
+            return candidates
 
     tiers = member.get("tiers") or []
     if tiers:
-        return tiers[-1].get("id") or "free"
+        candidates = _tier_candidates(tiers[-1])
+        if candidates:
+            return candidates
 
     if member.get("status") == "free":
-        return "free"
+        return ["free"]
 
-    return "free"
+    return ["free"]
+
+
+def _resolve_product_id(member: dict) -> str:
+    return _resolve_product_ids(member)[0]
 
 
 def _resolve_label(member: dict) -> Optional[str]:
@@ -156,13 +181,24 @@ def _resolve_label(member: dict) -> Optional[str]:
     return labels[0].get("slug")
 
 
+def _tier_lookup_keys(tier: Tiers) -> set[str]:
+    keys = {tier.product_id}
+    detalhes = tier.detalhes if isinstance(tier.detalhes, dict) else {}
+    ghost = detalhes.get("ghost") if isinstance(detalhes.get("ghost"), dict) else {}
+    for key in ("slug", "target_tier_id", "source_tier_id"):
+        value = ghost.get(key)
+        if isinstance(value, str) and value.strip():
+            keys.add(value.strip())
+    return keys
+
+
 def load_tiers(session: Session) -> Dict[str, Tiers]:
-    """Retorna um mapa product_id -> Tier."""
+    """Retorna um mapa com product_id e aliases Ghost -> Tier."""
     tiers: List[Tiers] = session.query(Tiers).all()
     if not tiers:
         raise RuntimeError("Nenhum tier cadastrado na base. Cadastre tiers antes de sincronizar.")
 
-    tier_map = {tier.product_id: tier for tier in tiers}
+    tier_map = {key: tier for tier in tiers for key in _tier_lookup_keys(tier)}
     logger.info("Tiers carregados: %s", len(tier_map))
     return tier_map
 
@@ -199,12 +235,18 @@ def sync_projects(
     updated = 0
 
     for member in members:
-        tier = tier_map.get(member.product_id)
+        tier = None
+        product_id = member.product_id
+        for candidate in member.product_ids:
+            tier = tier_map.get(candidate)
+            if tier is not None:
+                product_id = tier.product_id
+                break
         if not tier:
             logger.debug(
-                "Ignorando membro %s: tier %s não encontrado.",
+                "Ignorando membro %s: tiers %s não encontrados.",
                 member.email,
-                member.product_id,
+                ",".join(member.product_ids),
             )
             continue
 
@@ -212,7 +254,7 @@ def sync_projects(
         if projeto is None:
             projeto = Projetos(
                 nome=generate_bot_name(member.email, member.name),
-                cliente=member.product_id,
+                cliente=product_id,
                 email=member.email,
                 tier_id=tier.id,
                 qtd_termos=tier.qtd_termos or 0,
@@ -221,7 +263,7 @@ def sync_projects(
             session.add(projeto)
             existing_projects[member.email] = projeto
             created += 1
-            logger.info("Projeto criado para %s (tier=%s).", member.email, member.product_id)
+            logger.info("Projeto criado para %s (tier=%s).", member.email, product_id)
             continue
 
         changed = False
@@ -230,8 +272,8 @@ def sync_projects(
             projeto.tier_id = tier.id
             changed = True
 
-        if projeto.cliente != member.product_id:
-            projeto.cliente = member.product_id
+        if projeto.cliente != product_id:
+            projeto.cliente = product_id
             changed = True
 
         target_qtd_termos = tier.qtd_termos or 0
@@ -245,7 +287,7 @@ def sync_projects(
 
         if changed:
             updated += 1
-            logger.info("Projeto atualizado para %s (tier=%s).", member.email, member.product_id)
+            logger.info("Projeto atualizado para %s (tier=%s).", member.email, product_id)
 
     return created, updated
 

@@ -181,7 +181,7 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
 ) -> None:
     from api.services import ghost_member_sync
 
-    tier = SimpleNamespace(id=10, qtd_termos=5)
+    tier = SimpleNamespace(id=10, product_id="free", qtd_termos=5)
     new_project = SimpleNamespace(id=2, email="novo@example.com", deleted_at=None)
     previous_project = SimpleNamespace(id=1, email="antigo@example.com", deleted_at=None)
 
@@ -198,7 +198,7 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
         def refresh(self, value: object) -> None:
             pass
 
-    monkeypatch.setattr(ghost_member_sync, "_get_tier_by_product_id", lambda session, product_id: tier)
+    monkeypatch.setattr(ghost_member_sync, "_get_tier_by_product_ids", lambda session, product_ids: tier)
     monkeypatch.setattr(ghost_member_sync, "_get_project_by_email", fake_get_project_by_email)
 
     result = ghost_member_sync.sync_member_project(
@@ -220,17 +220,23 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
 
 
 def test_resolve_product_id_prefers_explicit_tier_over_free_status() -> None:
-    from api.services.ghost_member_sync import resolve_product_id
+    from api.services.ghost_member_sync import resolve_product_id, resolve_product_ids
 
     assert (
         resolve_product_id(
             {
                 "status": "free",
-                "tiers": [{"id": "ghost-paid-tier-id"}],
+                "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
             }
         )
         == "ghost-paid-tier-id"
     )
+    assert resolve_product_ids(
+        {
+            "status": "free",
+            "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+        }
+    ) == ["ghost-paid-tier-id", "cidadao-mamute"]
 
 
 def test_resolve_product_id_keeps_free_when_no_paid_tier_is_present() -> None:

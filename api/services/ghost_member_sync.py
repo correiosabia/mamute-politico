@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -52,20 +52,43 @@ def normalize_email(value: Any) -> Optional[str]:
     return normalized or None
 
 
-def resolve_product_id(member: dict[str, Any]) -> str:
+def _append_candidate(candidates: list[str], value: Any) -> None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+
+def _tier_candidates(tier_info: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    _append_candidate(candidates, tier_info.get("id"))
+    _append_candidate(candidates, tier_info.get("tier_id"))
+    _append_candidate(candidates, tier_info.get("slug"))
+    return candidates
+
+
+def resolve_product_ids(member: dict[str, Any]) -> list[str]:
     subscriptions = member.get("subscriptions") or []
     if subscriptions:
         tier_info = subscriptions[-1].get("tier") or {}
-        return tier_info.get("id") or "free"
+        candidates = _tier_candidates(tier_info)
+        if candidates:
+            return candidates
 
     tiers = member.get("tiers") or []
     if tiers:
-        return tiers[-1].get("id") or "free"
+        candidates = _tier_candidates(tiers[-1])
+        if candidates:
+            return candidates
 
     if member.get("status") == "free":
-        return "free"
+        return ["free"]
 
-    return "free"
+    return ["free"]
+
+
+def resolve_product_id(member: dict[str, Any]) -> str:
+    return resolve_product_ids(member)[0]
 
 
 def resolve_label(member: dict[str, Any]) -> Optional[str]:
@@ -75,12 +98,45 @@ def resolve_label(member: dict[str, Any]) -> Optional[str]:
     return labels[0].get("slug")
 
 
-def _get_tier_by_product_id(session: Session, product_id: str) -> Optional[Tiers]:
+def _coerce_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _tier_lookup_keys(tier: Tiers) -> set[str]:
+    keys = {tier.product_id}
+    detalhes = _coerce_mapping(getattr(tier, "detalhes", None))
+    ghost = _coerce_mapping(detalhes.get("ghost"))
+    for key in ("slug", "target_tier_id", "source_tier_id"):
+        value = ghost.get(key)
+        if isinstance(value, str) and value.strip():
+            keys.add(value.strip())
+    return keys
+
+
+def _get_tier_by_product_ids(
+    session: Session, product_ids: Iterable[str]
+) -> Optional[Tiers]:
+    candidates = [product_id for product_id in product_ids if product_id]
+    if not candidates:
+        return None
+
     stmt = select(Tiers).where(
-        Tiers.product_id == product_id,
+        Tiers.product_id.in_(candidates),
         Tiers.deleted_at.is_(None),
     )
-    return session.execute(stmt).scalar_one_or_none()
+    tier = session.execute(stmt).scalars().first()
+    if tier is not None:
+        return tier
+
+    stmt = select(Tiers).where(Tiers.deleted_at.is_(None))
+    for tier in session.execute(stmt).scalars().all():
+        if _tier_lookup_keys(tier).intersection(candidates):
+            return tier
+    return None
+
+
+def _get_tier_by_product_id(session: Session, product_id: str) -> Optional[Tiers]:
+    return _get_tier_by_product_ids(session, [product_id])
 
 
 def _get_project_by_email(session: Session, email: str) -> Optional[Projetos]:
@@ -99,8 +155,9 @@ def sync_member_project(
     if email is None:
         return GhostMemberProjectSyncResult(action="ignored", reason="missing_email")
 
-    product_id = resolve_product_id(current_member)
-    tier = _get_tier_by_product_id(session, product_id)
+    product_ids = resolve_product_ids(current_member)
+    tier = _get_tier_by_product_ids(session, product_ids)
+    product_id = tier.product_id if tier is not None else product_ids[0]
     if tier is None:
         return GhostMemberProjectSyncResult(
             action="ignored",

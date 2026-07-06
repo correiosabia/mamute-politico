@@ -22,11 +22,17 @@ def test_resolve_product_id_prefers_tiers_over_free_status(monkeypatch: Any) -> 
         create_users._resolve_product_id(
             {
                 "status": "free",
-                "tiers": [{"id": "ghost-paid-tier-id"}],
+                "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
             }
         )
         == "ghost-paid-tier-id"
     )
+    assert create_users._resolve_product_ids(
+        {
+            "status": "free",
+            "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+        }
+    ) == ["ghost-paid-tier-id", "cidadao-mamute"]
 
 
 def test_resolve_product_id_keeps_free_without_paid_tier(monkeypatch: Any) -> None:

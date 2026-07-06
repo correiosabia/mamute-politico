@@ -63,8 +63,20 @@ def test_generate_admin_token_roundtrip() -> None:
 def test_parse_ghost_tiers_free_and_paid() -> None:
     payload = {
         "tiers": [
-            {"id": "t_free", "name": "Cidadão Comum", "type": "free", "monthly_price": None},
-            {"id": "t_paid", "name": "Cidadão Mamute", "type": "paid", "monthly_price": 8900},
+            {
+                "id": "t_free",
+                "name": "Cidadão Comum",
+                "slug": "free",
+                "type": "free",
+                "monthly_price": None,
+            },
+            {
+                "id": "t_paid",
+                "name": "Cidadão Mamute",
+                "slug": "cidadao-mamute",
+                "type": "paid",
+                "monthly_price": 8900,
+            },
         ]
     }
     parsed = {t["product_id"]: t for t in gts.parse_ghost_tiers(payload)}
@@ -73,6 +85,7 @@ def test_parse_ghost_tiers_free_and_paid() -> None:
     assert parsed["free"]["monthly_price"] == 0.0
     # pago casa pelo id do Ghost; centavos → reais
     assert parsed["t_paid"]["name"] == "Cidadão Mamute"
+    assert parsed["t_paid"]["slug"] == "cidadao-mamute"
     assert parsed["t_paid"]["monthly_price"] == 89.0
 
 
@@ -118,8 +131,22 @@ def _tiers_session():
 def test_sync_tiers_updates_name_and_price() -> None:
     session = _tiers_session()
     ghost_tiers = [
-        {"product_id": "free", "name": "Cidadão Comum", "monthly_price": 0.0},
-        {"product_id": "ghost_paid_id", "name": "Cidadão Mamute", "monthly_price": 89.0},
+        {
+            "product_id": "free",
+            "ghost_tier_id": "ghost_free_id",
+            "slug": "free",
+            "type": "free",
+            "name": "Cidadão Comum",
+            "monthly_price": 0.0,
+        },
+        {
+            "product_id": "ghost_paid_id",
+            "ghost_tier_id": "ghost_paid_id",
+            "slug": "cidadao-mamute",
+            "type": "paid",
+            "name": "Cidadão Mamute",
+            "monthly_price": 89.0,
+        },
         {"product_id": "sem_match", "name": "Fantasma", "monthly_price": 10.0},
     ]
     updated = gts.sync_tiers(session, ghost_tiers)
@@ -136,3 +163,5 @@ def test_sync_tiers_updates_name_and_price() -> None:
     assert paid.tier_name_debug == "Cidadão Mamute"
     assert paid.detalhes["preco_mensal"] == 89.0
     assert paid.detalhes["qtd_termos"] == 10
+    assert paid.detalhes["ghost"]["slug"] == "cidadao-mamute"
+    assert paid.detalhes["ghost"]["target_tier_id"] == "ghost_paid_id"
