@@ -105,6 +105,80 @@ def test_metrics_users(session: Session) -> None:
     assert u["acima_do_plano"] is False
 
 
+def _session_limits(qtd_termos: int, favoritos: int, consultas: int, limite_ia: int) -> Session:
+    """Sessão mínima p/ exercitar acima_do_plano com limites controlados."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """create table tiers (id integer primary key, tier_name_debug text,
+               product_id text, detalhes text not null, created_at datetime,
+               updated_at datetime, deleted_at datetime)"""
+        )
+        conn.exec_driver_sql(
+            """create table projetos (id integer primary key, nome text not null,
+               cliente text, email text not null, tier_id integer, tag_ghost text,
+               qtd_termos integer default 0, created_at datetime, updated_at datetime,
+               deleted_at datetime)"""
+        )
+        conn.exec_driver_sql("create table parliamentarian (id integer primary key, name text)")
+        conn.exec_driver_sql(
+            """create table projetos_parliamentarian (id integer primary key,
+               projeto_id integer, parliamentarian_id integer, created_at datetime,
+               updated_at datetime, deleted_at datetime)"""
+        )
+        conn.exec_driver_sql(
+            """create table chatbot_usage (id integer primary key, projeto_id integer,
+               email text, request_id text, period_start date, status text,
+               question_chars integer default 0, answer_chars integer default 0,
+               model text, prompt_tokens integer, completion_tokens integer,
+               cost_usd numeric, created_at datetime, updated_at datetime)"""
+        )
+        conn.exec_driver_sql(
+            "insert into tiers (id, tier_name_debug, product_id, detalhes) values (1,'T','p',:d)",
+            {"d": json.dumps({"qtd_termos": qtd_termos, "qtd_consultas_ia_mes": limite_ia})},
+        )
+        conn.exec_driver_sql(
+            "insert into projetos (id, nome, email, tier_id) values (1,'Ana','ana@x.com',1)"
+        )
+        for i in range(favoritos):
+            conn.exec_driver_sql(
+                "insert into projetos_parliamentarian (projeto_id, parliamentarian_id) values (1, :p)",
+                {"p": i + 1},
+            )
+        for i in range(consultas):
+            conn.exec_driver_sql(
+                "insert into chatbot_usage (projeto_id, email, request_id, period_start, status) "
+                "values (1,'ana@x.com',:r,'2026-07-01','completed')",
+                {"r": f"r{i}"},
+            )
+    return sessionmaker(bind=engine, expire_on_commit=False)()
+
+
+def test_acima_do_plano_por_parlamentares() -> None:
+    # 2 favoritos, plano permite 1; sem consultas de IA → flag pelos parlamentares
+    s = _session_limits(qtd_termos=1, favoritos=2, consultas=0, limite_ia=100)
+    u = metrics_users(s, PERIOD, RATE)[0]
+    assert u["parlamentares_monitorados"] == 2
+    assert u["acima_do_plano"] is True
+    assert metrics_overview(s, PERIOD, RATE)["usuarios_acima_do_plano"] == 1
+
+
+def test_acima_do_plano_por_ia() -> None:
+    # dentro do limite de parlamentares, mas estoura IA
+    s = _session_limits(qtd_termos=10, favoritos=1, consultas=5, limite_ia=3)
+    u = metrics_users(s, PERIOD, RATE)[0]
+    assert u["acima_do_plano"] is True
+
+
+def test_dentro_do_plano_nao_marca() -> None:
+    s = _session_limits(qtd_termos=10, favoritos=2, consultas=2, limite_ia=100)
+    assert metrics_users(s, PERIOD, RATE)[0]["acima_do_plano"] is False
+
+
 def test_metrics_overview(session: Session) -> None:
     ov = metrics_overview(session, PERIOD, RATE)
     assert ov["usuarios"] == 1

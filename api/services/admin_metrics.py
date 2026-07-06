@@ -198,8 +198,13 @@ def metrics_users(
                 "parlamentares_monitorados": monitorados,
                 "limite_parlamentares": limite_parlamentares,
                 "limite_consultas": limite_consultas,
+                # Acima do plano = estourou IA/mês OU parlamentares monitorados.
                 "acima_do_plano": bool(
-                    limite_consultas is not None and consultas_mes > int(limite_consultas)
+                    (limite_consultas is not None and consultas_mes > int(limite_consultas))
+                    or (
+                        limite_parlamentares is not None
+                        and monitorados > int(limite_parlamentares)
+                    )
                 ),
             }
         )
