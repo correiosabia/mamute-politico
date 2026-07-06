@@ -17,17 +17,21 @@ try:
     from ..dependencies import get_db
     from ..services.ghost_member_sync import (
         GhostMemberProjectSyncResult,
+        normalize_email,
         soft_delete_member_project,
         sync_member_project,
     )
+    from ..services.ghost_admin import fetch_ghost_member_by_email_from_env
     from ..services.ghost_webhook_security import verify_ghost_signature
 except (ImportError, ValueError):  # pragma: no cover - caminho Docker/top-level.
     from dependencies import get_db
     from services.ghost_member_sync import (
         GhostMemberProjectSyncResult,
+        normalize_email,
         soft_delete_member_project,
         sync_member_project,
     )
+    from services.ghost_admin import fetch_ghost_member_by_email_from_env
     from services.ghost_webhook_security import verify_ghost_signature
 
 
@@ -78,6 +82,20 @@ def _response(result: GhostMemberProjectSyncResult) -> GhostWebhookMemberRespons
     return GhostWebhookMemberResponse(**asdict(result))
 
 
+def _enrich_current_member(current: dict[str, Any]) -> dict[str, Any]:
+    email = normalize_email(current.get("email"))
+    if email is None:
+        return current
+    try:
+        enriched = fetch_ghost_member_by_email_from_env(email)
+    except Exception:
+        logger.warning("Falha ao enriquecer member Ghost via Admin API.", exc_info=True)
+        return current
+    if enriched is None:
+        return current
+    return enriched
+
+
 @router.post(
     "/members",
     response_model=GhostWebhookMemberResponse,
@@ -123,7 +141,7 @@ async def receive_ghost_member_webhook(
 
     current, previous = _member_payload(payload)
     if current.get("email"):
-        return _response(sync_member_project(db, current, previous))
+        return _response(sync_member_project(db, _enrich_current_member(current), previous))
     if previous.get("email"):
         return _response(soft_delete_member_project(db, previous))
 
@@ -134,4 +152,3 @@ async def receive_ghost_member_webhook(
 
 
 __all__ = ["router"]
-

@@ -70,7 +70,14 @@ APPLICATION_NAME=MAMUTE_POLITICO_API
 GHOST_API_KEY=[[Criar uma API key nas integrações do Ghost e postar aqui]]
 GHOST_ADMIN_URL=https://mamute.voltdata.info/ghost/api/admin
 MAMUTE_TIER_LIMITS_JSON={"free":{"qtd_termos":1,"qtd_consultas_ia_mes":0},"default-product":{"qtd_termos":3,"qtd_consultas_ia_mes":50},"cidadao-mamute":{"qtd_termos":10,"qtd_consultas_ia_mes":200}}
+MAMUTE_GHOST_RECONCILE_ON_STARTUP=true
 ```
+
+Com `GHOST_API_KEY` e `GHOST_ADMIN_URL` configurados, a API faz uma
+reconciliação idempotente Ghost -> tiers/projetos no startup. Isso garante que
+mudanças em `MAMUTE_TIER_LIMITS_JSON` passem a valer após redeploy mesmo para
+usuários já existentes, desde que o tier atual esteja refletido no Ghost. O
+webhook `member.*` continua sincronizando alterações pontuais de tier.
 
 - `mamute-chatbot`
 
@@ -234,10 +241,16 @@ Campos de limite:
 
 Precedência dos limites:
 
-1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
+1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `tiers.detalhes.qtd_termos`; se também ausente, usa `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
 2. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
 
 `MAMUTE_CHATBOT_QUOTA_ENABLED=false` desliga apenas a reserva e gravação mensal de uso; não transforma `/chat/chatbot/query` ou `/chat/chatbot/stream` em endpoints públicos.
+
+O webhook Ghost atualiza usuários em tempo real, mas deploy/restart não depende
+dele: o container dos scrappers roda uma reconciliação idempotente no startup
+(`ghost_tiers_sync` seguido de `create_users`) para atualizar aliases de tiers e
+projetos já existentes. Desative com `MAMUTE_GHOST_RECONCILE_ON_STARTUP=false`
+somente se o ambiente tiver outro mecanismo de reconciliação.
 
 O arquivo local `mamute_scrappers/ghost_tier_entitlements.json` pode ser usado para preparar mapeamentos de tiers em uma máquina ou ambiente específico, mas não deve ser versionado. Em deploy, prefira configurar os limites por variáveis de ambiente.
 

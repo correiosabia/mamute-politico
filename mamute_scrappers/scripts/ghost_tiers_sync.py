@@ -62,6 +62,9 @@ def parse_ghost_tiers(payload: dict[str, Any]) -> list[dict[str, Any]]:
         out.append(
             {
                 "product_id": product_id,
+                "ghost_tier_id": tier.get("id"),
+                "slug": tier.get("slug"),
+                "type": tier.get("type"),
                 "name": (tier.get("name") or "").strip(),
                 "monthly_price": _to_reais(tier.get("monthly_price")),
             }
@@ -84,12 +87,10 @@ def sync_tiers(session: Any, ghost_tiers: list[dict[str, Any]]) -> list[str]:
     from mamute_scrappers.db.models.project import Tiers
 
     updated: list[str] = []
+    tiers = session.query(Tiers).filter(Tiers.deleted_at.is_(None)).all()
+    tier_map = {key: tier for tier in tiers for key in _tier_lookup_keys(tier)}
     for gt in ghost_tiers:
-        tier = (
-            session.query(Tiers)
-            .filter(Tiers.product_id == gt["product_id"], Tiers.deleted_at.is_(None))
-            .one_or_none()
-        )
+        tier = _find_local_tier(tier_map, gt)
         if tier is None:
             logger.info("Sem tier local para product_id=%s (%s)", gt["product_id"], gt["name"])
             continue
@@ -97,10 +98,40 @@ def sync_tiers(session: Any, ghost_tiers: list[dict[str, Any]]) -> list[str]:
             tier.tier_name_debug = gt["name"]
         detalhes = dict(tier.detalhes or {})
         detalhes["preco_mensal"] = gt["monthly_price"]
+        ghost = dict(detalhes.get("ghost") or {})
+        if gt.get("slug"):
+            ghost["slug"] = gt["slug"]
+        if gt.get("ghost_tier_id"):
+            ghost["target_tier_id"] = gt["ghost_tier_id"]
+        if gt.get("type"):
+            ghost["type"] = gt["type"]
+        detalhes["ghost"] = ghost
         tier.detalhes = detalhes
         updated.append(gt["product_id"])
     session.commit()
     return updated
+
+
+def _tier_lookup_keys(tier: Any) -> set[str]:
+    keys = {tier.product_id}
+    detalhes = tier.detalhes if isinstance(tier.detalhes, dict) else {}
+    ghost = detalhes.get("ghost") if isinstance(detalhes.get("ghost"), dict) else {}
+    for key in ("slug", "target_tier_id", "source_tier_id"):
+        value = ghost.get(key)
+        if isinstance(value, str) and value.strip():
+            keys.add(value.strip())
+    return keys
+
+
+def _find_local_tier(tier_map: dict[str, Any], ghost_tier: dict[str, Any]) -> Any:
+    for key in (
+        ghost_tier.get("product_id"),
+        ghost_tier.get("ghost_tier_id"),
+        ghost_tier.get("slug"),
+    ):
+        if isinstance(key, str) and key.strip() and key.strip() in tier_map:
+            return tier_map[key.strip()]
+    return None
 
 
 def run(session: Any, http_get: Callable[..., Any]) -> list[str]:

@@ -57,4 +57,9 @@ Projeto pai: [README raiz](../README.md)
   `member.edited` e `member.deleted` do Ghost. Configure o mesmo segredo no
   Ghost Admin e em `GHOST_WEBHOOK_SECRET`. Passo a passo:
   [`../environments/ghost.md`](../environments/ghost.md).
+- Quando `GHOST_API_KEY`/`GHOST_ADMIN_URL` estão disponíveis, o webhook consulta
+  o member completo no Ghost Admin API antes de sincronizar o projeto local. Isso
+  evita cair em `free` quando o payload do evento não traz `tiers/subscriptions`.
+- A API também roda reconciliação Ghost -> tiers/projetos no startup por padrão.
+  Desative com `MAMUTE_GHOST_RECONCILE_ON_STARTUP=false` se necessário.
 - Em caso de rotação de chaves JWKS, reinicie a aplicação para recarregar a chave pública.

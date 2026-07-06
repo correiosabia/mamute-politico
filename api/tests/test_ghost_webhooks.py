@@ -88,6 +88,69 @@ def test_receive_member_current_payload_syncs_project(monkeypatch: Any) -> None:
     assert calls == [(payload["member"]["current"], {})]
 
 
+def test_receive_member_webhook_enriches_current_member_before_sync(monkeypatch: Any) -> None:
+    from api.main import app
+    from api.routers import ghost_webhooks
+    from api.services.ghost_member_sync import GhostMemberProjectSyncResult
+
+    monkeypatch.setenv("GHOST_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("GHOST_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS", "0")
+    _install_db_override(app, ghost_webhooks.get_db)
+
+    enriched = {
+        "email": "assinante@example.com",
+        "name": "Assinante",
+        "status": "free",
+        "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+    }
+    fetched: list[str] = []
+    synced: list[dict[str, Any]] = []
+
+    def fake_fetch(email: str) -> dict[str, Any]:
+        fetched.append(email)
+        return enriched
+
+    def fake_sync(
+        db: object,
+        current: dict[str, Any],
+        previous: dict[str, Any],
+    ) -> GhostMemberProjectSyncResult:
+        synced.append(current)
+        return GhostMemberProjectSyncResult(
+            action="updated",
+            email=current["email"],
+            project_id=42,
+            product_id="cidadao-mamute",
+        )
+
+    monkeypatch.setattr(ghost_webhooks, "fetch_ghost_member_by_email_from_env", fake_fetch)
+    monkeypatch.setattr(ghost_webhooks, "sync_member_project", fake_sync)
+
+    payload = {
+        "member": {
+            "current": {
+                "email": "assinante@example.com",
+                "status": "free",
+            },
+            "previous": {},
+        }
+    }
+    raw_body = _body(payload)
+
+    response = TestClient(app).post(
+        "/api/webhooks/ghost/members",
+        content=raw_body,
+        headers={"X-Ghost-Signature": _signature(raw_body)},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["product_id"] == "cidadao-mamute"
+    assert fetched == ["assinante@example.com"]
+    assert synced == [enriched]
+
+
 def test_receive_member_deleted_payload_soft_deletes_project(monkeypatch: Any) -> None:
     from api.main import app
     from api.routers import ghost_webhooks
@@ -181,7 +244,7 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
 ) -> None:
     from api.services import ghost_member_sync
 
-    tier = SimpleNamespace(id=10, qtd_termos=5)
+    tier = SimpleNamespace(id=10, product_id="free", qtd_termos=5)
     new_project = SimpleNamespace(id=2, email="novo@example.com", deleted_at=None)
     previous_project = SimpleNamespace(id=1, email="antigo@example.com", deleted_at=None)
 
@@ -198,7 +261,7 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
         def refresh(self, value: object) -> None:
             pass
 
-    monkeypatch.setattr(ghost_member_sync, "_get_tier_by_product_id", lambda session, product_id: tier)
+    monkeypatch.setattr(ghost_member_sync, "_get_tier_by_product_ids", lambda session, product_ids: tier)
     monkeypatch.setattr(ghost_member_sync, "_get_project_by_email", fake_get_project_by_email)
 
     result = ghost_member_sync.sync_member_project(
@@ -217,3 +280,29 @@ def test_sync_member_project_soft_deletes_previous_email_when_new_project_exists
     assert new_project.qtd_termos == 5
     assert new_project.tag_ghost == "cliente"
     assert previous_project.deleted_at is not None
+
+
+def test_resolve_product_id_prefers_explicit_tier_over_free_status() -> None:
+    from api.services.ghost_member_sync import resolve_product_id, resolve_product_ids
+
+    assert (
+        resolve_product_id(
+            {
+                "status": "free",
+                "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+            }
+        )
+        == "ghost-paid-tier-id"
+    )
+    assert resolve_product_ids(
+        {
+            "status": "free",
+            "tiers": [{"id": "ghost-paid-tier-id", "slug": "cidadao-mamute"}],
+        }
+    ) == ["ghost-paid-tier-id", "cidadao-mamute"]
+
+
+def test_resolve_product_id_keeps_free_when_no_paid_tier_is_present() -> None:
+    from api.services.ghost_member_sync import resolve_product_id
+
+    assert resolve_product_id({"status": "free", "tiers": []}) == "free"

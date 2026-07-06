@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 dotenv_path = Path("/app/.env")
-env_prefixes = ("BACKFILL_", "GHOST_", "OPENAI_")
+env_prefixes = ("BACKFILL_", "GHOST_", "MAMUTE_", "OPENAI_")
 env_names = {
     "APPLICATION_NAME",
     "DATABASE_URL",
@@ -51,6 +51,18 @@ crontab "$CRON_FILE"
 
 echo "Installed scrappers cron schedule:"
 crontab -l
+
+if [ "${MAMUTE_GHOST_RECONCILE_ON_STARTUP:-true}" = "true" ]; then
+  echo "Running startup Ghost tier/member reconciliation..."
+  /app/mamute_scrappers/docker/run-cron-job.sh ghost-tiers-startup -- \
+    /usr/local/bin/python -m mamute_scrappers.scripts.ghost_tiers_sync \
+    || echo "Warning: startup ghost_tiers_sync failed; continuing."
+  /app/mamute_scrappers/docker/run-cron-job.sh ghost-members-startup -- \
+    /usr/local/bin/python -m mamute_scrappers.scripts.create_users \
+    || echo "Warning: startup create_users failed; continuing."
+else
+  echo "Startup Ghost tier/member reconciliation disabled."
+fi
 
 echo "Starting cron in foreground..."
 exec cron -f

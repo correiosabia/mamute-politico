@@ -1,4 +1,4 @@
-"""DB (tier_details) deve ganhar do env em resolve_monthly_limit."""
+"""Env deve ganhar de tier_details em resolve_monthly_limit."""
 from __future__ import annotations
 
 import pytest
@@ -17,19 +17,16 @@ def _project(details: dict, product_id: str = "cidadao-mamute") -> ChatProject:
     )
 
 
-def test_db_details_wins_over_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_wins_over_db_details(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "MAMUTE_TIER_LIMITS_JSON",
         '{"cidadao-mamute": {"qtd_consultas_ia_mes": 50}}',
     )
+    get_settings.cache_clear()
+    assert resolve_monthly_limit(_project({"qtd_consultas_ia_mes": 200})) == 50
+
+
+def test_db_details_used_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MAMUTE_TIER_LIMITS_JSON", raising=False)
     get_settings.cache_clear()
     assert resolve_monthly_limit(_project({"qtd_consultas_ia_mes": 200})) == 200
-
-
-def test_env_used_when_db_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(
-        "MAMUTE_TIER_LIMITS_JSON",
-        '{"cidadao-mamute": {"qtd_consultas_ia_mes": 50}}',
-    )
-    get_settings.cache_clear()
-    assert resolve_monthly_limit(_project({})) == 50
