@@ -67,11 +67,12 @@ class TierOut(BaseModel):
 
 
 class TierDetailsUpdate(BaseModel):
+    # preco_mensal NÃO é editável aqui: vem do Ghost (ghost_tiers_sync). Idem
+    # tier_name_debug. O painel os exibe como só-leitura.
     qtd_termos: Optional[int] = Field(default=None, ge=0)
     qtd_consultas_ia_mes: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
-    preco_mensal: Optional[float] = Field(default=None, ge=0)
 
 
 def _log_admin_action(
