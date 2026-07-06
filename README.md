@@ -239,6 +239,12 @@ Precedência dos limites:
 
 `MAMUTE_CHATBOT_QUOTA_ENABLED=false` desliga apenas a reserva e gravação mensal de uso; não transforma `/chat/chatbot/query` ou `/chat/chatbot/stream` em endpoints públicos.
 
+O webhook Ghost atualiza usuários em tempo real, mas deploy/restart não depende
+dele: o container dos scrappers roda uma reconciliação idempotente no startup
+(`ghost_tiers_sync` seguido de `create_users`) para atualizar aliases de tiers e
+projetos já existentes. Desative com `MAMUTE_GHOST_RECONCILE_ON_STARTUP=false`
+somente se o ambiente tiver outro mecanismo de reconciliação.
+
 O arquivo local `mamute_scrappers/ghost_tier_entitlements.json` pode ser usado para preparar mapeamentos de tiers em uma máquina ou ambiente específico, mas não deve ser versionado. Em deploy, prefira configurar os limites por variáveis de ambiente.
 
 ## Links rápidos
