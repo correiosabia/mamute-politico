@@ -144,22 +144,56 @@ export function fetchIa(): Promise<IaMetrics> {
   return request<IaMetrics>('/admin/metrics/ia');
 }
 
+export type CoverageStatus =
+  | 'completo'
+  | 'quase'
+  | 'parcial'
+  | 'superset'
+  | 'sem_referencia'
+  | 'ausente';
+
+interface YearNosso {
+  year: number;
+  nosso: number;
+}
+
+interface CasaBlocks {
+  camara: YearNosso[];
+  senado: YearNosso[];
+  nota: string;
+}
+
 export interface Coverage {
-  by_year_house: {
-    year: number | null;
-    camara: number;
-    senado: number;
-    desconhecido: number;
-    total: number;
-    api_camara: number | null;
-    cobertura_camara_pct: number | null;
-    api_senado: number | null;
-    cobertura_senado_pct: number | null;
-  }[];
-  by_type: { type: string; count: number }[];
-  totals: { proposicoes: number; votacoes: number; discursos: number };
-  /** ISO do último cálculo (rotina diária). null = computado ao vivo agora. */
+  /** true = rotina ainda não computou o snapshot (deploy novo). */
+  pending?: boolean;
+  /** ISO do último cálculo (rotina diária 04h). */
   computed_at?: string | null;
+  kpis: {
+    proposicoes: number;
+    discursos: number;
+    votacoes_nominais: number;
+    parlamentares: number;
+  };
+  proposicoes: {
+    camara: {
+      year: number;
+      nosso: number;
+      oficial: number | null;
+      pct: number | null;
+      status: CoverageStatus;
+    }[];
+    senado: YearNosso[];
+    sem_tipo_total?: number;
+    nota_superset: string;
+  };
+  discursos: CasaBlocks;
+  votacoes: CasaBlocks;
+  parlamentares: {
+    deputados: { nossa_base: number; cadeiras: number; status: CoverageStatus };
+    senadores: { nossa_base: number; cadeiras: number; status: CoverageStatus };
+    nota: string;
+  };
+  consolidado: { categoria: string; status: CoverageStatus; observacao: string }[];
 }
 
 export function fetchCoverage(): Promise<Coverage> {

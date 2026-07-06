@@ -2,17 +2,15 @@
 
 Roda no container dos scrappers (único com cron). NÃO pode importar `api.*` —
 o container só tem `mamute_scrappers/`. Por isso a lógica de cobertura e as
-funções de contagem das APIs abertas são reimplementadas aqui em SQL cru /
-funções puras (mesma filosofia da duplicação de models api↔scrappers).
+funções de contagem das APIs abertas ficam aqui em SQL cru / funções puras.
 
 Faz três coisas, cada uma isolada (uma falha não aborta as outras):
 
-  1. api_coverage  — contagens das APIs abertas (Câmara/Senado) por ano/tipo.
-  2. coverage_snapshot — resultado já computado da cobertura do banco (pesado
-     ao vivo por causa do EXISTS por proposição), gravado como um único JSON.
-  3. usd_brl_rate  — cotação USD→BRL do dia via API pública.
-
-A API (container `api`) só LÊ essas tabelas — resposta instantânea.
+  1. api_coverage      — total ANUAL oficial de proposições da Câmara (todos os
+     tipos, via API aberta). Guardado com sigla_type='TODOS'.
+  2. coverage_snapshot — relatório de cobertura já computado (proposições,
+     discursos, votações, parlamentares) como um único JSON. A API só lê.
+  3. usd_brl_rate      — cotação USD→BRL do dia via API pública.
 
 Uso:
     python -m mamute_scrappers.scripts.refresh_admin_caches
@@ -34,42 +32,20 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("refresh_admin_caches")
 
 CAMARA_URL = "https://dadosabertos.camara.leg.br/api/v2/proposicoes"
-SENADO_URL = "https://legis.senado.leg.br/dadosabertos/materia/pesquisa/lista"
 USD_BRL_URL = "https://economia.awesomeapi.com.br/last/USD-BRL"
-DEFAULT_TYPES = ["PL", "PEC", "PDL", "PLP", "MPV", "PLV"]
 
-# Casa por proposição: senado se houver autor senador; senão câmara se houver
-# autor; senão desconhecido. ESPELHA api/services/admin_coverage.py::_HOUSE_EXPR
-# — manter os dois em sincronia.
-_HOUSE_EXPR = """
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM authors_proposition ap
-            JOIN parliamentarian par ON par.id = ap.parliamentarian_id
-            WHERE ap.proposition_id = p.id
-              AND lower(COALESCE(par.type, '')) LIKE '%senad%'
-        ) THEN 'senado'
-        WHEN EXISTS (
-            SELECT 1 FROM authors_proposition ap WHERE ap.proposition_id = p.id
-        ) THEN 'camara'
-        ELSE 'desconhecido'
-    END
-"""
+MIN_YEAR = 2018
+# Cadeiras oficiais (constitucionais). A base tem mais (suplentes + histórico).
+CADEIRAS_CAMARA = 513
+CADEIRAS_SENADO = 81
+# Marca a linha de api_coverage que guarda o TOTAL anual (todos os tipos).
+TOTAL_SIGLA = "TODOS"
 
 
 # --------------------------------------------------------------------------- #
-# Contagens das APIs abertas (funções puras, testáveis com http_get fake).
-# Duplicadas de scripts/sync_api_coverage.py (que importa api.* e não roda aqui).
+# Total anual oficial de proposições da Câmara (todos os tipos).
+# A API sem siglaTipo já dá o total do ano — o "last page" com itens=1 = total.
 # --------------------------------------------------------------------------- #
-def count_senado_materias(payload: dict[str, Any]) -> int:
-    node = payload.get("PesquisaBasicaMateria") or {}
-    materias = node.get("Materias") if isinstance(node, dict) else None
-    materia = materias.get("Materia") if isinstance(materias, dict) else None
-    if isinstance(materia, list):
-        return len(materia)
-    return 1 if materia else 0
-
-
 def parse_last_page(payload: dict[str, Any]) -> int:
     for link in payload.get("links", []) or []:
         if link.get("rel") == "last":
@@ -80,31 +56,18 @@ def parse_last_page(payload: dict[str, Any]) -> int:
     return len(payload.get("dados", []) or [])
 
 
-def fetch_camara_count(year: int, sigla: str, http_get: Callable[..., Any]) -> int:
+def fetch_camara_year_total(year: int, http_get: Callable[..., Any]) -> int:
     resp = http_get(
         CAMARA_URL,
-        params={"ano": year, "siglaTipo": sigla, "itens": 1, "pagina": 1},
+        params={"ano": year, "itens": 1, "pagina": 1},
         headers={"accept": "application/json"},
-        timeout=20,
+        timeout=25,
     )
     resp.raise_for_status()
     return parse_last_page(resp.json())
 
 
-def fetch_senado_count(year: int, sigla: str, http_get: Callable[..., Any]) -> int:
-    resp = http_get(
-        SENADO_URL,
-        params={"ano": year, "sigla": sigla},
-        headers={"accept": "application/json"},
-        timeout=25,
-    )
-    resp.raise_for_status()
-    return count_senado_materias(resp.json())
-
-
-def upsert_api_coverage(
-    session: Session, source: str, year: int, sigla: str, count: int
-) -> None:
+def upsert_api_total(session: Session, source: str, year: int, count: int) -> None:
     session.execute(
         text(
             """
@@ -115,123 +78,294 @@ def upsert_api_coverage(
                 synced_at = CURRENT_TIMESTAMP
             """
         ),
-        {"source": source, "year": year, "sigla": sigla, "count": count},
+        {"source": source, "year": year, "sigla": TOTAL_SIGLA, "count": count},
     )
 
 
-def sync_api_coverage(
-    session: Session,
-    http_get: Callable[..., Any],
-    start: int,
-    end: int,
+def sync_camara_year_totals(
+    session: Session, http_get: Callable[..., Any], start: int, end: int
 ) -> int:
-    total = 0
+    n = 0
     for year in range(start, end + 1):
-        for sigla in DEFAULT_TYPES:
-            try:
-                camara = fetch_camara_count(year, sigla, http_get)
-                upsert_api_coverage(session, "camara", year, sigla, camara)
-                senado = fetch_senado_count(year, sigla, http_get)
-                upsert_api_coverage(session, "senado", year, sigla, senado)
-                total += 2
-            except Exception:  # noqa: BLE001 — uma combinação não pode abortar o resto
-                logger.exception("Falha ao sincronizar api_coverage %s/%s", year, sigla)
-    return total
+        try:
+            total = fetch_camara_year_total(year, http_get)
+            upsert_api_total(session, "camara", year, total)
+            n += 1
+        except Exception:  # noqa: BLE001 — um ano não pode abortar o resto
+            logger.exception("Falha no total oficial Câmara %s", year)
+    return n
 
 
 # --------------------------------------------------------------------------- #
-# Cobertura do banco (espelha api/services/admin_coverage.py::db_coverage).
+# Cobertura da base (relatório multi-seção). Casa é derivada do tipo do autor
+# (proposições) ou do parlamentar (discursos/votações). JOIN+GROUP BY em vez de
+# EXISTS correlacionado (o antigo travava em ~104k proposições).
 # --------------------------------------------------------------------------- #
+def _year_expr(session: Session, col: str) -> str:
+    """Extração de ano portável (Postgres em prod, SQLite nos testes)."""
+    if session.bind is not None and session.bind.dialect.name == "sqlite":
+        return f"cast(strftime('%Y', {col}) as integer)"
+    return f"extract(year from {col})::int"
+
+
+def _scalar(session: Session, sql: str) -> int:
+    return int(session.execute(text(sql)).scalar() or 0)
+
+
+def _prop_status(nosso: int, oficial: int | None) -> str:
+    if not oficial:
+        return "sem_referencia"
+    pct = nosso / oficial * 100
+    if pct >= 120:
+        return "superset"
+    if pct >= 95:
+        return "completo"
+    if pct >= 80:
+        return "quase"
+    return "parcial"
+
+
+def _year_house_counts(session: Session, sql: str) -> dict[int, dict[str, int]]:
+    """sql deve retornar (yr, casa, n). Casa 'senado' vs qualquer outra = câmara."""
+    by_year: dict[int, dict[str, int]] = {}
+    for r in session.execute(text(sql), {"miny": MIN_YEAR}).mappings():
+        if r["yr"] is None:
+            continue
+        bucket = by_year.setdefault(int(r["yr"]), {"camara": 0, "senado": 0})
+        key = "senado" if r["casa"] == "senado" else "camara"
+        bucket[key] += int(r["n"])
+    return by_year
+
+
+def _to_lists(by_year: dict[int, dict[str, int]]) -> tuple[list[dict], list[dict]]:
+    """Duas listas (câmara, senado) ordenadas por ano desc, só com anos != 0."""
+    camara, senado = [], []
+    for y in sorted(by_year, reverse=True):
+        camara.append({"year": y, "nosso": by_year[y]["camara"]})
+        senado.append({"year": y, "nosso": by_year[y]["senado"]})
+    return camara, senado
+
+
 def build_coverage_payload(session: Session) -> dict[str, Any]:
-    year_house_rows = (
-        session.execute(
-            text(
-                f"""
-                SELECT year, house, COUNT(*) AS n FROM (
-                    SELECT p.id AS id, p.presentation_year AS year, {_HOUSE_EXPR} AS house
-                    FROM proposition p
-                ) sub
-                GROUP BY year, house
-                """
-            )
-        )
-        .mappings()
-        .all()
-    )
+    yr_disc = _year_expr(session, "sp.date")
+    yr_vote = _year_expr(session, "rcv.vote_date")
 
-    by_year: dict[Any, dict[str, int]] = {}
-    for row in year_house_rows:
-        year = row["year"]
-        bucket = by_year.setdefault(year, {"camara": 0, "senado": 0, "desconhecido": 0})
-        house = row["house"] if row["house"] in bucket else "desconhecido"
-        bucket[house] += int(row["n"])
-
-    api_rows = (
-        session.execute(
-            text(
-                "SELECT source, year, SUM(api_count) AS n FROM api_coverage "
-                "GROUP BY source, year"
-            )
-        )
-        .mappings()
-        .all()
-    )
-    api_camara_by_year: dict[Any, int] = {}
-    api_senado_by_year: dict[Any, int] = {}
-    for row in api_rows:
-        target = api_senado_by_year if row["source"] == "senado" else api_camara_by_year
-        target[row["year"]] = int(row["n"] or 0)
-
-    by_year_house = []
-    for year, v in by_year.items():
-        api_camara = api_camara_by_year.get(year)
-        api_senado = api_senado_by_year.get(year)
-        by_year_house.append(
-            {
-                "year": year,
-                "camara": v["camara"],
-                "senado": v["senado"],
-                "desconhecido": v["desconhecido"],
-                "total": v["camara"] + v["senado"] + v["desconhecido"],
-                "api_camara": api_camara,
-                "cobertura_camara_pct": (
-                    round(v["camara"] / api_camara * 100, 1) if api_camara else None
-                ),
-                "api_senado": api_senado,
-                "cobertura_senado_pct": (
-                    round(v["senado"] / api_senado * 100, 1) if api_senado else None
-                ),
-            }
-        )
-    by_year_house.sort(key=lambda r: (r["year"] is None, r["year"]), reverse=True)
-
-    type_rows = (
-        session.execute(
-            text(
-                """
-                SELECT COALESCE(pt.acronym, pt.name, '—') AS type, COUNT(*) AS n
-                FROM proposition p
-                LEFT JOIN proposition_type pt ON pt.id = p.proposition_type_id
-                GROUP BY COALESCE(pt.acronym, pt.name, '—')
-                ORDER BY n DESC
-                """
-            )
-        )
-        .mappings()
-        .all()
-    )
-    by_type = [{"type": row["type"], "count": int(row["n"])} for row in type_rows]
-
-    def _count(table: str) -> int:
-        return int(session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one() or 0)
-
-    totals = {
-        "proposicoes": _count("proposition"),
-        "votacoes": _count("roll_call_votes"),
-        "discursos": _count("speeches_transcripts"),
+    kpis = {
+        "proposicoes": _scalar(session, "select count(*) from proposition"),
+        "discursos": _scalar(session, "select count(*) from speeches_transcripts"),
+        "votacoes_nominais": _scalar(
+            session, "select count(distinct link) from roll_call_votes"
+        ),
+        "parlamentares": _scalar(session, "select count(*) from parliamentarian"),
     }
 
-    return {"by_year_house": by_year_house, "by_type": by_type, "totals": totals}
+    # --- Proposições: casa pelo autor; Câmara = camara + desconhecido ---
+    prop_rows = session.execute(
+        text(
+            """
+            select yr, house, count(*) n,
+                   sum(case when sem_tipo then 1 else 0 end) sem_tipo
+            from (
+                select p.id, p.presentation_year yr,
+                    case
+                        when max(case when lower(coalesce(par.type,'')) like '%senad%'
+                                      then 1 else 0 end) = 1 then 'senado'
+                        when count(ap.id) > 0 then 'camara'
+                        else 'desconhecido'
+                    end house,
+                    (p.proposition_type_id is null) sem_tipo
+                from proposition p
+                left join authors_proposition ap on ap.proposition_id = p.id
+                left join parliamentarian par on par.id = ap.parliamentarian_id
+                group by p.id, p.presentation_year, p.proposition_type_id
+            ) x
+            where yr >= :miny
+            group by yr, house
+            """
+        ),
+        {"miny": MIN_YEAR},
+    ).mappings().all()
+
+    prop_by_year: dict[int, dict[str, int]] = {}
+    sem_tipo_total = 0
+    for r in prop_rows:
+        y = prop_by_year.setdefault(int(r["yr"]), {"camara": 0, "senado": 0})
+        if r["house"] == "senado":
+            y["senado"] += int(r["n"])
+        else:  # camara + desconhecido
+            y["camara"] += int(r["n"])
+        sem_tipo_total += int(r["sem_tipo"] or 0)
+
+    oficial = {
+        int(r["year"]): int(r["n"])
+        for r in session.execute(
+            text(
+                "select year, sum(api_count) n from api_coverage "
+                "where source='camara' and sigla_type=:s group by year"
+            ),
+            {"s": TOTAL_SIGLA},
+        ).mappings()
+    }
+
+    prop_camara, prop_senado, superset_years = [], [], []
+    for y in sorted(prop_by_year, reverse=True):
+        v = prop_by_year[y]
+        of = oficial.get(y)
+        status = _prop_status(v["camara"], of)
+        if status == "superset":
+            superset_years.append(y)
+        prop_camara.append(
+            {
+                "year": y,
+                "nosso": v["camara"],
+                "oficial": of,
+                "pct": round(v["camara"] / of * 100, 1) if of else None,
+                "status": status,
+            }
+        )
+        prop_senado.append({"year": y, "nosso": v["senado"]})
+
+    superset_years.sort()
+    nota_superset = (
+        "A partir de "
+        + (str(superset_years[0]) if superset_years else "2024")
+        + " a base tem mais registros que o oficial: além das proposições "
+        "principais, capturamos sub-documentos (pareceres, substitutivos, emendas). "
+        f"Há {sem_tipo_total:,} registros sem 'tipo' preenchido (2018+)."
+    ).replace(",", ".")
+
+    # --- Discursos ---
+    disc_by_year = _year_house_counts(
+        session,
+        f"""
+        select {yr_disc} yr,
+               case when lower(coalesce(par.type,'')) like '%senad%'
+                    then 'senado' else 'camara' end casa,
+               count(*) n
+        from speeches_transcripts sp
+        join parliamentarian par on par.id = sp.parliamentarian_id
+        where {yr_disc} >= :miny
+        group by yr, casa
+        """,
+    )
+    disc_camara, disc_senado = _to_lists(disc_by_year)
+
+    # --- Votações nominais (sessões = distinct link) ---
+    vote_by_year = _year_house_counts(
+        session,
+        f"""
+        select {yr_vote} yr,
+               case when lower(coalesce(par.type,'')) like '%senad%'
+                    then 'senado' else 'camara' end casa,
+               count(distinct rcv.link) n
+        from roll_call_votes rcv
+        join parliamentarian par on par.id = rcv.parliamentarian_id
+        where {yr_vote} >= :miny
+        group by yr, casa
+        """,
+    )
+    vote_camara, vote_senado = _to_lists(vote_by_year)
+
+    # --- Parlamentares ---
+    dep = _scalar(
+        session,
+        "select count(*) from parliamentarian where lower(coalesce(type,'')) like '%deputad%'",
+    )
+    sen = _scalar(
+        session,
+        "select count(*) from parliamentarian where lower(coalesce(type,'')) like '%senad%'",
+    )
+
+    # --- Consolidado (status por categoria) ---
+    prop_status_overall = (
+        "parcial"
+        if any(r["status"] == "parcial" for r in prop_camara if r["oficial"])
+        else "completo"
+    )
+    disc_camara_min = min((r["year"] for r in disc_camara if r["nosso"] > 0), default=None)
+    disc_camara_status = "completo" if disc_camara_min and disc_camara_min <= MIN_YEAR else "quase"
+
+    consolidado = [
+        {
+            "categoria": "Proposições (Câmara, principais)",
+            "status": prop_status_overall,
+            "observacao": "Câmara = proposições cujo autor não é senador. 2024+ acima "
+            "de 100% por conta de sub-documentos.",
+        },
+        {
+            "categoria": "Proposições (Senado)",
+            "status": "sem_referencia",
+            "observacao": "Cobertura presente; a API do Senado não expõe total anual "
+            "confiável para calcular %.",
+        },
+        {
+            "categoria": "Discursos (Câmara)",
+            "status": disc_camara_status,
+            "observacao": (
+                "Presente desde " + str(disc_camara_min) + "."
+                if disc_camara_status == "completo"
+                else "Início da cobertura em " + str(disc_camara_min) + "."
+            )
+            if disc_camara_min
+            else "Sem discursos da Câmara na base.",
+        },
+        {
+            "categoria": "Discursos (Senado)",
+            "status": "completo",
+            "observacao": "Sem total agregado na API oficial — avaliação por presença.",
+        },
+        {
+            "categoria": "Votações nominais",
+            "status": "completo",
+            "observacao": "Sessões nominais nas duas casas. Universo ≠ total da API "
+            "(que inclui simbólicas), então não há % direto.",
+        },
+        {
+            "categoria": "Parlamentares",
+            "status": "completo",
+            "observacao": f"Base tem {dep + sen} (cadeiras atuais {CADEIRAS_CAMARA + CADEIRAS_SENADO}) "
+            "— inclui suplentes e legislaturas anteriores.",
+        },
+    ]
+
+    return {
+        "kpis": kpis,
+        "proposicoes": {
+            "camara": prop_camara,
+            "senado": prop_senado,
+            "sem_tipo_total": sem_tipo_total,
+            "nota_superset": nota_superset,
+        },
+        "discursos": {
+            "camara": disc_camara,
+            "senado": disc_senado,
+            "nota": "A API oficial não expõe total agregado de discursos (só por "
+            "parlamentar), então não há % — avaliação por presença/ausência. "
+            "Duplicatas da Câmara já foram limpas em produção.",
+        },
+        "votacoes": {
+            "camara": vote_camara,
+            "senado": vote_senado,
+            "nota": "A base guarda só votações nominais (voto individual registrado). "
+            "A API conta todas (inclui simbólicas), então um % direto não é comparável. "
+            "Os números são as sessões nominais capturadas.",
+        },
+        "parlamentares": {
+            "deputados": {
+                "nossa_base": dep,
+                "cadeiras": CADEIRAS_CAMARA,
+                "status": "completo",
+            },
+            "senadores": {
+                "nossa_base": sen,
+                "cadeiras": CADEIRAS_SENADO,
+                "status": "completo",
+            },
+            "nota": "A base tem mais parlamentares que as cadeiras atuais porque "
+            "inclui suplentes e parlamentares de legislaturas anteriores.",
+        },
+        "consolidado": consolidado,
+    }
 
 
 def store_coverage_snapshot(session: Session, payload: dict[str, Any]) -> None:
@@ -282,32 +416,33 @@ def main() -> None:
 
     current_year = datetime.now().year
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--coverage-start", type=int, default=2019)
+    parser.add_argument("--coverage-start", type=int, default=MIN_YEAR)
     parser.add_argument("--coverage-end", type=int, default=current_year)
     args = parser.parse_args()
 
     session = get_session()
     try:
-        # 1) APIs abertas → api_coverage
+        # 1) Total anual oficial da Câmara → api_coverage
         try:
-            n = sync_api_coverage(
+            n = sync_camara_year_totals(
                 session, requests.get, args.coverage_start, args.coverage_end
             )
             session.commit()
-            logger.info("api_coverage: %s combinações sincronizadas.", n)
+            logger.info("api_coverage (totais Câmara): %s anos sincronizados.", n)
         except Exception:  # noqa: BLE001
             session.rollback()
-            logger.exception("api_coverage falhou.")
+            logger.exception("Totais oficiais da Câmara falharam.")
 
-        # 2) Snapshot da cobertura do banco
+        # 2) Snapshot da cobertura
         try:
             payload = build_coverage_payload(session)
             store_coverage_snapshot(session, payload)
             session.commit()
             logger.info(
-                "coverage_snapshot atualizado (%s anos, %s tipos).",
-                len(payload["by_year_house"]),
-                len(payload["by_type"]),
+                "coverage_snapshot atualizado (props %s anos, discursos %s, votações %s).",
+                len(payload["proposicoes"]["camara"]),
+                len(payload["discursos"]["camara"]),
+                len(payload["votacoes"]["camara"]),
             )
         except Exception:  # noqa: BLE001
             session.rollback()

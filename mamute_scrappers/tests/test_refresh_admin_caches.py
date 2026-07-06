@@ -1,8 +1,4 @@
-"""Testes da rotina diária de caches admin (refresh_admin_caches).
-
-Carrega o módulo por caminho (mesmo padrão dos outros testes de scrappers) —
-os imports pesados (requests, mamute_scrappers.db) são lazy dentro de main().
-"""
+"""Rotina de caches admin: total oficial da Câmara, cobertura rica e câmbio."""
 
 from __future__ import annotations
 
@@ -37,7 +33,7 @@ class _Resp:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    def raise_for_status(self) -> None:  # noqa: D401
+    def raise_for_status(self) -> None:
         return None
 
     def json(self) -> Any:
@@ -45,36 +41,41 @@ class _Resp:
 
 
 # --------------------------------------------------------------------------- #
-# Funções puras de contagem das APIs abertas.
+# Funções puras
 # --------------------------------------------------------------------------- #
 def test_parse_last_page() -> None:
-    payload = {"links": [{"rel": "last", "href": "https://x/api?ano=2025&pagina=6520&itens=1"}]}
-    assert rac.parse_last_page(payload) == 6520
+    payload = {"links": [{"rel": "last", "href": "https://x/api?ano=2025&pagina=48389&itens=1"}]}
+    assert rac.parse_last_page(payload) == 48389
     assert rac.parse_last_page({"dados": [1, 2, 3]}) == 3
 
 
-def test_count_senado_materias() -> None:
-    payload = {"PesquisaBasicaMateria": {"Materias": {"Materia": [{}, {}, {}]}}}
-    assert rac.count_senado_materias(payload) == 3
-    assert rac.count_senado_materias({"PesquisaBasicaMateria": {}}) == 0
+def test_fetch_camara_year_total_no_sigla() -> None:
+    captured: dict[str, Any] = {}
 
-
-def test_fetch_camara_count_uses_last_page() -> None:
     def http_get(url: str, **kwargs: Any) -> _Resp:
-        return _Resp({"links": [{"rel": "last", "href": "https://x?pagina=17&itens=1"}]})
+        captured["params"] = kwargs.get("params")
+        return _Resp({"links": [{"rel": "last", "href": "https://x?pagina=25750&itens=1"}]})
 
-    assert rac.fetch_camara_count(2025, "PL", http_get) == 17
+    assert rac.fetch_camara_year_total(2019, http_get) == 25750
+    # total do ano = SEM siglaTipo (todos os tipos)
+    assert "siglaTipo" not in captured["params"]
+    assert captured["params"]["ano"] == 2019
 
 
-def test_fetch_senado_count_counts_materias() -> None:
-    def http_get(url: str, **kwargs: Any) -> _Resp:
-        return _Resp({"PesquisaBasicaMateria": {"Materias": {"Materia": [{}, {}]}}})
+def test_prop_status_bands() -> None:
+    assert rac._prop_status(100, None) == "sem_referencia"
+    assert rac._prop_status(208, 100) == "superset"   # >=120
+    assert rac._prop_status(98, 100) == "completo"    # >=95
+    assert rac._prop_status(86, 100) == "quase"       # 80-95
+    assert rac._prop_status(50, 100) == "parcial"     # <80
 
-    assert rac.fetch_senado_count(2025, "PL", http_get) == 2
+
+def test_fetch_usd_brl_bid() -> None:
+    assert rac.fetch_usd_brl_bid(lambda u, **k: _Resp({"USDBRL": {"bid": "6.12"}})) == 6.12
 
 
 # --------------------------------------------------------------------------- #
-# Snapshot da cobertura (espelha api/services/admin_coverage.py).
+# Cobertura rica (SQLite espelha o Postgres de prod)
 # --------------------------------------------------------------------------- #
 def _coverage_session() -> Session:
     engine = create_engine(
@@ -82,96 +83,105 @@ def _coverage_session() -> Session:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    with engine.begin() as conn:
-        conn.exec_driver_sql("create table parliamentarian (id integer primary key, type text)")
-        conn.exec_driver_sql(
-            "create table proposition_type (id integer primary key, acronym text, name text)"
-        )
-        conn.exec_driver_sql(
+    with engine.begin() as c:
+        c.exec_driver_sql("create table parliamentarian (id integer primary key, type text)")
+        c.exec_driver_sql(
             "create table proposition (id integer primary key, presentation_year integer, "
             "proposition_type_id integer)"
         )
-        conn.exec_driver_sql(
+        c.exec_driver_sql(
             "create table authors_proposition (id integer primary key, proposition_id integer, "
             "parliamentarian_id integer)"
         )
-        conn.exec_driver_sql("create table roll_call_votes (id integer primary key)")
-        conn.exec_driver_sql("create table speeches_transcripts (id integer primary key)")
-        conn.exec_driver_sql(
+        c.exec_driver_sql(
+            "create table speeches_transcripts (id integer primary key, parliamentarian_id integer, date text)"
+        )
+        c.exec_driver_sql(
+            "create table roll_call_votes (id integer primary key, parliamentarian_id integer, "
+            "link text, vote_date text)"
+        )
+        c.exec_driver_sql(
             "create table api_coverage (id integer primary key, source text, year integer, "
-            "sigla_type text, api_count integer, synced_at datetime)"
+            "sigla_type text, api_count integer, synced_at text)"
         )
-        conn.exec_driver_sql(
-            "insert into api_coverage (source, year, sigla_type, api_count) values "
-            "('camara',2025,'PL',2),('senado',2025,'PL',4)"
-        )
-        conn.exec_driver_sql(
-            "insert into parliamentarian (id, type) values (1,'deputado'),(2,'senador')"
-        )
-        conn.exec_driver_sql(
-            "insert into proposition_type (id, acronym, name) values (1,'PL','Projeto de Lei'),(2,'PEC','Emenda')"
-        )
-        conn.exec_driver_sql(
+        c.exec_driver_sql("insert into parliamentarian (id, type) values (1,'Deputado'),(2,'Senador')")
+        # p1 2025 camara(tipo ok); p2 2025 senado(sem tipo); p3 2025 desconhecido→camara(sem tipo); p4 2024 camara
+        c.exec_driver_sql(
             "insert into proposition (id, presentation_year, proposition_type_id) values "
-            "(1,2025,1),(2,2025,2),(3,2024,1)"
+            "(1,2025,10),(2,2025,null),(3,2025,null),(4,2024,10)"
         )
-        conn.exec_driver_sql(
-            "insert into authors_proposition (proposition_id, parliamentarian_id) values (1,1),(2,2)"
+        c.exec_driver_sql(
+            "insert into authors_proposition (proposition_id, parliamentarian_id) values (1,1),(2,2),(4,1)"
         )
-        conn.exec_driver_sql("insert into roll_call_votes (id) values (1),(2)")
+        # oficial Câmara 2025 = 1 (nosso câmara 2025 = p1+p3 = 2 → superset)
+        c.exec_driver_sql(
+            "insert into api_coverage (source, year, sigla_type, api_count) values ('camara',2025,'TODOS',1)"
+        )
+        c.exec_driver_sql(
+            "insert into speeches_transcripts (parliamentarian_id, date) values (1,'2025-03-01'),(2,'2024-05-01')"
+        )
+        c.exec_driver_sql(
+            "insert into roll_call_votes (parliamentarian_id, link, vote_date) values "
+            "(1,'L1','2025-06-01'),(1,'L1','2025-06-01'),(2,'L2','2025-06-02')"
+        )
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
-def test_build_coverage_payload_matches_live_logic() -> None:
-    payload = rac.build_coverage_payload(_coverage_session())
+def test_build_coverage_payload_new_shape() -> None:
+    p = rac.build_coverage_payload(_coverage_session())
 
-    by_year = {r["year"]: r for r in payload["by_year_house"]}
-    assert by_year[2025]["camara"] == 1
-    assert by_year[2025]["senado"] == 1
-    assert by_year[2025]["total"] == 2
-    assert by_year[2025]["cobertura_camara_pct"] == 50.0
-    assert by_year[2025]["cobertura_senado_pct"] == 25.0
-    assert by_year[2024]["desconhecido"] == 1
+    assert p["kpis"] == {
+        "proposicoes": 4,
+        "discursos": 2,
+        "votacoes_nominais": 2,  # distinct link L1, L2
+        "parlamentares": 2,
+    }
 
-    by_type = {t["type"]: t["count"] for t in payload["by_type"]}
-    assert by_type["PL"] == 2
-    assert by_type["PEC"] == 1
-    assert payload["totals"] == {"proposicoes": 3, "votacoes": 2, "discursos": 0}
+    prop = {r["year"]: r for r in p["proposicoes"]["camara"]}
+    assert prop[2025]["nosso"] == 2          # camara + desconhecido
+    assert prop[2025]["oficial"] == 1
+    assert prop[2025]["status"] == "superset"
+    assert prop[2024]["oficial"] is None
+    assert prop[2024]["status"] == "sem_referencia"
+    sen = {r["year"]: r["nosso"] for r in p["proposicoes"]["senado"]}
+    assert sen[2025] == 1
+    assert p["proposicoes"]["sem_tipo_total"] == 2
+
+    disc = {r["year"]: r["nosso"] for r in p["discursos"]["camara"]}
+    assert disc[2025] == 1
+    disc_sen = {r["year"]: r["nosso"] for r in p["discursos"]["senado"]}
+    assert disc_sen[2024] == 1
+
+    vote = {r["year"]: r["nosso"] for r in p["votacoes"]["camara"]}
+    assert vote[2025] == 1
+    vote_sen = {r["year"]: r["nosso"] for r in p["votacoes"]["senado"]}
+    assert vote_sen[2025] == 1
+
+    assert p["parlamentares"]["deputados"]["nossa_base"] == 1
+    assert p["parlamentares"]["deputados"]["cadeiras"] == 513
+    assert p["parlamentares"]["senadores"]["nossa_base"] == 1
+    assert len(p["consolidado"]) == 6
 
 
 # --------------------------------------------------------------------------- #
-# Câmbio USD→BRL: upsert idempotente.
+# Câmbio: upsert idempotente
 # --------------------------------------------------------------------------- #
-def _rate_session() -> Session:
+def test_store_usd_brl_rate_upserts() -> None:
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    with engine.begin() as conn:
-        conn.exec_driver_sql(
+    with engine.begin() as c:
+        c.exec_driver_sql(
             "create table usd_brl_rate (rate_date date primary key, bid numeric, "
             "fetched_at datetime default current_timestamp)"
         )
-    return sessionmaker(bind=engine, expire_on_commit=False)()
-
-
-def test_fetch_usd_brl_bid() -> None:
-    def http_get(url: str, **kwargs: Any) -> _Resp:
-        return _Resp({"USDBRL": {"bid": "6.1234"}})
-
-    assert rac.fetch_usd_brl_bid(http_get) == 6.1234
-
-
-def test_store_usd_brl_rate_upserts() -> None:
-    session = _rate_session()
-    today = date(2026, 7, 5)
+    session = sessionmaker(bind=engine, expire_on_commit=False)()
+    today = date(2026, 7, 6)
     rac.store_usd_brl_rate(session, 6.10, today)
-    rac.store_usd_brl_rate(session, 6.25, today)  # mesmo dia → atualiza, não duplica
+    rac.store_usd_brl_rate(session, 6.25, today)  # mesmo dia → atualiza
     session.commit()
-
-    rows = session.execute(
-        text("SELECT rate_date, bid FROM usd_brl_rate")
-    ).all()
+    rows = session.execute(text("select rate_date, bid from usd_brl_rate")).all()
     assert len(rows) == 1
     assert float(rows[0][1]) == 6.25
