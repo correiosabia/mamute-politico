@@ -187,6 +187,12 @@ async def stream_chat(
         )
         prompt_tokens: int | None = None
         completion_tokens: int | None = None
+        # A resposta é considerada concluída quando o pipeline emite o chunk "end"
+        # (depois de todos os tokens e do "usage"). Marcamos ANTES de repassar o
+        # "end" ao cliente porque, se ele já desconectou, o `yield` dispara
+        # CancelledError — mas a consulta FOI respondida e precisa contar.
+        pipeline_finished = False
+        final_status = "cancelled"
         try:
             async for chunk in service.stream_response(inputs, request_id=request_id):
                 chunk_type = chunk.get("type")
@@ -195,17 +201,14 @@ async def stream_chat(
                     prompt_tokens = chunk.get("prompt_tokens")
                     completion_tokens = chunk.get("completion_tokens")
                     continue
+                if chunk_type == "end":
+                    pipeline_finished = True
                 value = chunk.get("value")
                 if chunk_type == "token" and isinstance(value, str):
                     answer_chars += len(value)
                 yield _sse_event_stream(chunk)
-            _mark_usage(
-                usage_id,
-                status_value="completed",
-                answer_chars=answer_chars,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
+            pipeline_finished = True
+            final_status = "completed"
             elapsed = perf_counter() - started_at
             logger.info(
                 "✅ Stream request completed | request_id=%s | elapsed_ms=%.2f",
@@ -213,16 +216,20 @@ async def stream_chat(
                 elapsed * 1000,
             )
         except asyncio.CancelledError:
+            # Cliente desconectou. Se a resposta já foi totalmente gerada
+            # (pipeline_finished), conta como completed — foi respondida e o uso
+            # deve ser registrado com os tokens capturados. Senão, cancelamento real.
+            final_status = "completed" if pipeline_finished else "cancelled"
             elapsed = perf_counter() - started_at
             logger.warning(
-                "⚠️ Stream request cancelled | request_id=%s | elapsed_ms=%.2f",
+                "⚠️ Stream request %s (cliente desconectou) | request_id=%s | elapsed_ms=%.2f",
+                final_status,
                 request_id,
                 elapsed * 1000,
             )
-            _mark_usage(usage_id, status_value="cancelled", answer_chars=answer_chars)
-            yield _sse_event_stream({"type": "cancel"})
             raise
         except Exception as exc:  # pragma: no cover - logado externamente
+            final_status = "failed"
             elapsed = perf_counter() - started_at
             logger.exception(
                 "❌ Stream request failed | request_id=%s | elapsed_ms=%.2f | error=%s",
@@ -230,11 +237,17 @@ async def stream_chat(
                 elapsed * 1000,
                 exc,
             )
-            _mark_usage(usage_id, status_value="failed", answer_chars=answer_chars)
-            yield _sse_event_stream(
-                {"type": "error", "message": str(exc)}
+            yield _sse_event_stream({"type": "error", "message": str(exc)})
+        finally:
+            # Registro ÚNICO do uso, com o status real e os tokens capturados —
+            # roda mesmo quando o cliente desconecta no fim do stream.
+            _mark_usage(
+                usage_id,
+                status_value=final_status,
+                answer_chars=answer_chars,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
-            raise
 
     return StreamingResponse(
         event_generator(),
