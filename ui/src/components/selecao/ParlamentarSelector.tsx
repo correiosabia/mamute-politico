@@ -32,6 +32,7 @@ import {
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
+import { ACCOUNT_URL } from '@/components/auth/config';
 
 type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
 
@@ -44,6 +45,7 @@ const SITUACAO_FILTER_LABELS: Record<SituacaoFilter, string> = {
 };
 
 const MONITORADOS_LIMIT_MESSAGE = "Limite atingido. Faça um upgrade do plano em 'Conta'.";
+const SELECTION_LIMIT_MESSAGE = 'Limite de parlamentares atingido.';
 const LIST_SCROLL_AREA_CLASS =
   'h-full [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!min-w-0 [&_[data-radix-scroll-area-viewport]>div]:!w-full';
 
@@ -211,6 +213,18 @@ export function ParlamentarSelector({
             <CardTitle className="text-[32px] leading-none font-bold text-[#090909]">Parlamentares disponíveis</CardTitle>
             <Badge variant="secondary" className="bg-transparent text-[18px] font-medium text-[#7f7c7c]">+{parlamentaresDisponiveis.length}</Badge>
           </div>
+
+          {monitoradosLimitReached && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ff0004]/5 px-3 py-2 text-sm text-[#393939]">
+              <span>Você atingiu o limite do seu plano.</span>
+              <a
+                href={ACCOUNT_URL}
+                className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
+              >
+                Ver planos
+              </a>
+            </div>
+          )}
           
           {/* Search and Filters */}
           <div className="space-y-3 pt-2">
@@ -417,8 +431,18 @@ export function ParlamentarSelector({
                             {addButton}
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent side="right" align="center" className="max-w-64 text-balance">
-                          {MONITORADOS_LIMIT_MESSAGE}
+                        <TooltipContent
+                          side="right"
+                          align="center"
+                          className="pointer-events-auto flex max-w-64 flex-col items-start gap-2 text-balance p-3"
+                        >
+                          <span>{SELECTION_LIMIT_MESSAGE}</span>
+                          <a
+                            href={ACCOUNT_URL}
+                            className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
+                          >
+                            Fazer upgrade
+                          </a>
                         </TooltipContent>
                       </Tooltip>
                     );
