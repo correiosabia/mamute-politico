@@ -20,6 +20,13 @@ from .mailer import send_html_email
 from .models import ProjectRecipient
 from .report_builder import build_project_report, render_report_html
 from .repository import get_recipient_by_id, list_recipients_for_periodicity
+from .send_log import (
+    STATUS_ERROR,
+    STATUS_SENT,
+    STATUS_SKIPPED_NO_ACTIVITY,
+    STATUS_SKIPPED_NO_FAVORITES,
+    log_send_attempt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,20 @@ def _process_recipient(
     output_dir: Path,
 ) -> str:
     session = get_session()
+
+    # dry-run é simulação: não entra no histórico de envios.
+    def _log(status: str, **kwargs: object) -> None:
+        if dry_run:
+            return
+        log_send_attempt(
+            session,
+            projeto_id=recipient.id,
+            email=recipient.email,
+            periodicidade=periodicidade,
+            status=status,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
     try:
         report = build_project_report(
             session,
@@ -52,8 +73,16 @@ def _process_recipient(
             highlight_limit=highlight_limit,
         )
         if report is None:
+            _log(STATUS_SKIPPED_NO_FAVORITES)
             return f"projeto {recipient.id}: sem parlamentares favoritos"
 
+        report_stats = {
+            "proposicoes": report.stats.propositions_count,
+            "votacoes": report.stats.votes_count,
+            "discursos": report.stats.speeches_count,
+            "destaques": len(report.highlights),
+            "parlamentares": len(report.parliamentarians),
+        }
         has_activity = (
             report.stats.propositions_count
             + report.stats.votes_count
@@ -62,6 +91,12 @@ def _process_recipient(
             or bool(report.highlights)
         )
         if skip_empty and not has_activity:
+            _log(
+                STATUS_SKIPPED_NO_ACTIVITY,
+                stats=report_stats,
+                period_start=report.range_start,
+                period_end=report.range_end,
+            )
             return f"projeto {recipient.id}: sem atividade no período"
 
         html_body = render_report_html(report, periodicidade)
@@ -77,14 +112,23 @@ def _process_recipient(
         if dry_run:
             return f"projeto {recipient.id}: dry-run ({recipient.email})"
 
-        send_html_email(
-            html_body,
-            recipient.email,
-            subject_for_periodicidade(periodicidade),
+        subject = subject_for_periodicidade(periodicidade)
+        send_html_email(html_body, recipient.email, subject)
+        _log(
+            STATUS_SENT,
+            subject=subject,
+            stats=report_stats,
+            period_start=report.range_start,
+            period_end=report.range_end,
         )
         return f"projeto {recipient.id}: enviado para {recipient.email}"
     except Exception as exc:
         logger.exception("Erro no projeto %s", recipient.id)
+        try:
+            session.rollback()  # transação pode estar suja se o erro veio do DB
+        except Exception:  # noqa: BLE001
+            pass
+        _log(STATUS_ERROR, detail=str(exc)[:2000])
         return f"projeto {recipient.id}: erro — {exc}"
     finally:
         session.close()

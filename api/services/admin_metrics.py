@@ -5,10 +5,12 @@ diferenças de acesso a JSON entre PostgreSQL e SQLite (usado nos testes).
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
-from datetime import date
+from datetime import date, datetime, time as dt_time, timedelta
+from datetime import timezone as dt_timezone
 from typing import Any, Optional
 
 from sqlalchemy import func, select, text
@@ -32,6 +34,11 @@ def _page_label(page: Optional[str]) -> str:
 def _house_of(ptype: Optional[str]) -> str:
     return "senado" if ptype and "senad" in ptype.lower() else "camara"
 
+# BCB SGS série 1 (dólar comercial venda) — primário; awesomeapi de fallback
+# (o plano gratuito dela bloqueia o IP de prod por quota → 429 permanente).
+_USD_BRL_BCB_URL = (
+    "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/1?formato=json"
+)
 _USD_BRL_URL = "https://economia.awesomeapi.com.br/last/USD-BRL"
 _RATE_TTL_SECONDS = 1800
 _rate_cache: dict[str, Any] = {"value": None, "at": 0.0}
@@ -44,11 +51,19 @@ _COLD_START_USD_BRL = 6.0
 def _fetch_live_usd_brl() -> Optional[float]:
     try:
         import requests
-
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        resp = requests.get(_USD_BRL_BCB_URL, timeout=4)
+        resp.raise_for_status()
+        return float(resp.json()[0]["valor"])
+    except Exception:  # noqa: BLE001 — câmbio nunca pode quebrar as métricas
+        pass
+    try:
         resp = requests.get(_USD_BRL_URL, timeout=4)
         resp.raise_for_status()
         return float(resp.json()["USDBRL"]["bid"])
-    except Exception:  # noqa: BLE001 — câmbio nunca pode quebrar as métricas
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -106,11 +121,11 @@ def get_usd_brl_rate(db: Optional[Session] = None) -> float:
     return rate
 
 try:
-    from ..db.models.project import Projetos, ProjetosParliamentarian
+    from ..db.models.project import Projetos, ProjetosParliamentarian, Tiers
     from ..db.models.chatbot_usage import ChatbotUsage
     from ..db.models.usage_event import UsageEvent
 except ImportError:  # execução dentro de api/
-    from db.models.project import Projetos, ProjetosParliamentarian
+    from db.models.project import Projetos, ProjetosParliamentarian, Tiers
     from db.models.chatbot_usage import ChatbotUsage
     from db.models.usage_event import UsageEvent
 
@@ -439,4 +454,164 @@ def metrics_overview(
         "usd_brl_rate": round(usd_brl_rate, 4),
         "parlamentares_monitorados": sum(u["parlamentares_monitorados"] for u in users),
         "usuarios_acima_do_plano": sum(1 for u in users if u["acima_do_plano"]),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# E-mails: histórico de envios (email_send_log, escrito pelos scrappers) +
+# próximos disparos previstos (espelha o cron: 11:00 UTC; day diário, week
+# segunda, fortnight dias 1/16, month dia 1 — ver docker/scrappers.cron).
+# --------------------------------------------------------------------------- #
+_EMAIL_PERIODICIDADES = ["day", "week", "fortnight", "month"]
+_EMAIL_PERIODICIDADE_LABELS = {
+    "day": "Diário",
+    "week": "Semanal",
+    "fortnight": "Quinzenal",
+    "month": "Mensal",
+}
+_EMAIL_CRON_HOUR_UTC = 11
+
+
+def _next_email_run(
+    periodicidade: str, now: Optional[datetime] = None
+) -> Optional[datetime]:
+    ref = now or datetime.now(dt_timezone.utc)
+    for offset in range(0, 63):
+        d = (ref + timedelta(days=offset)).date()
+        run = datetime.combine(
+            d, dt_time(hour=_EMAIL_CRON_HOUR_UTC), tzinfo=dt_timezone.utc
+        )
+        if run <= ref:
+            continue
+        if (
+            periodicidade == "day"
+            or (periodicidade == "week" and d.weekday() == 0)
+            or (periodicidade == "fortnight" and d.day in (1, 16))
+            or (periodicidade == "month" and d.day == 1)
+        ):
+            return run
+    return None
+
+
+def _email_history(db: Session, limit: int) -> Optional[list[dict[str, Any]]]:
+    """Linhas de email_send_log; None se a tabela ainda não existe."""
+    try:
+        rows = db.execute(
+            text(
+                "SELECT id, projeto_id, email, periodicidade, status, detail, "
+                "subject, stats, period_start, period_end, created_at "
+                "FROM email_send_log ORDER BY created_at DESC, id DESC LIMIT :n"
+            ),
+            {"n": limit},
+        ).mappings().all()
+    except Exception:  # noqa: BLE001 — migration ainda não aplicada
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _iso(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):  # SQLite (testes) devolve texto no SQL cru
+            return value
+        return value.isoformat()
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        stats = r["stats"]
+        if isinstance(stats, str):
+            try:
+                stats = json.loads(stats)
+            except ValueError:
+                stats = None
+        out.append(
+            {
+                "id": r["id"],
+                "projeto_id": r["projeto_id"],
+                "email": r["email"],
+                "periodicidade": r["periodicidade"],
+                "periodicidade_label": _EMAIL_PERIODICIDADE_LABELS.get(
+                    r["periodicidade"], r["periodicidade"]
+                ),
+                "status": r["status"],
+                "detail": r["detail"],
+                "subject": r["subject"],
+                "stats": stats,
+                "period_start": _iso(r["period_start"]),
+                "period_end": _iso(r["period_end"]),
+                "created_at": _iso(r["created_at"]),
+            }
+        )
+    return out
+
+
+def metrics_emails(
+    db: Session, now: Optional[datetime] = None, history_limit: int = 200
+) -> dict[str, Any]:
+    """Aba E-mails do painel: histórico de envios + próximos disparos previstos."""
+    historico = _email_history(db, history_limit)
+
+    tiers = list(
+        db.execute(select(Tiers).where(Tiers.deleted_at.is_(None))).scalars()
+    )
+    proj_counts = {
+        row.tier_id: int(row.n)
+        for row in db.execute(
+            select(Projetos.tier_id, func.count().label("n"))
+            .where(Projetos.deleted_at.is_(None), Projetos.tier_id.is_not(None))
+            .group_by(Projetos.tier_id)
+        )
+    }
+    fav_counts = {
+        row.tier_id: int(row.n)
+        for row in db.execute(
+            select(
+                Projetos.tier_id,
+                func.count(func.distinct(Projetos.id)).label("n"),
+            )
+            .join(
+                ProjetosParliamentarian,
+                ProjetosParliamentarian.projeto_id == Projetos.id,
+            )
+            .where(
+                Projetos.deleted_at.is_(None),
+                Projetos.tier_id.is_not(None),
+                ProjetosParliamentarian.deleted_at.is_(None),
+            )
+            .group_by(Projetos.tier_id)
+        )
+    }
+
+    proximos: list[dict[str, Any]] = []
+    for p in _EMAIL_PERIODICIDADES:
+        matching = [t for t in tiers if p in (t.periodicidade_email or [])]
+        tier_ids = [t.id for t in matching]
+        run = _next_email_run(p, now)
+        proximos.append(
+            {
+                "periodicidade": p,
+                "periodicidade_label": _EMAIL_PERIODICIDADE_LABELS[p],
+                "proximo_envio": run.isoformat() if run else None,
+                "tiers": [t.tier_name_debug for t in matching],
+                # destinatários = projetos ativos do tier; o envio ainda pula
+                # quem não tem favoritos ou não teve atividade no período.
+                "destinatarios": sum(proj_counts.get(i, 0) for i in tier_ids),
+                "com_favoritos": sum(fav_counts.get(i, 0) for i in tier_ids),
+            }
+        )
+
+    hist = historico or []
+    enviados = [h for h in hist if h["status"] == "sent"]
+    return {
+        "log_disponivel": historico is not None,
+        "kpis": {
+            "enviados": len(enviados),
+            "erros": sum(1 for h in hist if h["status"] == "error"),
+            "pulados": sum(1 for h in hist if h["status"].startswith("skipped")),
+            "ultimo_envio": enviados[0]["created_at"] if enviados else None,
+        },
+        "historico": hist,
+        "proximos": proximos,
     }

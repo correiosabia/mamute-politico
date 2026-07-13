@@ -7,6 +7,7 @@ const TABS = [
   { to: '/admin/metrics/ferramentas', label: 'Ferramentas' },
   { to: '/admin/metrics/parlamentares', label: 'Parlamentares' },
   { to: '/admin/metrics/ia', label: 'IA' },
+  { to: '/admin/metrics/emails', label: 'E-mails' },
 ];
 
 export function MetricsTabs() {

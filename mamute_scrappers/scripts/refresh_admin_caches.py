@@ -32,6 +32,11 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("refresh_admin_caches")
 
 CAMARA_URL = "https://dadosabertos.camara.leg.br/api/v2/proposicoes"
+# BCB SGS série 1 (dólar comercial venda, dias úteis) — primário. A awesomeapi
+# fica de fallback: o plano gratuito bloqueia o IP de prod por quota (429).
+USD_BRL_BCB_URL = (
+    "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/1?formato=json"
+)
 USD_BRL_URL = "https://economia.awesomeapi.com.br/last/USD-BRL"
 
 MIN_YEAR = 2018
@@ -384,9 +389,15 @@ def store_coverage_snapshot(session: Session, payload: dict[str, Any]) -> None:
 # Câmbio USD→BRL do dia.
 # --------------------------------------------------------------------------- #
 def fetch_usd_brl_bid(http_get: Callable[..., Any]) -> float:
-    resp = http_get(USD_BRL_URL, timeout=10)
-    resp.raise_for_status()
-    return float(resp.json()["USDBRL"]["bid"])
+    try:
+        resp = http_get(USD_BRL_BCB_URL, timeout=10)
+        resp.raise_for_status()
+        return float(resp.json()[0]["valor"])
+    except Exception:  # noqa: BLE001
+        logger.warning("BCB indisponível para USD→BRL; tentando awesomeapi.")
+        resp = http_get(USD_BRL_URL, timeout=10)
+        resp.raise_for_status()
+        return float(resp.json()["USDBRL"]["bid"])
 
 
 def store_usd_brl_rate(session: Session, bid: float, today: date) -> None:

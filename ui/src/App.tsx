@@ -16,6 +16,7 @@ import AdminMetricsUsersPage from "./pages/AdminMetricsUsersPage";
 import AdminToolsPage from "./pages/AdminToolsPage";
 import AdminParliamentariansPage from "./pages/AdminParliamentariansPage";
 import AdminIaPage from "./pages/AdminIaPage";
+import AdminEmailsPage from "./pages/AdminEmailsPage";
 import AdminUserDetailPage from "./pages/AdminUserDetailPage";
 import AdminCoveragePage from "./pages/AdminCoveragePage";
 import NotFound from "./pages/NotFound";
@@ -200,6 +201,14 @@ const App = () => (
                 element={
                   <RequireAdmin>
                     <AdminIaPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/metrics/emails"
+                element={
+                  <RequireAdmin>
+                    <AdminEmailsPage />
                   </RequireAdmin>
                 }
               />

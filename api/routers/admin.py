@@ -20,6 +20,7 @@ try:
     from ..services.admin_metrics import (
         current_period_start,
         get_usd_brl_rate,
+        metrics_emails,
         metrics_ia,
         metrics_overview,
         metrics_parliamentarians,
@@ -37,6 +38,7 @@ except ImportError:  # execução dentro de api/
     from services.admin_metrics import (
         current_period_start,
         get_usd_brl_rate,
+        metrics_emails,
         metrics_ia,
         metrics_overview,
         metrics_parliamentarians,
@@ -192,6 +194,14 @@ def metrics_ia_route(
     _admin: str = Depends(require_ghost_admin),
 ) -> dict[str, Any]:
     return metrics_ia(db, current_period_start(), get_usd_brl_rate(db))
+
+
+@router.get("/metrics/emails")
+def metrics_emails_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    return metrics_emails(db)
 
 
 @router.get("/coverage")

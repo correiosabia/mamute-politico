@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
+  fetchEmails,
   fetchIa,
   fetchMetricsOverview,
   fetchMetricsUsers,
@@ -48,4 +49,8 @@ export function useParliamentarians() {
 
 export function useIa() {
   return useQuery({ queryKey: ['admin', 'metrics', 'ia'], queryFn: fetchIa });
+}
+
+export function useEmails() {
+  return useQuery({ queryKey: ['admin', 'metrics', 'emails'], queryFn: fetchEmails });
 }
