@@ -46,6 +46,14 @@ class JSONTokenStreamingHandler(AsyncCallbackHandler):
     async def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         # Captura os tokens de uso do chunk final (stream_usage=True). Fail-soft.
         self.usage = extract_usage(response)
+        # Este wrapper é o ÚNICO callback do chain: sem encaminhar o fim ao
+        # iterator, o done nunca é setado, o aiter() pendura após o último
+        # token e o stream nunca emite 'usage'/'end' — toda consulta acabava
+        # registrada como 'cancelled' sem tokens quando o cliente desistia.
+        await self.iterator_handler.on_llm_end(response, **kwargs)
+
+    async def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        await self.iterator_handler.on_llm_error(error, **kwargs)
 
 
 class ChatbotService:
