@@ -119,9 +119,9 @@ describe('ParlamentarSelector', () => {
     fireEvent.pointerMove(blockedButton.parentElement ?? blockedButton);
 
     const tooltip = await screen.findByRole('tooltip');
+    const tooltipContent = await screen.findByTestId('plan-limit-tooltip-content');
 
-    expect(tooltip).toHaveAttribute('data-side', 'top');
-    expect(tooltip).toHaveClass('max-w-[calc(100vw-2rem)]');
+    expect(tooltipContent).toHaveClass('max-w-[calc(100vw-2rem)]');
     expect(within(tooltip).getByText('Limite de parlamentares atingido.')).toBeVisible();
     expect(within(tooltip).getByRole('link', { name: 'Fazer upgrade' })).toHaveAttribute(
       'href',

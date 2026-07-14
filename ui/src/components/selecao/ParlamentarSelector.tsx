@@ -432,6 +432,7 @@ export function ParlamentarSelector({
                           </span>
                         </TooltipTrigger>
                         <TooltipContent
+                          data-testid="plan-limit-tooltip-content"
                           side="top"
                           align="end"
                           collisionPadding={16}
