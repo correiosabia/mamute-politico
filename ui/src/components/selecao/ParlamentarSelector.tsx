@@ -432,8 +432,8 @@ export function ParlamentarSelector({
                           </span>
                         </TooltipTrigger>
                         <TooltipContent
-                          side="left"
-                          align="center"
+                          side="top"
+                          align="end"
                           collisionPadding={16}
                           className="pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-col items-start gap-2 text-balance p-3 sm:max-w-64"
                         >
