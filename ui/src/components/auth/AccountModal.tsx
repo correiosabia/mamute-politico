@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,11 +33,16 @@ import {
   isDeleteAccountNotSupportedError,
   requestMemberEmailChange,
   signOut as revokeGhostSessionOnServer,
+  updateMemberNewsletterSubscription,
   updateMemberProfile,
 } from "./fetchCurrentMember";
 import { ghostSignOut } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import type { CurrentMember } from "./fetchCurrentMember";
 import { ACCOUNT_URL } from "./config";
+import {
+  getMemberPlanDetails,
+  isMemberSubscribedToNewsletter,
+} from "./memberAccountDetails";
 
 export type AccountModalProps = {
   open: boolean;
@@ -94,6 +100,7 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
     null
   );
   const [signingOut, setSigningOut] = useState(false);
+  const [updatingNewsletter, setUpdatingNewsletter] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
@@ -151,6 +158,7 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
       setLoadError(null);
       resetEditState();
       setSigningOut(false);
+      setUpdatingNewsletter(false);
       setDeletingAccount(false);
       setConfirmDeleteOpen(false);
       return;
@@ -276,6 +284,27 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
     }
   };
 
+  const handleNewsletterChange = async (subscribed: boolean) => {
+    setUpdatingNewsletter(true);
+    try {
+      const updatedMember = await updateMemberNewsletterSubscription({
+        subscribed,
+      });
+      setMember((current) =>
+        current ? { ...current, ...updatedMember } : updatedMember
+      );
+      toast.success(
+        subscribed
+          ? "Newsletter por e-mail ativada"
+          : "Newsletter por e-mail desativada"
+      );
+    } catch (error) {
+      toast.error(formatErrorMessage(error));
+    } finally {
+      setUpdatingNewsletter(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     setDeletingAccount(true);
     try {
@@ -298,7 +327,13 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
     }
   };
 
-  const actionsDisabled = signingOut || deletingAccount || isSaving;
+  const actionsDisabled =
+    signingOut || deletingAccount || isSaving || updatingNewsletter;
+
+  const planDetails = member ? getMemberPlanDetails(member) : null;
+  const newsletterSubscribed = member
+    ? isMemberSubscribedToNewsletter(member)
+    : false;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -387,6 +422,54 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
                     {member.email}
                   </p>
                 </div>
+              </div>
+            </div>
+            <div className="divide-y overflow-hidden rounded-xl border border-black/10">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-[#393939]">
+                    {planDetails?.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {planDetails?.description}
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="shrink-0 rounded-full text-[#ff0004] hover:bg-[#ff0004]/10 hover:text-[#ff0004]"
+                >
+                  <a href={ACCOUNT_URL}>Alterar</a>
+                </Button>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <Label
+                    htmlFor="account-newsletter"
+                    className="font-semibold text-[#393939]"
+                  >
+                    Newsletter por e-mail
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {newsletterSubscribed ? "Inscrito" : "Não inscrito"}
+                  </p>
+                  <a
+                    href={ACCOUNT_URL}
+                    className="text-sm font-medium text-[#ff0004] hover:underline"
+                  >
+                    Não está recebendo e-mails?
+                  </a>
+                </div>
+                <Switch
+                  id="account-newsletter"
+                  aria-label="Newsletter por e-mail"
+                  checked={newsletterSubscribed}
+                  disabled={actionsDisabled}
+                  onCheckedChange={(checked) =>
+                    void handleNewsletterChange(checked)
+                  }
+                  className="data-[state=checked]:bg-[#ff0004]"
+                />
               </div>
             </div>
           </>

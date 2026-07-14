@@ -1,8 +1,10 @@
 import axios from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchCurrentMember,
   fetchIdentityToken,
   requestMemberEmailChange,
+  updateMemberNewsletterSubscription,
   updateMemberProfile,
 } from "./fetchCurrentMember";
 
@@ -15,6 +17,50 @@ vi.mock("./config", () => ({
 }));
 
 const mockedAxios = vi.mocked(axios);
+
+describe("fetchCurrentMember", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("preserves Ghost plan and newsletter data used by the account modal", async () => {
+    mockedAxios.get.mockResolvedValue({
+      status: 200,
+      data: {
+        uuid: "member-uuid",
+        email: "user@example.com",
+        name: "Jamie",
+        status: "comped",
+        subscribed: true,
+        comped: true,
+        newsletters: [{ id: "newsletter-1", name: "Mamute" }],
+        tiers: [{ id: "tier-1", name: "Cidadão Mamute" }],
+        subscriptions: [
+          {
+            id: "subscription-1",
+            status: "active",
+            tier: { id: "tier-1", name: "Cidadão Mamute" },
+            price: { amount: 0, currency: "BRL", interval: "month" },
+          },
+        ],
+      },
+    } as never);
+
+    await expect(fetchCurrentMember()).resolves.toMatchObject({
+      status: "comped",
+      subscribed: true,
+      comped: true,
+      newsletters: [{ id: "newsletter-1", name: "Mamute" }],
+      tiers: [{ id: "tier-1", name: "Cidadão Mamute" }],
+      subscriptions: [
+        {
+          status: "active",
+          tier: { id: "tier-1", name: "Cidadão Mamute" },
+        },
+      ],
+    });
+  });
+});
 
 describe("fetchIdentityToken", () => {
   beforeEach(() => {
@@ -95,6 +141,48 @@ describe("updateMemberProfile", () => {
     await expect(updateMemberProfile({ name: "Jamie" })).rejects.toThrow(
       "Member already exists."
     );
+  });
+});
+
+describe("updateMemberNewsletterSubscription", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates the default Ghost newsletter preference", async () => {
+    mockedAxios.put.mockResolvedValue({
+      status: 200,
+      data: {
+        uuid: "member-uuid",
+        email: "user@example.com",
+        name: "Jamie",
+        subscribed: false,
+        newsletters: [],
+      },
+    } as never);
+
+    const result = await updateMemberNewsletterSubscription({
+      subscribed: false,
+    });
+
+    expect(result.subscribed).toBe(false);
+    expect(result.newsletters).toEqual([]);
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      "https://ghost.test/members/api/member/",
+      { subscribed: false },
+      expect.objectContaining({ withCredentials: true })
+    );
+  });
+
+  it("propagates Ghost errors", async () => {
+    mockedAxios.put.mockResolvedValue({
+      status: 422,
+      data: { errors: [{ message: "Newsletter unavailable." }] },
+    } as never);
+
+    await expect(
+      updateMemberNewsletterSubscription({ subscribed: true })
+    ).rejects.toThrow("Newsletter unavailable.");
   });
 });
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -118,8 +118,29 @@ describe('ParlamentarSelector', () => {
 
     fireEvent.pointerMove(blockedButton.parentElement ?? blockedButton);
 
-    expect(
-      await screen.findByText("Limite atingido. Faça um upgrade do plano em 'Conta'."),
-    ).toBeVisible();
+    const tooltip = await screen.findByRole('tooltip');
+    const tooltipContent = await screen.findByTestId('plan-limit-tooltip-content');
+
+    expect(tooltipContent).toHaveClass('max-w-[calc(100vw-2rem)]');
+    expect(within(tooltip).getByText('Limite de parlamentares atingido.')).toBeVisible();
+    expect(within(tooltip).getByRole('link', { name: 'Fazer upgrade' })).toHaveAttribute(
+      'href',
+      '/#/portal/account',
+    );
+  });
+
+  it('shows a persistent upgrade CTA when the plan limit is reached', async () => {
+    renderSelector({
+      selectorProps: {
+        monitoradosLimit: 1,
+        monitoradosUsed: 1,
+      },
+    });
+
+    expect(await screen.findByText('Você atingiu o limite do seu plano.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Ver planos' })).toHaveAttribute(
+      'href',
+      '/#/portal/account',
+    );
   });
 });

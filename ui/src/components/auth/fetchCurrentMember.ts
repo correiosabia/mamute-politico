@@ -16,10 +16,82 @@ export type CurrentMember = {
   email: string;
   uuid: string;
   status?: string;
+  subscribed?: boolean;
+  comped?: boolean;
+  newsletters?: MemberNewsletter[];
+  tiers?: MemberTier[];
+  subscriptions?: MemberSubscription[];
+};
+
+export type MemberNewsletter = {
+  id: string;
+  name?: string;
+};
+
+export type MemberTier = {
+  id?: string;
+  name?: string;
+  slug?: string;
+};
+
+export type MemberSubscription = {
+  id?: string;
+  status?: string;
+  tier?: MemberTier;
+  price?: {
+    amount?: number;
+    currency?: string;
+    interval?: string;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function parseNewsletter(value: unknown): MemberNewsletter | null {
+  if (!isRecord(value) || typeof value.id !== "string") return null;
+  return {
+    id: value.id,
+    ...(typeof value.name === "string" ? { name: value.name } : {}),
+  };
+}
+
+function parseTier(value: unknown): MemberTier | null {
+  if (!isRecord(value)) return null;
+  const tier: MemberTier = {};
+  if (typeof value.id === "string") tier.id = value.id;
+  if (typeof value.name === "string") tier.name = value.name;
+  if (typeof value.slug === "string") tier.slug = value.slug;
+  return Object.keys(tier).length > 0 ? tier : null;
+}
+
+function parseSubscription(value: unknown): MemberSubscription | null {
+  if (!isRecord(value)) return null;
+  const subscription: MemberSubscription = {};
+  if (typeof value.id === "string") subscription.id = value.id;
+  if (typeof value.status === "string") subscription.status = value.status;
+
+  const tier = parseTier(value.tier);
+  if (tier) subscription.tier = tier;
+
+  if (isRecord(value.price)) {
+    const price: NonNullable<MemberSubscription["price"]> = {};
+    if (typeof value.price.amount === "number") price.amount = value.price.amount;
+    if (typeof value.price.currency === "string") price.currency = value.price.currency;
+    if (typeof value.price.interval === "string") price.interval = value.price.interval;
+    if (Object.keys(price).length > 0) subscription.price = price;
+  }
+
+  return Object.keys(subscription).length > 0 ? subscription : null;
+}
+
+function parseArray<T>(
+  value: unknown,
+  parser: (item: unknown) => T | null
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map(parser).filter((item): item is T => item !== null);
 }
 
 /**
@@ -65,7 +137,24 @@ function parseMemberPayload(data: unknown): CurrentMember {
 
   const status = typeof data.status === "string" ? data.status : undefined;
 
-  return { name, email, uuid, status };
+  const subscribed =
+    typeof data.subscribed === "boolean" ? data.subscribed : undefined;
+  const comped = typeof data.comped === "boolean" ? data.comped : undefined;
+  const newsletters = parseArray(data.newsletters, parseNewsletter);
+  const tiers = parseArray(data.tiers, parseTier);
+  const subscriptions = parseArray(data.subscriptions, parseSubscription);
+
+  return {
+    name,
+    email,
+    uuid,
+    status,
+    ...(subscribed !== undefined ? { subscribed } : {}),
+    ...(comped !== undefined ? { comped } : {}),
+    ...(newsletters !== undefined ? { newsletters } : {}),
+    ...(tiers !== undefined ? { tiers } : {}),
+    ...(subscriptions !== undefined ? { subscriptions } : {}),
+  };
 }
 
 function ghostErrorMessage(data: unknown, fallback: string): string {
@@ -132,6 +221,41 @@ export async function updateMemberProfile(params: {
 
   const err = new Error(
     ghostErrorMessage(res.data, "Não foi possível atualizar seu perfil")
+  ) as Error & { status?: number; ghostMessage?: string };
+  err.status = res.status;
+  err.ghostMessage = err.message;
+  throw err;
+}
+
+/**
+ * Subscribes or unsubscribes the signed-in member from the site's default newsletter.
+ * Mamute currently exposes one newsletter, matching Ghost Portal's single-newsletter toggle.
+ */
+export async function updateMemberNewsletterSubscription(params: {
+  subscribed: boolean;
+}): Promise<CurrentMember> {
+  const res = await axios.put<unknown>(
+    MEMBER_ENDPOINT,
+    { subscribed: params.subscribed },
+    {
+      withCredentials: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...membersApiHeaders,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (res.status === 200) {
+    return parseMemberPayload(res.data);
+  }
+
+  const err = new Error(
+    ghostErrorMessage(
+      res.data,
+      "Não foi possível atualizar a assinatura da newsletter"
+    )
   ) as Error & { status?: number; ghostMessage?: string };
   err.status = res.status;
   err.ghostMessage = err.message;
