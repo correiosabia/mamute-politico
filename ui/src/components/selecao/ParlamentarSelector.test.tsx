@@ -120,6 +120,8 @@ describe('ParlamentarSelector', () => {
 
     const tooltip = await screen.findByRole('tooltip');
 
+    expect(tooltip).toHaveAttribute('data-side', 'left');
+    expect(tooltip).toHaveClass('max-w-[calc(100vw-2rem)]');
     expect(within(tooltip).getByText('Limite de parlamentares atingido.')).toBeVisible();
     expect(within(tooltip).getByRole('link', { name: 'Fazer upgrade' })).toHaveAttribute(
       'href',

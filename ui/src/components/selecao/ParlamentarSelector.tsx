@@ -432,9 +432,10 @@ export function ParlamentarSelector({
                           </span>
                         </TooltipTrigger>
                         <TooltipContent
-                          side="right"
+                          side="left"
                           align="center"
-                          className="pointer-events-auto flex max-w-64 flex-col items-start gap-2 text-balance p-3"
+                          collisionPadding={16}
+                          className="pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-col items-start gap-2 text-balance p-3 sm:max-w-64"
                         >
                           <span>{SELECTION_LIMIT_MESSAGE}</span>
                           <a
