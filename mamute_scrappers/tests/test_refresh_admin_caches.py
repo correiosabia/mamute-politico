@@ -70,8 +70,21 @@ def test_prop_status_bands() -> None:
     assert rac._prop_status(50, 100) == "parcial"     # <80
 
 
-def test_fetch_usd_brl_bid() -> None:
-    assert rac.fetch_usd_brl_bid(lambda u, **k: _Resp({"USDBRL": {"bid": "6.12"}})) == 6.12
+def test_fetch_usd_brl_bid_bcb() -> None:
+    def http_get(url: str, **k: Any) -> _Resp:
+        assert "bcb.gov.br" in url
+        return _Resp([{"data": "13/07/2026", "valor": "5.1183"}])
+
+    assert rac.fetch_usd_brl_bid(http_get) == 5.1183
+
+
+def test_fetch_usd_brl_bid_fallback_awesomeapi() -> None:
+    def http_get(url: str, **k: Any) -> _Resp:
+        if "bcb.gov.br" in url:
+            raise RuntimeError("BCB fora")
+        return _Resp({"USDBRL": {"bid": "6.12"}})
+
+    assert rac.fetch_usd_brl_bid(http_get) == 6.12
 
 
 # --------------------------------------------------------------------------- #

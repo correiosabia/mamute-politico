@@ -144,6 +144,52 @@ export function fetchIa(): Promise<IaMetrics> {
   return request<IaMetrics>('/admin/metrics/ia');
 }
 
+export type EmailSendStatus =
+  | 'sent'
+  | 'error'
+  | 'skipped_no_favorites'
+  | 'skipped_no_activity';
+
+export interface EmailLogEntry {
+  id: number;
+  projeto_id: number;
+  email: string;
+  periodicidade: string;
+  periodicidade_label: string;
+  status: EmailSendStatus;
+  detail: string | null;
+  subject: string | null;
+  stats: Record<string, number> | null;
+  period_start: string | null;
+  period_end: string | null;
+  created_at: string | null;
+}
+
+export interface EmailUpcoming {
+  periodicidade: string;
+  periodicidade_label: string;
+  proximo_envio: string | null;
+  tiers: string[];
+  destinatarios: number;
+  com_favoritos: number;
+}
+
+export interface EmailsMetrics {
+  log_disponivel: boolean;
+  kpis: {
+    enviados: number;
+    erros: number;
+    pulados: number;
+    ultimo_envio: string | null;
+  };
+  historico: EmailLogEntry[];
+  proximos: EmailUpcoming[];
+}
+
+export function fetchEmails(): Promise<EmailsMetrics> {
+  return request<EmailsMetrics>('/admin/metrics/emails');
+}
+
 export type CoverageStatus =
   | 'completo'
   | 'quase'
