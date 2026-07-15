@@ -38,7 +38,7 @@ import {
 } from "./fetchCurrentMember";
 import { ghostSignOut } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import type { CurrentMember } from "./fetchCurrentMember";
-import { ACCOUNT_URL } from "./config";
+import { ACCOUNT_URL, PLANS_URL } from "./config";
 import {
   getMemberPlanDetails,
   isMemberSubscribedToNewsletter,
@@ -439,7 +439,7 @@ export function AccountModal({ open, onOpenChange, launchKey }: AccountModalProp
                   variant="ghost"
                   className="shrink-0 rounded-full text-[#ff0004] hover:bg-[#ff0004]/10 hover:text-[#ff0004]"
                 >
-                  <a href={ACCOUNT_URL}>Alterar</a>
+                  <a href={PLANS_URL}>Alterar</a>
                 </Button>
               </div>
               <div className="flex items-center justify-between gap-4 px-4 py-3">

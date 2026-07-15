@@ -125,7 +125,7 @@ describe('ParlamentarSelector', () => {
     expect(within(tooltip).getByText('Limite de parlamentares atingido.')).toBeVisible();
     expect(within(tooltip).getByRole('link', { name: 'Fazer upgrade' })).toHaveAttribute(
       'href',
-      '/#/portal/account',
+      '/#/portal/account/plans',
     );
   });
 
@@ -140,7 +140,7 @@ describe('ParlamentarSelector', () => {
     expect(await screen.findByText('Você atingiu o limite do seu plano.')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Ver planos' })).toHaveAttribute(
       'href',
-      '/#/portal/account',
+      '/#/portal/account/plans',
     );
   });
 });
