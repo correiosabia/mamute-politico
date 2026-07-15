@@ -57,7 +57,7 @@ describe("AccountModal membership controls", () => {
     expect(screen.getByText("Inscrito")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Alterar" })).toHaveAttribute(
       "href",
-      "/#/portal/account"
+      "/#/portal/account/plans"
     );
   });
 

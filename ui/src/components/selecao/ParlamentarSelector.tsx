@@ -32,7 +32,7 @@ import {
 import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
-import { ACCOUNT_URL } from '@/components/auth/config';
+import { PLANS_URL } from '@/components/auth/config';
 
 type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
 
@@ -218,7 +218,7 @@ export function ParlamentarSelector({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ff0004]/5 px-3 py-2 text-sm text-[#393939]">
               <span>Você atingiu o limite do seu plano.</span>
               <a
-                href={ACCOUNT_URL}
+                href={PLANS_URL}
                 className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
               >
                 Ver planos
@@ -440,7 +440,7 @@ export function ParlamentarSelector({
                         >
                           <span>{SELECTION_LIMIT_MESSAGE}</span>
                           <a
-                            href={ACCOUNT_URL}
+                            href={PLANS_URL}
                             className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
                           >
                             Fazer upgrade

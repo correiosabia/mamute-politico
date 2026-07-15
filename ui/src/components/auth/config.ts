@@ -19,6 +19,7 @@ export const GHOST_VERSION =
 export const JWT_TOKEN_KEY = "mamutePoliticoJwtToken";
 export const LOGIN_URL = `${AUTH_API_ROOT}/#/portal/signin`;
 export const ACCOUNT_URL = `${AUTH_API_ROOT}/#/portal/account`;
+export const PLANS_URL = `${AUTH_API_ROOT}/#/portal/account/plans`;
 export const SIGNUP_URL = `${AUTH_API_ROOT}/#/portal/signup`;
 
 const tokenPersistenceChoice =
