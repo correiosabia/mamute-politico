@@ -1,15 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listParliamentarians } from '@/api/endpoints';
+import { getParliamentarianCatalogConfig, listParliamentarians } from '@/api/endpoints';
 import type { ParliamentarianOut } from '@/api/types';
 import type { Parlamentar } from '@/types/parlamentar';
 import { ParlamentarSelector } from './ParlamentarSelector';
 
 vi.mock('@/api/endpoints', () => ({
+  getParliamentarianCatalogConfig: vi.fn(),
   listParliamentarians: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ class MockIntersectionObserver {
 }
 
 const mockListParliamentarians = vi.mocked(listParliamentarians);
+const mockGetParliamentarianCatalogConfig = vi.mocked(getParliamentarianCatalogConfig);
 
 type RenderSelectorOptions = {
   onAddParlamentar?: ReturnType<typeof vi.fn>;
@@ -67,6 +69,11 @@ const selectedParliamentarian: Parlamentar = {
   situacao: 'Exercício',
 };
 
+const licensedParliamentarian: ParliamentarianOut = {
+  ...parliamentarian,
+  status: 'Licenciado',
+};
+
 function renderSelector({
   onAddParlamentar = vi.fn(),
   selectorProps = {},
@@ -97,7 +104,53 @@ function renderSelector({
 describe('ParlamentarSelector', () => {
   beforeEach(() => {
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+    mockGetParliamentarianCatalogConfig.mockResolvedValue({
+      allowed_situations: ['exercicio'],
+      default_situacao: 'exercicio',
+    });
     mockListParliamentarians.mockResolvedValue([parliamentarian]);
+  });
+
+  it('uses the API catalog policy for the initial filter and available options', async () => {
+    mockGetParliamentarianCatalogConfig.mockResolvedValue({
+      allowed_situations: ['exercicio', 'licenciado'],
+      default_situacao: 'licenciado',
+    });
+    mockListParliamentarians.mockResolvedValue([licensedParliamentarian]);
+
+    renderSelector();
+
+    await screen.findByText('Alan Rick');
+    expect(mockListParliamentarians).toHaveBeenLastCalledWith(
+      expect.objectContaining({ situacao: 'licenciado' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /filtros/i }));
+    fireEvent.click((await screen.findAllByRole('combobox'))[0]);
+    expect(await screen.findByRole('option', { name: 'Em exercício' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Licenciado' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: 'Afastado' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: 'Em exercício' }));
+    await waitFor(() => {
+      expect(mockListParliamentarians).toHaveBeenLastCalledWith(
+        expect.objectContaining({ situacao: 'exercicio' }),
+      );
+    });
+  });
+
+  it('falls back safely to only current parliamentarians when the policy fails', async () => {
+    mockGetParliamentarianCatalogConfig.mockRejectedValue(new Error('indisponível'));
+
+    renderSelector();
+
+    await screen.findByText('Alan Rick');
+    expect(mockListParliamentarians).toHaveBeenLastCalledWith(
+      expect.objectContaining({ situacao: 'exercicio' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Não foi possível carregar as opções do catálogo.',
+    );
   });
 
   it('adds a parliamentarian when the available card text is tapped', async () => {

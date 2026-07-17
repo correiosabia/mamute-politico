@@ -2,6 +2,8 @@ import { request } from './client';
 import type {
   ParliamentarianOut,
   ParliamentarianDetailOut,
+  ParliamentarianCatalogConfigOut,
+  ParliamentarianSituation,
   PropositionOut,
   RollCallVoteOut,
   SpeechesTranscriptOut,
@@ -19,7 +21,12 @@ export interface ListParliamentariansParams {
   offset?: number;
   party?: string;
   type?: Array<'deputado' | 'senado'>;
-  situacao?: 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato';
+  situacao?: ParliamentarianSituation;
+}
+
+/** Gets the server-controlled visibility policy for the parliamentarian catalog. */
+export function getParliamentarianCatalogConfig(): Promise<ParliamentarianCatalogConfigOut> {
+  return request<ParliamentarianCatalogConfigOut>('/parliamentarians/catalog-config');
 }
 
 export function listParliamentarians(
