@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { listParliamentarians } from '@/api/endpoints';
 import type { ParliamentarianOut } from '@/api/types';
+import type { Parlamentar } from '@/types/parlamentar';
 import { ParlamentarSelector } from './ParlamentarSelector';
 
 vi.mock('@/api/endpoints', () => ({
@@ -52,6 +53,18 @@ const parliamentarian: ParliamentarianOut = {
   photo_url: '',
   created_at: '2026-06-25T00:00:00Z',
   updated_at: '2026-06-25T00:00:00Z',
+};
+
+const selectedParliamentarian: Parlamentar = {
+  id: '42',
+  nome: 'Alan Rick',
+  nomeCompleto: 'Alan Rick Miranda',
+  foto: '',
+  partido: { sigla: 'UNIÃO', nome: 'UNIÃO' },
+  uf: 'AC',
+  casa: 'camara',
+  legislatura: -1,
+  situacao: 'Exercício',
 };
 
 function renderSelector({
@@ -142,5 +155,30 @@ describe('ParlamentarSelector', () => {
       'href',
       '/#/portal/account/plans',
     );
+    expect(screen.getByRole('button', { name: 'Remover um monitorado' })).toBeVisible();
+  });
+
+  it('confirms a successful add and provides direct access to the monitored parliamentarian', async () => {
+    const scrollIntoView = vi.fn();
+    const focus = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(scrollIntoView);
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(focus);
+
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [selectedParliamentarian],
+        recentlyAdded: selectedParliamentarian,
+      },
+    });
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Alan Rick foi adicionado aos monitorados.',
+    );
+    expect(screen.getByRole('button', { name: 'Abrir perfil' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver monitorados' }));
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 });

@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { CongressoSelector } from '@/components/selecao/CongressoSelector';
@@ -31,6 +32,7 @@ const SelecaoPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const casaSelecionada = getCasaFromHash(location.hash);
+  const [recentlyAdded, setRecentlyAdded] = useState<Parlamentar | null>(null);
 
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
@@ -71,6 +73,7 @@ const SelecaoPage = () => {
   const addMutation = useMutation({
     mutationFn: (parlamentar: Parlamentar) => addMyProjectFavorite(Number(parlamentar.id)),
     onSuccess: (_favorite, parlamentar) => {
+      setRecentlyAdded(parlamentar);
       toast.success(`${parlamentar.nome} adicionado aos monitorados.`);
       void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
       void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
@@ -95,7 +98,10 @@ const SelecaoPage = () => {
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => removeMyProjectFavorite(Number(id)),
-    onSuccess: () => {
+    onSuccess: (_favorite, id) => {
+      if (recentlyAdded?.id === id) {
+        setRecentlyAdded(null);
+      }
       void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
       void queryClient.invalidateQueries({ queryKey: ['project-favorites-quota', 'me'] });
     },
@@ -179,6 +185,7 @@ const SelecaoPage = () => {
                 monitoradosLimit={favoritesQuotaQuery.data?.limit ?? null}
                 monitoradosUsed={favoritesQuotaQuery.data?.used ?? favoriteIds.length}
                 monitoradosQuotaLoading={favoritesQuotaQuery.isLoading}
+                recentlyAdded={recentlyAdded}
               />
             </div>
           </div>

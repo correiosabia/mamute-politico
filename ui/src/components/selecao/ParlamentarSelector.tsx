@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from 'react';
+import { Fragment, useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Parlamentar, CasaLegislativa } from '@/types/parlamentar';
 import { listParliamentarians } from '@/api/endpoints';
@@ -80,6 +80,8 @@ interface ParlamentarSelectorProps {
   monitoradosUsed?: number | null;
   /** Shows a neutral quota state while the plan limit is loading. */
   monitoradosQuotaLoading?: boolean;
+  /** Parliamentarian whose favorite mutation most recently succeeded. */
+  recentlyAdded?: Parlamentar | null;
 }
 
 export function ParlamentarSelector({
@@ -93,8 +95,10 @@ export function ParlamentarSelector({
   monitoradosLimit = null,
   monitoradosUsed = null,
   monitoradosQuotaLoading = false,
+  recentlyAdded = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
+  const monitoradosCardRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [partidoFilter, setPartidoFilter] = useState<string>('todos');
   const [ufFilter, setUfFilter] = useState<string>('todos');
@@ -204,6 +208,11 @@ export function ParlamentarSelector({
     setSituacaoFilter('exercicio');
   };
 
+  const focusMonitorados = () => {
+    monitoradosCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    monitoradosCardRef.current?.focus({ preventScroll: true });
+  };
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       {/* Available Parliamentarians */}
@@ -217,12 +226,31 @@ export function ParlamentarSelector({
           {monitoradosLimitReached && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ff0004]/5 px-3 py-2 text-sm text-[#393939]">
               <span>Você atingiu o limite do seu plano.</span>
-              <a
-                href={PLANS_URL}
-                className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
-              >
-                Ver planos
-              </a>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={focusMonitorados}>
+                  Remover um monitorado
+                </Button>
+                <a
+                  href={PLANS_URL}
+                  className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
+                >
+                  Ver planos
+                </a>
+              </div>
+            </div>
+          )}
+
+          {recentlyAdded && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#09e03b]/10 px-3 py-2 text-sm text-[#116b25]">
+              <span><strong>{recentlyAdded.nome}</strong> foi adicionado aos monitorados.</span>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={focusMonitorados}>
+                  Ver monitorados
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/parlamentar/${recentlyAdded.id}`)}>
+                  Abrir perfil
+                </Button>
+              </div>
             </div>
           )}
           
@@ -462,7 +490,7 @@ export function ParlamentarSelector({
       </Card>
 
       {/* Selected Parliamentarians */}
-      <Card className="mp-card flex h-[564px] flex-col border-none bg-white">
+      <Card ref={monitoradosCardRef} tabIndex={-1} className="mp-card flex h-[564px] flex-col border-none bg-white">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-[32px] leading-none font-bold text-[#090909]">Parlamentares monitorados</CardTitle>
@@ -521,6 +549,7 @@ export function ParlamentarSelector({
                         e.stopPropagation();
                         navigate(`/parlamentar/${parlamentar.id}`);
                       }}
+                      aria-label={`Abrir perfil de ${parlamentar.nome}`}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -533,6 +562,7 @@ export function ParlamentarSelector({
                         e.stopPropagation();
                         onRemoveParlamentar(parlamentar.id);
                       }}
+                      aria-label={`Remover ${parlamentar.nome} dos parlamentares monitorados`}
                     >
                       <X className="h-4 w-4" />
                     </Button>
