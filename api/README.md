@@ -63,3 +63,8 @@ Projeto pai: [README raiz](../README.md)
 - A API também roda reconciliação Ghost -> tiers/projetos no startup por padrão.
   Desative com `MAMUTE_GHOST_RECONCILE_ON_STARTUP=false` se necessário.
 - Em caso de rotação de chaves JWKS, reinicie a aplicação para recarregar a chave pública.
+- O deployment define `MAMUTE_PARLIAMENTARIAN_CATALOG_SCOPE` para controlar a
+  visibilidade do catálogo: `current_only` (padrão seguro),
+  `current_and_licensed` ou `all_ingested`. A API aplica essa política a toda
+  consulta e a expõe, para clientes autenticados, em
+  `GET /api/parliamentarians/catalog-config`.

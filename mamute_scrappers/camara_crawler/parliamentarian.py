@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
+import unicodedata
+from datetime import date
+from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
@@ -35,6 +39,41 @@ logger = logging.getLogger(__name__)
 
 CAMARA_API_BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
 CAMARA_WEB_BASE_URL = "https://www.camara.leg.br"
+
+
+class CamaraIngestionScope(str, Enum):
+    """Conjuntos de deputados que podem ser sincronizados por deployment."""
+
+    CURRENT_ONLY = "current_only"
+    CURRENT_AND_LICENSED = "current_and_licensed"
+    CURRENT_LEGISLATURE = "current_legislature"
+
+
+MAMUTE_CAMARA_INGEST_SCOPE = "MAMUTE_CAMARA_INGEST_SCOPE"
+DEFAULT_CAMARA_INGESTION_SCOPE = CamaraIngestionScope.CURRENT_ONLY
+
+
+def get_camara_ingestion_scope(
+    value: Optional[str] = None,
+) -> CamaraIngestionScope:
+    """Lê o escopo de ingestão com fallback seguro para deputados em exercício.
+
+    ``value`` existe para permitir testes e chamadas programáticas; no scheduler,
+    a configuração é lida de ``MAMUTE_CAMARA_INGEST_SCOPE``.
+    """
+    configured = value if value is not None else os.getenv(MAMUTE_CAMARA_INGEST_SCOPE)
+    normalized = (configured or DEFAULT_CAMARA_INGESTION_SCOPE.value).strip().lower()
+    try:
+        return CamaraIngestionScope(normalized)
+    except ValueError:
+        logger.warning(
+            "%s=%r é inválida; usando o padrão seguro %s.",
+            MAMUTE_CAMARA_INGEST_SCOPE,
+            configured,
+            DEFAULT_CAMARA_INGESTION_SCOPE.value,
+        )
+        return DEFAULT_CAMARA_INGESTION_SCOPE
+
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
     from mamute_scrappers.db.models import (
@@ -216,12 +255,68 @@ def _request_json(url: str, *, params: Optional[Dict[str, str]] = None) -> Optio
     return data
 
 
-def _fetch_parliamentarian_list() -> Optional[List[Dict[str, Any]]]:
-    """Busca lista de deputados em exercício."""
+def _parse_iso_date(value: Any) -> Optional[date]:
+    text = _coerce_text(value)
+    if text is None:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _fetch_current_legislature_id(
+    *,
+    reference_date: Optional[date] = None,
+) -> Optional[int]:
+    """Retorna o id da legislatura que contém a data de referência."""
+    today = reference_date or date.today()
+    # A API da Câmara já devolve as legislaturas em ordem decrescente. Ela não
+    # aceita ``ordenarPor=dataInicio`` (retorna HTTP 400), portanto não
+    # enviamos parâmetros de ordenação para esta consulta.
+    data = _request_json(
+        f"{CAMARA_API_BASE_URL}/legislaturas",
+    )
+    if data is None:
+        return None
+
+    legislaturas = data.get("dados")
+    if not isinstance(legislaturas, list):
+        logger.error("Resposta da Câmara sem lista de legislaturas válida")
+        return None
+
+    for legislatura in legislaturas:
+        if not isinstance(legislatura, dict):
+            continue
+        legislatura_id = legislatura.get("id")
+        start = _parse_iso_date(legislatura.get("dataInicio"))
+        end = _parse_iso_date(legislatura.get("dataFim"))
+        if isinstance(legislatura_id, int) and start and end and start <= today <= end:
+            return legislatura_id
+
+    logger.error("Não foi encontrada legislatura vigente para %s", today.isoformat())
+    return None
+
+
+def _fetch_parliamentarian_list(
+    scope: CamaraIngestionScope = DEFAULT_CAMARA_INGESTION_SCOPE,
+) -> Optional[List[Dict[str, Any]]]:
+    """Busca deputados conforme o escopo de ingestão configurado.
+
+    O endpoint sem ``idLegislatura`` é a lista oficial de deputados em exercício.
+    Para os escopos ampliados, a legislatura vigente inclui também parlamentares
+    licenciados e outros registros históricos do mandato em curso.
+    """
     url = f"{CAMARA_API_BASE_URL}/deputados"
     params = {"ordem": "ASC", "ordenarPor": "nome"}
-    
-    logger.debug("Consultando lista de deputados em %s", url)
+
+    if scope is not CamaraIngestionScope.CURRENT_ONLY:
+        legislature_id = _fetch_current_legislature_id()
+        if legislature_id is None:
+            return None
+        params["idLegislatura"] = str(legislature_id)
+
+    logger.debug("Consultando lista de deputados em %s com parâmetros %s", url, params)
     data = _request_json(url, params=params)
     
     if data is None:
@@ -233,6 +328,29 @@ def _fetch_parliamentarian_list() -> Optional[List[Dict[str, Any]]]:
         return None
     
     return dados
+
+
+def _normalize_status(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(character)
+    )
+
+
+def _is_current_or_licensed(status: Optional[str]) -> bool:
+    """Diz se a situação retornada pela Câmara deve entrar no escopo intermediário."""
+    normalized = _normalize_status(status)
+    if "licenc" in normalized:
+        return True
+    if "exerc" not in normalized:
+        return False
+    return not any(
+        marker in normalized
+        for marker in ("fora de exerc", "nao esta em exerc", "nao estava em exerc")
+    )
 
 
 def _fetch_parliamentarian_detail(deputado_id: int) -> Optional[Dict[str, Any]]:
@@ -358,13 +476,20 @@ def parliamentarian(
     o fluxo aguarda uma confirmação (ENTER) entre cada parlamentar para facilitar
     a inspeção manual.
     """
+    ingestion_scope = get_camara_ingestion_scope()
     logger.info(
-        "Iniciando sincronização de parlamentares da Câmara (persist=%s, interactive=%s)",
+        "Iniciando sincronização de parlamentares da Câmara (persist=%s, interactive=%s, scope=%s)",
         persist,
         interactive,
+        ingestion_scope.value,
     )
 
-    iterator = _fetch_parliamentarians(uf=uf, party=party, deputado_id=deputado_id)
+    iterator = _fetch_parliamentarians(
+        uf=uf,
+        party=party,
+        deputado_id=deputado_id,
+        scope=ingestion_scope,
+    )
     processed = 0
 
     try:
@@ -410,8 +535,15 @@ def _fetch_parliamentarians(
     uf: Optional[str] = None,
     party: Optional[str] = None,
     deputado_id: Optional[int] = None,
+    scope: CamaraIngestionScope = DEFAULT_CAMARA_INGESTION_SCOPE,
 ) -> Iterable[ParliamentarianPayload]:
-    """Consulta o endpoint oficial (JSON) e transforma em payloads internos."""
+    """Consulta o endpoint oficial (JSON) e transforma em payloads internos.
+
+    O filtro ``--id`` é uma operação explícita de manutenção e não é limitado
+    pelo escopo configurado. Nas execuções completas, ``current_and_licensed``
+    descarta registros da legislatura atual que não estejam em exercício ou
+    licenciados; ``current_legislature`` mantém todos eles.
+    """
     
     # Se filtro por ID específico
     if deputado_id is not None:
@@ -424,7 +556,7 @@ def _fetch_parliamentarians(
         return
     
     # Buscar lista completa
-    deputados_list = _fetch_parliamentarian_list()
+    deputados_list = _fetch_parliamentarian_list(scope)
     if deputados_list is None:
         return
     
@@ -450,6 +582,18 @@ def _fetch_parliamentarians(
         # Buscar detalhes completos
         payload = _build_payload_from_json(deputado_basic)
         if payload is None:
+            continue
+
+        if (
+            scope is CamaraIngestionScope.CURRENT_AND_LICENSED
+            and not _is_current_or_licensed(payload.get("status"))
+        ):
+            logger.debug(
+                "Deputado %s ignorado pelo escopo %s (situação=%r)",
+                deputado_id_item,
+                scope.value,
+                payload.get("status"),
+            )
             continue
         
         yield payload

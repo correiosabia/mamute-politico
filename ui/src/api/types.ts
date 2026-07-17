@@ -38,6 +38,18 @@ export interface ParliamentarianDetailOut extends ParliamentarianOut {
   social_networks?: SocialNetworkLinkOut[];
 }
 
+export type ParliamentarianSituation =
+  | 'exercicio'
+  | 'afastado'
+  | 'licenciado'
+  | 'fim_de_mandato';
+
+/** Runtime catalog visibility policy returned by the authenticated API. */
+export interface ParliamentarianCatalogConfigOut {
+  allowed_situations: ParliamentarianSituation[];
+  default_situacao: ParliamentarianSituation;
+}
+
 export interface PropositionOut {
   id: number;
   proposition_code?: number | null;

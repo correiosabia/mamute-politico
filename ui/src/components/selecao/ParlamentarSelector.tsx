@@ -1,7 +1,8 @@
-import { Fragment, useState, useMemo } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Parlamentar, CasaLegislativa } from '@/types/parlamentar';
-import { listParliamentarians } from '@/api/endpoints';
+import { getParliamentarianCatalogConfig, listParliamentarians } from '@/api/endpoints';
+import type { ParliamentarianSituation } from '@/api/types';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,14 +35,21 @@ import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 import { PLANS_URL } from '@/components/auth/config';
 
-type SituacaoFilter = 'exercicio' | 'afastado' | 'licenciado' | 'fim_de_mandato' | 'todos';
+type SituacaoFilter = ParliamentarianSituation;
 
 const SITUACAO_FILTER_LABELS: Record<SituacaoFilter, string> = {
   exercicio: 'Em exercício',
   afastado: 'Afastado',
   licenciado: 'Licenciado',
   fim_de_mandato: 'Fim de mandato',
-  todos: 'Todas as situações',
+};
+
+const SAFE_CATALOG_CONFIG = {
+  allowed_situations: ['exercicio'],
+  default_situacao: 'exercicio',
+} as const satisfies {
+  allowed_situations: readonly SituacaoFilter[];
+  default_situacao: SituacaoFilter;
 };
 
 const MONITORADOS_LIMIT_MESSAGE = "Limite atingido. Faça um upgrade do plano em 'Conta'.";
@@ -50,7 +58,7 @@ const LIST_SCROLL_AREA_CLASS =
   'h-full [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!min-w-0 [&_[data-radix-scroll-area-viewport]>div]:!w-full';
 
 const SITUACAO_FILTER_TO_SITUACAO: Record<
-  Exclude<SituacaoFilter, 'todos'>,
+  SituacaoFilter,
   Parlamentar['situacao']
 > = {
   exercicio: 'Exercício',
@@ -80,6 +88,8 @@ interface ParlamentarSelectorProps {
   monitoradosUsed?: number | null;
   /** Shows a neutral quota state while the plan limit is loading. */
   monitoradosQuotaLoading?: boolean;
+  /** Parliamentarian whose favorite mutation most recently succeeded. */
+  recentlyAdded?: Parlamentar | null;
 }
 
 export function ParlamentarSelector({
@@ -93,13 +103,46 @@ export function ParlamentarSelector({
   monitoradosLimit = null,
   monitoradosUsed = null,
   monitoradosQuotaLoading = false,
+  recentlyAdded = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
+  const monitoradosCardRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [partidoFilter, setPartidoFilter] = useState<string>('todos');
   const [ufFilter, setUfFilter] = useState<string>('todos');
   const [legislaturaFilter, setLegislaturaFilter] = useState<string>('todos');
   const [situacaoFilter, setSituacaoFilter] = useState<SituacaoFilter>('exercicio');
+  const hasAppliedCatalogDefault = useRef(false);
+
+  const {
+    data: catalogConfig,
+    isLoading: catalogConfigLoading,
+    isError: catalogConfigError,
+  } = useQuery({
+    queryKey: ['parliamentarian-catalog-config'],
+    queryFn: getParliamentarianCatalogConfig,
+  });
+  const hasValidCatalogConfig = Boolean(
+    catalogConfig &&
+    catalogConfig.allowed_situations.length > 0 &&
+    catalogConfig.allowed_situations.includes(catalogConfig.default_situacao),
+  );
+  const effectiveCatalogConfig =
+    catalogConfig && hasValidCatalogConfig ? catalogConfig : SAFE_CATALOG_CONFIG;
+  const allowedSituacoes = effectiveCatalogConfig.allowed_situations;
+  const defaultSituacao = effectiveCatalogConfig.default_situacao;
+  const waitingForCatalogDefault = hasValidCatalogConfig && !hasAppliedCatalogDefault.current;
+
+  useEffect(() => {
+    if (!hasValidCatalogConfig || hasAppliedCatalogDefault.current) return;
+
+    hasAppliedCatalogDefault.current = true;
+    setSituacaoFilter(defaultSituacao);
+  }, [defaultSituacao, hasValidCatalogConfig]);
+
+  const selectedSituacao = allowedSituacoes.includes(situacaoFilter)
+    ? situacaoFilter
+    : defaultSituacao;
 
   const typeFilter = useMemo<Array<'deputado' | 'senado'>>(() => {
     if (casaSelecionada === 'camara') return ['deputado'];
@@ -107,17 +150,24 @@ export function ParlamentarSelector({
     return ['deputado', 'senado'];
   }, [casaSelecionada]);
 
-  const { data: rawList, isLoading, isError, error } = useQuery({
-    queryKey: ['parliamentarians', partidoFilter, typeFilter.join(','), situacaoFilter],
+  const {
+    data: rawList,
+    isLoading: parliamentariansLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['parliamentarians', partidoFilter, typeFilter.join(','), selectedSituacao],
     queryFn: () =>
       listParliamentarians({
         limit: 1000,
         offset: 0,
         party: partidoFilter !== 'todos' ? partidoFilter : undefined,
         type: typeFilter,
-        situacao: situacaoFilter !== 'todos' ? situacaoFilter : undefined,
+        situacao: selectedSituacao,
       }),
+    enabled: !catalogConfigLoading && !waitingForCatalogDefault,
   });
+  const isLoading = catalogConfigLoading || parliamentariansLoading;
 
   const allParlamentares = useMemo(() => {
     if (!rawList) return [];
@@ -146,11 +196,8 @@ export function ParlamentarSelector({
         return false;
       }
 
-      // Filter by situacao (client-side consistency when showing all)
-      if (
-        situacaoFilter !== 'todos' &&
-        p.situacao !== SITUACAO_FILTER_TO_SITUACAO[situacaoFilter]
-      ) {
+      // Keep the rendered records consistent with the server-selected situation.
+      if (p.situacao !== SITUACAO_FILTER_TO_SITUACAO[selectedSituacao]) {
         return false;
       }
 
@@ -162,7 +209,7 @@ export function ParlamentarSelector({
       return true;
     });
     return sortByNome(filtered);
-  }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, situacaoFilter, parlamentaresSelecionados]);
+  }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, selectedSituacao, parlamentaresSelecionados]);
 
   const parlamentaresSelecionadosOrdenados = useMemo(
     () => sortByNome(parlamentaresSelecionados),
@@ -201,7 +248,12 @@ export function ParlamentarSelector({
     setPartidoFilter('todos');
     setUfFilter('todos');
     setLegislaturaFilter('todos');
-    setSituacaoFilter('exercicio');
+    setSituacaoFilter(defaultSituacao);
+  };
+
+  const focusMonitorados = () => {
+    monitoradosCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    monitoradosCardRef.current?.focus({ preventScroll: true });
   };
 
   return (
@@ -217,12 +269,31 @@ export function ParlamentarSelector({
           {monitoradosLimitReached && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ff0004]/5 px-3 py-2 text-sm text-[#393939]">
               <span>Você atingiu o limite do seu plano.</span>
-              <a
-                href={PLANS_URL}
-                className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
-              >
-                Ver planos
-              </a>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={focusMonitorados}>
+                  Remover um monitorado
+                </Button>
+                <a
+                  href={PLANS_URL}
+                  className="inline-flex min-h-9 items-center rounded-full bg-[#ff0004] px-4 text-xs font-semibold text-white no-underline transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff0004] focus-visible:ring-offset-2"
+                >
+                  Ver planos
+                </a>
+              </div>
+            </div>
+          )}
+
+          {recentlyAdded && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#09e03b]/10 px-3 py-2 text-sm text-[#116b25]">
+              <span><strong>{recentlyAdded.nome}</strong> foi adicionado aos monitorados.</span>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={focusMonitorados}>
+                  Ver monitorados
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/parlamentar/${recentlyAdded.id}`)}>
+                  Abrir perfil
+                </Button>
+              </div>
             </div>
           )}
           
@@ -237,6 +308,12 @@ export function ParlamentarSelector({
                 className="h-9 rounded-[76px] border-none bg-[#efeeee] pl-9"
               />
             </div>
+            {catalogConfigError && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Não foi possível carregar as opções do catálogo. Mostrando parlamentares em
+                exercício.
+              </p>
+            )}
             
             <div className="flex gap-2 flex-wrap">
               <Popover>
@@ -251,14 +328,14 @@ export function ParlamentarSelector({
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Situação</label>
                       <Select
-                        value={situacaoFilter}
+                        value={selectedSituacao}
                         onValueChange={(value) => setSituacaoFilter(value as SituacaoFilter)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Em exercício" />
                         </SelectTrigger>
                         <SelectContent className="bg-popover">
-                          {(Object.keys(SITUACAO_FILTER_LABELS) as SituacaoFilter[]).map((key) => (
+                          {allowedSituacoes.map((key) => (
                             <SelectItem key={key} value={key}>
                               {SITUACAO_FILTER_LABELS[key]}
                             </SelectItem>
@@ -326,10 +403,10 @@ export function ParlamentarSelector({
               </Popover>
 
               {/* Active filter badges */}
-              {situacaoFilter !== 'exercicio' && (
+              {selectedSituacao !== defaultSituacao && (
                 <Badge variant="secondary" className="gap-1">
-                  {SITUACAO_FILTER_LABELS[situacaoFilter]}
-                  <X className="h-3 w-3 cursor-pointer" onClick={() => setSituacaoFilter('exercicio')} />
+                  {SITUACAO_FILTER_LABELS[selectedSituacao]}
+                  <X className="h-3 w-3 cursor-pointer" onClick={() => setSituacaoFilter(defaultSituacao)} />
                 </Badge>
               )}
               {partidoFilter !== 'todos' && (
@@ -462,7 +539,7 @@ export function ParlamentarSelector({
       </Card>
 
       {/* Selected Parliamentarians */}
-      <Card className="mp-card flex h-[564px] flex-col border-none bg-white">
+      <Card ref={monitoradosCardRef} tabIndex={-1} className="mp-card flex h-[564px] flex-col border-none bg-white">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-[32px] leading-none font-bold text-[#090909]">Parlamentares monitorados</CardTitle>
@@ -521,6 +598,7 @@ export function ParlamentarSelector({
                         e.stopPropagation();
                         navigate(`/parlamentar/${parlamentar.id}`);
                       }}
+                      aria-label={`Abrir perfil de ${parlamentar.nome}`}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -533,6 +611,7 @@ export function ParlamentarSelector({
                         e.stopPropagation();
                         onRemoveParlamentar(parlamentar.id);
                       }}
+                      aria-label={`Remover ${parlamentar.nome} dos parlamentares monitorados`}
                     >
                       <X className="h-4 w-4" />
                     </Button>
