@@ -271,9 +271,11 @@ def _fetch_current_legislature_id(
 ) -> Optional[int]:
     """Retorna o id da legislatura que contém a data de referência."""
     today = reference_date or date.today()
+    # A API da Câmara já devolve as legislaturas em ordem decrescente. Ela não
+    # aceita ``ordenarPor=dataInicio`` (retorna HTTP 400), portanto não
+    # enviamos parâmetros de ordenação para esta consulta.
     data = _request_json(
         f"{CAMARA_API_BASE_URL}/legislaturas",
-        params={"ordem": "DESC", "ordenarPor": "dataInicio"},
     )
     if data is None:
         return None
