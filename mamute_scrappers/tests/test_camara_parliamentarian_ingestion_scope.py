@@ -49,6 +49,7 @@ def test_expanded_scopes_query_the_current_legislature(monkeypatch) -> None:
     monkeypatch.setattr(cam, "_request_json", fake_request)
     legislature_id = cam._fetch_current_legislature_id(reference_date=cam.date(2026, 7, 17))
     assert legislature_id == 57
+    assert requests == [(f"{cam.CAMARA_API_BASE_URL}/legislaturas", None)]
 
     monkeypatch.setattr(cam, "_fetch_current_legislature_id", lambda: 57)
 
