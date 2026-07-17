@@ -97,6 +97,7 @@ def test_openapi_schema_generates() -> None:
         "/api/projects/me/dashboard-stats",
         "/api/projects/me/dashboard-activity",
         "/api/parliamentarians/",
+        "/api/parliamentarians/catalog-config",
         "/api/propositions/",
     ],
 )
