@@ -50,6 +50,31 @@ test.describe("smoke @app", () => {
     expect(body.length, "robots.txt nao deve estar vazio").toBeGreaterThan(0);
   });
 
+  test("metadados sociais e card sao publicados sob /app/", async ({ page, request }) => {
+    const resp = await page.goto("/app/");
+    expect(resp?.status(), "GET /app/ deve retornar 200").toBe(200);
+
+    const imageUrl = "https://mamute.voltdata.info/app/mamute-social-card.png";
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      "href",
+      "https://mamute.voltdata.info/app/"
+    );
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+      "content",
+      "https://mamute.voltdata.info/app/"
+    );
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", imageUrl);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
+      "content",
+      "summary_large_image"
+    );
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", imageUrl);
+
+    const card = await request.get("/app/mamute-social-card.png");
+    expect(card.status(), "card social deve servir sob /app/").toBe(200);
+    expect(card.headers()["content-type"]).toContain("image/png");
+  });
+
   test("nao ha erros JS criticos no console no boot", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
