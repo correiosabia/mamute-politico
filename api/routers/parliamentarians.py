@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from enum import Enum
+import logging
+import os
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +25,92 @@ except (ImportError, ValueError):
     from dependencies import get_db
 
 router = APIRouter(prefix="/parliamentarians", tags=["parliamentarians"])
+logger = logging.getLogger(__name__)
+
+
+class ParliamentarianSituation(str, Enum):
+    """Situações de mandato que podem ser expostas pelo catálogo."""
+
+    EXERCICIO = "exercicio"
+    AFASTADO = "afastado"
+    LICENCIADO = "licenciado"
+    FIM_DE_MANDATO = "fim_de_mandato"
+
+
+class ParliamentarianCatalogScope(str, Enum):
+    """Escopos de visibilidade do catálogo, configurados no deployment da API."""
+
+    CURRENT_ONLY = "current_only"
+    CURRENT_AND_LICENSED = "current_and_licensed"
+    ALL_INGESTED = "all_ingested"
+
+
+MAMUTE_PARLIAMENTARIAN_CATALOG_SCOPE = "MAMUTE_PARLIAMENTARIAN_CATALOG_SCOPE"
+DEFAULT_PARLIAMENTARIAN_CATALOG_SCOPE = ParliamentarianCatalogScope.CURRENT_ONLY
+
+_CATALOG_SCOPE_SITUATIONS: Dict[
+    ParliamentarianCatalogScope, Tuple[ParliamentarianSituation, ...]
+] = {
+    ParliamentarianCatalogScope.CURRENT_ONLY: (ParliamentarianSituation.EXERCICIO,),
+    ParliamentarianCatalogScope.CURRENT_AND_LICENSED: (
+        ParliamentarianSituation.EXERCICIO,
+        ParliamentarianSituation.LICENCIADO,
+    ),
+    ParliamentarianCatalogScope.ALL_INGESTED: tuple(ParliamentarianSituation),
+}
+
+
+class ParliamentarianCatalogConfigOut(BaseModel):
+    """Configuração pública do catálogo para clientes autenticados."""
+
+    allowed_situations: List[ParliamentarianSituation]
+    default_situacao: ParliamentarianSituation
+
+
+def get_parliamentarian_catalog_scope(
+    value: Optional[str] = None,
+) -> ParliamentarianCatalogScope:
+    """Lê o escopo da API com fallback seguro para parlamentares em exercício."""
+    configured = value if value is not None else os.getenv(MAMUTE_PARLIAMENTARIAN_CATALOG_SCOPE)
+    normalized = (configured or DEFAULT_PARLIAMENTARIAN_CATALOG_SCOPE.value).strip().lower()
+    try:
+        return ParliamentarianCatalogScope(normalized)
+    except ValueError:
+        logger.warning(
+            "%s=%r é inválida; usando o padrão seguro %s.",
+            MAMUTE_PARLIAMENTARIAN_CATALOG_SCOPE,
+            configured,
+            DEFAULT_PARLIAMENTARIAN_CATALOG_SCOPE.value,
+        )
+        return DEFAULT_PARLIAMENTARIAN_CATALOG_SCOPE
+
+
+def get_parliamentarian_catalog_config(
+    value: Optional[str] = None,
+) -> ParliamentarianCatalogConfigOut:
+    """Resolve a política exposta à UI no runtime do deployment."""
+    scope = get_parliamentarian_catalog_scope(value)
+    allowed_situations = list(_CATALOG_SCOPE_SITUATIONS[scope])
+    return ParliamentarianCatalogConfigOut(
+        allowed_situations=allowed_situations,
+        default_situacao=ParliamentarianSituation.EXERCICIO,
+    )
+
+
+def _resolve_catalog_situacao(
+    situacao: Optional[ParliamentarianSituation],
+    *,
+    config: Optional[ParliamentarianCatalogConfigOut] = None,
+) -> ParliamentarianSituation:
+    """Aplica a política antes de consultar o banco, sem vazar situações ocultas."""
+    resolved_config = config or get_parliamentarian_catalog_config()
+    requested = situacao or resolved_config.default_situacao
+    if requested not in resolved_config.allowed_situations:
+        raise HTTPException(
+            status_code=403,
+            detail="A situação solicitada não está disponível neste catálogo.",
+        )
+    return requested
 
 _SENADO_STATUS_KEYS = (
     "status",
@@ -342,6 +431,12 @@ def _apply_situacao_filter(stmt, situacao: str):
     return stmt
 
 
+@router.get("/catalog-config", response_model=ParliamentarianCatalogConfigOut)
+def get_catalog_config() -> ParliamentarianCatalogConfigOut:
+    """Retorna a política de visibilidade em vigor para o cliente autenticado."""
+    return get_parliamentarian_catalog_config()
+
+
 @router.get("/", response_model=List[ParliamentarianOut])
 def list_parliamentarians(
     *,
@@ -353,7 +448,7 @@ def list_parliamentarians(
         default=None,
         description="Filtrar por tipo de parlamentar: deputado, senado (pode repetir para ambos).",
     ),
-    situacao: Optional[Literal["exercicio", "afastado", "licenciado", "fim_de_mandato"]] = Query(
+    situacao: Optional[ParliamentarianSituation] = Query(
         default=None,
         description="Filtrar por situação do mandato: exercicio, afastado, licenciado, fim_de_mandato.",
     ),
@@ -399,8 +494,8 @@ def list_parliamentarians(
         if type_filters:
             stmt = stmt.where(or_(*type_filters))
 
-    if situacao is not None:
-        stmt = _apply_situacao_filter(stmt, situacao)
+    effective_situacao = _resolve_catalog_situacao(situacao)
+    stmt = _apply_situacao_filter(stmt, effective_situacao)
 
     if created_from is not None:
         stmt = stmt.where(Parliamentarian.created_at >= created_from)
@@ -449,4 +544,3 @@ def get_parliamentarian(
 
 
 __all__ = ["router"]
-
