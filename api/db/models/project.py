@@ -78,6 +78,22 @@ class Tiers(Base):
         self._set_detail("qtd_termos", value)
 
     @property
+    def qtd_termos_camara(self) -> Optional[int]:
+        return self._get_detail("qtd_termos_camara")
+
+    @qtd_termos_camara.setter
+    def qtd_termos_camara(self, value: Optional[int]) -> None:
+        self._set_detail("qtd_termos_camara", value)
+
+    @property
+    def qtd_termos_senado(self) -> Optional[int]:
+        return self._get_detail("qtd_termos_senado")
+
+    @qtd_termos_senado.setter
+    def qtd_termos_senado(self, value: Optional[int]) -> None:
+        self._set_detail("qtd_termos_senado", value)
+
+    @property
     def orgao(self) -> Optional[list[str]]:
         return self._get_detail("orgao", [])
 

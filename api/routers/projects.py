@@ -78,13 +78,29 @@ class ProjectFavoriteCreate(BaseModel):
     parliamentarian_id: int
 
 
-class ProjectFavoriteQuotaOut(BaseModel):
-    """Limite de parlamentares monitorados para o projeto autenticado."""
+class HouseFavoriteQuotaOut(BaseModel):
+    """Limite de parlamentares monitorados de uma casa legislativa."""
 
     limit: int
     used: int
     remaining: int
     limit_reached: bool
+
+
+class ProjectFavoriteQuotaOut(BaseModel):
+    """Limite de parlamentares monitorados para o projeto autenticado.
+
+    Os campos de topo (``limit``/``used``/``remaining``/``limit_reached``) são os
+    TOTAIS derivados (soma das casas), mantidos por compatibilidade. Os limites
+    reais são aplicados por casa em ``camara`` e ``senado``.
+    """
+
+    limit: int
+    used: int
+    remaining: int
+    limit_reached: bool
+    camara: HouseFavoriteQuotaOut
+    senado: HouseFavoriteQuotaOut
 
 
 class ProjectDashboardStatsOut(BaseModel):
@@ -396,12 +412,37 @@ def _ensure_parliamentarian_exists(db: Session, parliamentarian_id: int) -> Parl
     return parliamentarian
 
 
-def _get_project_favorite_count(db: Session, project_id: int) -> int:
-    stmt = select(func.count(ProjetosParliamentarian.id)).where(
-        ProjetosParliamentarian.projeto_id == project_id,
-        ProjetosParliamentarian.deleted_at.is_(None),
+_HOUSES = ("camara", "senado")
+_HOUSE_LIMIT_FIELD = {"camara": "qtd_termos_camara", "senado": "qtd_termos_senado"}
+_HOUSE_LABEL = {"camara": "deputados", "senado": "senadores"}
+
+
+def _house_of(ptype: Optional[str]) -> str:
+    """Deriva a casa (camara/senado) do campo livre ``Parliamentarian.type``.
+
+    Espelha ``api.services.admin_metrics._house_of``; mantido local para não
+    acoplar o router à camada de serviço por um helper de uma linha.
+    """
+    return "senado" if ptype and "senad" in ptype.lower() else "camara"
+
+
+def _get_project_favorite_counts(db: Session, project_id: int) -> dict[str, int]:
+    stmt = (
+        select(Parliamentarian.type)
+        .select_from(ProjetosParliamentarian)
+        .join(
+            Parliamentarian,
+            Parliamentarian.id == ProjetosParliamentarian.parliamentarian_id,
+        )
+        .where(
+            ProjetosParliamentarian.projeto_id == project_id,
+            ProjetosParliamentarian.deleted_at.is_(None),
+        )
     )
-    return int(db.execute(stmt).scalar_one() or 0)
+    counts = {"camara": 0, "senado": 0}
+    for (ptype,) in db.execute(stmt).all():
+        counts[_house_of(ptype)] += 1
+    return counts
 
 
 def _coerce_mapping(value: Any) -> Mapping[str, Any]:
@@ -515,7 +556,7 @@ def _tier_limit_from_db(project: Projetos, field_name: str) -> int | None:
     )
 
 
-def _project_favorite_limit(project: Projetos) -> int:
+def _legacy_global_favorite_limit(project: Projetos) -> int:
     env_limit = _tier_limit_from_env(project, "qtd_termos")
     if env_limit is not None:
         return env_limit
@@ -525,26 +566,54 @@ def _project_favorite_limit(project: Projetos) -> int:
     return max(0, int(project.qtd_termos or 0))
 
 
+def _project_favorite_limit_for_house(project: Projetos, house: str) -> int:
+    field_name = _HOUSE_LIMIT_FIELD[house]
+    env_limit = _tier_limit_from_env(project, field_name)
+    if env_limit is not None:
+        return env_limit
+    db_limit = _tier_limit_from_db(project, field_name)
+    if db_limit is not None:
+        return db_limit
+    # Fallback sem regressão: tier sem limite por casa herda o total global
+    # como limite de CADA casa (regra de seed da migração).
+    return _legacy_global_favorite_limit(project)
+
+
 def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavoriteQuotaOut:
-    limit = _project_favorite_limit(project)
-    used = _get_project_favorite_count(db, int(project.id))
-    remaining = max(0, limit - used)
+    counts = _get_project_favorite_counts(db, int(project.id))
+    houses: dict[str, HouseFavoriteQuotaOut] = {}
+    for house in _HOUSES:
+        limit = _project_favorite_limit_for_house(project, house)
+        used = counts[house]
+        houses[house] = HouseFavoriteQuotaOut(
+            limit=limit,
+            used=used,
+            remaining=max(0, limit - used),
+            limit_reached=used >= limit,
+        )
+    total_limit = houses["camara"].limit + houses["senado"].limit
+    total_used = houses["camara"].used + houses["senado"].used
     return ProjectFavoriteQuotaOut(
-        limit=limit,
-        used=used,
-        remaining=remaining,
-        limit_reached=used >= limit,
+        limit=total_limit,
+        used=total_used,
+        remaining=max(0, total_limit - total_used),
+        limit_reached=total_used >= total_limit,
+        camara=houses["camara"],
+        senado=houses["senado"],
     )
 
 
-def _ensure_project_favorite_quota_available(db: Session, project: Projetos) -> None:
-    quota = _build_project_favorite_quota(db, project)
-    if quota.limit_reached:
+def _ensure_project_favorite_quota_available(
+    db: Session, project: Projetos, house: str
+) -> None:
+    limit = _project_favorite_limit_for_house(project, house)
+    used = _get_project_favorite_counts(db, int(project.id))[house]
+    if used >= limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "Limite de parlamentares monitorados atingido para seu plano "
-                f"({quota.used}/{quota.limit})."
+                f"Limite de {_HOUSE_LABEL[house]} monitorados atingido para seu "
+                f"plano ({used}/{limit})."
             ),
         )
 
@@ -576,7 +645,7 @@ def _create_project_favorite(
     parliamentarian_id: int,
 ) -> ProjetosParliamentarian:
     project = _ensure_active_project(db, project_id, lock_for_update=True)
-    _ensure_parliamentarian_exists(db, parliamentarian_id)
+    parliamentarian = _ensure_parliamentarian_exists(db, parliamentarian_id)
 
     existing_stmt = select(ProjetosParliamentarian).where(
         ProjetosParliamentarian.projeto_id == project_id,
@@ -589,7 +658,9 @@ def _create_project_favorite(
             detail="Parlamentar já está favoritado neste projeto.",
         )
 
-    _ensure_project_favorite_quota_available(db, project)
+    _ensure_project_favorite_quota_available(
+        db, project, _house_of(parliamentarian.type)
+    )
 
     favorite = ProjetosParliamentarian(
         projeto_id=project_id,
