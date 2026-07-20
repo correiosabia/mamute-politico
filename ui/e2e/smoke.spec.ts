@@ -54,14 +54,14 @@ test.describe("smoke @app", () => {
     const resp = await page.goto("/app/");
     expect(resp?.status(), "GET /app/ deve retornar 200").toBe(200);
 
-    const imageUrl = "https://mamute.voltdata.info/app/mamute-social-card.png";
+    const imageUrl = "https://mamutepolitico.com.br/app/mamute-social-card-v2.png";
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
       "href",
-      "https://mamute.voltdata.info/app/"
+      "https://mamutepolitico.com.br/app/"
     );
     await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
       "content",
-      "https://mamute.voltdata.info/app/"
+      "https://mamutepolitico.com.br/app/"
     );
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", imageUrl);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
@@ -70,7 +70,7 @@ test.describe("smoke @app", () => {
     );
     await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", imageUrl);
 
-    const card = await request.get("/app/mamute-social-card.png");
+    const card = await request.get("/app/mamute-social-card-v2.png");
     expect(card.status(), "card social deve servir sob /app/").toBe(200);
     expect(card.headers()["content-type"]).toContain("image/png");
   });
