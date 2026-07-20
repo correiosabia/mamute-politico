@@ -2,8 +2,8 @@
 
 This repository tracks implementation work in GitHub Issues:
 
-- Repository: `voltdatalab/mamute-politico`
-- Preferred CLI target: `--repo voltdatalab/mamute-politico`
+- Repository: `correiosabia/mamute-politico`
+- Preferred CLI target: `--repo correiosabia/mamute-politico`
 
 When creating issues, use vertical slices that are independently implementable and verifiable. For crawler work, include:
 
