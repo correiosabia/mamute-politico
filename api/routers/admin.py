@@ -75,6 +75,7 @@ class TierDetailsUpdate(BaseModel):
     qtd_termos_camara: Optional[int] = Field(default=None, ge=0)
     qtd_termos_senado: Optional[int] = Field(default=None, ge=0)
     qtd_consultas_ia_mes: Optional[int] = Field(default=None, ge=0)
+    qtd_consultas_ia_semana: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
 

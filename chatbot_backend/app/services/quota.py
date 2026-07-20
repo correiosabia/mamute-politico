@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import json
 import logging
 from typing import Any, Mapping, Optional
@@ -14,7 +14,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
-from ..schemas import ChatQuotaResponse
+from ..schemas import ChatQuotaResponse, ChatQuotaWindow
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,25 @@ def next_period_start(period_start: date) -> datetime:
     month = 1 if period_start.month == 12 else period_start.month + 1
     return datetime.combine(
         date(year, month, 1),
+        time.min,
+        tzinfo=ZoneInfo("America/Sao_Paulo"),
+    )
+
+
+def current_week_start(now: Optional[datetime] = None) -> date:
+    """Return the Monday of the current São Paulo calendar week."""
+
+    tz = ZoneInfo("America/Sao_Paulo")
+    local_now = now.astimezone(tz) if now is not None else datetime.now(tz)
+    today = local_now.date()
+    return today - timedelta(days=today.weekday())
+
+
+def next_week_start(week_start: date) -> datetime:
+    """Return the next weekly quota reset datetime (next Monday) in SP time."""
+
+    return datetime.combine(
+        week_start + timedelta(days=7),
         time.min,
         tzinfo=ZoneInfo("America/Sao_Paulo"),
     )
@@ -193,6 +212,41 @@ def resolve_monthly_limit(project: ChatProject) -> int:
     return max(0, int(settings.chatbot_default_monthly_limit))
 
 
+def resolve_weekly_limit(project: ChatProject) -> Optional[int]:
+    """Weekly IA limit for a project. Optional: None means no weekly cap.
+
+    Precedência: MAMUTE_TIER_LIMITS_JSON (env) > tier.detalhes (DB), na chave
+    ``qtd_consultas_ia_semana``. Tier sem a chave → sem limite semanal (só o
+    mensal vale), preservando o comportamento atual.
+    """
+
+    settings = get_settings()
+
+    tier_limits = _parse_tier_entitlement_limits(settings.tier_limits_json)
+    for key in (project.tier_slug, project.product_id):
+        if not key or key not in tier_limits:
+            continue
+        entry = tier_limits[key]
+        if not isinstance(entry, Mapping) or "qtd_consultas_ia_semana" not in entry:
+            continue
+        try:
+            return max(0, int(entry["qtd_consultas_ia_semana"]))
+        except (TypeError, ValueError) as exc:
+            raise ChatQuotaConfigError(
+                f"Limite 'qtd_consultas_ia_semana' inválido para o tier {key!r}."
+            ) from exc
+
+    raw = project.tier_details.get("qtd_consultas_ia_semana")
+    if raw is None:
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError) as exc:
+        raise ChatQuotaConfigError(
+            f"Valor inválido de qtd_consultas_ia_semana para o tier {project.tier_slug!r}."
+        ) from exc
+
+
 def _load_project(
     session: Session,
     email: str,
@@ -257,27 +311,104 @@ def _usage_count(session: Session, project_id: int, period_start: date) -> int:
     )
 
 
+def _weekly_usage_count(session: Session, project_id: int, week_start: date) -> int:
+    """Consultas contadas na semana corrente (por data de criação).
+
+    Usa ``date(created_at)`` (portável SQLite/Postgres). Em Postgres a truncagem
+    usa o fuso do servidor — na virada domingo→segunda pode haver diferença de
+    poucas horas; aceitável para um throttle semanal.
+    """
+
+    stmt = text(
+        """
+        SELECT COUNT(*)
+        FROM chatbot_usage
+        WHERE projeto_id = :project_id
+          AND date(created_at) >= :week_start
+          AND status IN :statuses
+        """
+    ).bindparams(bindparam("statuses", expanding=True))
+    return int(
+        session.execute(
+            stmt,
+            {
+                "project_id": project_id,
+                "week_start": week_start,
+                "statuses": list(COUNTED_USAGE_STATUSES),
+            },
+        ).scalar_one()
+        or 0
+    )
+
+
+def _make_window(limit: int, used: int, reset_at: datetime) -> ChatQuotaWindow:
+    return ChatQuotaWindow(
+        limit=limit,
+        used=used,
+        remaining=max(0, limit - used),
+        reset_at=reset_at,
+        limit_reached=used >= limit,
+    )
+
+
+def _pick_binding(
+    weekly: Optional[ChatQuotaWindow], monthly: ChatQuotaWindow
+) -> ChatQuotaWindow:
+    """Janela que 'trava primeiro': a estourada (semanal tem prioridade), senão
+    a de menor folga (empate → semanal, que reseta mais cedo)."""
+
+    if weekly is not None and weekly.limit_reached:
+        return weekly
+    if monthly.limit_reached:
+        return monthly
+    if weekly is not None and weekly.remaining <= monthly.remaining:
+        return weekly
+    return monthly
+
+
+def _compose_quota(
+    weekly: Optional[ChatQuotaWindow], monthly: ChatQuotaWindow
+) -> ChatQuotaResponse:
+    binding = _pick_binding(weekly, monthly)
+    return ChatQuotaResponse(
+        enabled=True,
+        limit=binding.limit,
+        used=binding.used,
+        remaining=binding.remaining,
+        reset_at=binding.reset_at,
+        limit_reached=binding.limit_reached,
+        weekly=weekly,
+        monthly=monthly,
+    )
+
+
+def _resolve_quota_windows(
+    session: Session, project: ChatProject
+) -> tuple[Optional[ChatQuotaWindow], ChatQuotaWindow]:
+    period_start = current_period_start()
+    month_limit = resolve_monthly_limit(project)
+    month_used = _usage_count(session, project.id, period_start)
+    monthly = _make_window(month_limit, month_used, next_period_start(period_start))
+
+    weekly: Optional[ChatQuotaWindow] = None
+    week_limit = resolve_weekly_limit(project)
+    if week_limit is not None:
+        week_start = current_week_start()
+        week_used = _weekly_usage_count(session, project.id, week_start)
+        weekly = _make_window(week_limit, week_used, next_week_start(week_start))
+    return weekly, monthly
+
+
 def get_chat_quota(session: Session, email: str) -> ChatQuotaResponse:
     """Return quota status for an authenticated project."""
 
     settings = get_settings()
-    period_start = current_period_start()
-    reset_at = next_period_start(period_start)
     if not settings.chatbot_quota_enabled:
         return disabled_quota_response()
 
     project = _load_project(session, email)
-    limit = resolve_monthly_limit(project)
-    used = _usage_count(session, project.id, period_start)
-    remaining = max(0, limit - used)
-    return ChatQuotaResponse(
-        enabled=True,
-        limit=limit,
-        used=used,
-        remaining=remaining,
-        reset_at=reset_at,
-        limit_reached=used >= limit,
-    )
+    weekly, monthly = _resolve_quota_windows(session, project)
+    return _compose_quota(weekly, monthly)
 
 
 def start_chat_usage(
@@ -292,7 +423,6 @@ def start_chat_usage(
 
     settings = get_settings()
     period_start = current_period_start()
-    reset_at = next_period_start(period_start)
     if not settings.chatbot_quota_enabled:
         return ChatUsageStart(
             usage_id=None,
@@ -300,14 +430,21 @@ def start_chat_usage(
         )
 
     project = _load_project(session, email, lock_for_update=True)
-    limit = resolve_monthly_limit(project)
-    used = _usage_count(session, project.id, period_start)
-    if used >= limit:
+    weekly, monthly = _resolve_quota_windows(session, project)
+    if weekly is not None and weekly.limit_reached:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Limite semanal de consultas IA atingido para seu plano "
+                f"({weekly.used}/{weekly.limit}). A cota reseta na segunda-feira."
+            ),
+        )
+    if monthly.limit_reached:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
                 "Limite mensal de consultas IA atingido para seu plano "
-                f"({used}/{limit})."
+                f"({monthly.used}/{monthly.limit})."
             ),
         )
 
@@ -350,18 +487,15 @@ def start_chat_usage(
     ).first()
     session.commit()
 
-    next_used = used + 1
-    remaining = max(0, limit - next_used)
+    bumped_monthly = _make_window(monthly.limit, monthly.used + 1, monthly.reset_at)
+    bumped_weekly = (
+        _make_window(weekly.limit, weekly.used + 1, weekly.reset_at)
+        if weekly is not None
+        else None
+    )
     return ChatUsageStart(
         usage_id=int(row[0]) if row else None,
-        quota=ChatQuotaResponse(
-            enabled=True,
-            limit=limit,
-            used=next_used,
-            remaining=remaining,
-            reset_at=reset_at,
-            limit_reached=next_used >= limit,
-        ),
+        quota=_compose_quota(bumped_weekly, bumped_monthly),
     )
 
 
@@ -455,9 +589,12 @@ __all__ = [
     "ChatUsageStart",
     "compute_cost_usd",
     "current_period_start",
+    "current_week_start",
     "disabled_quota_response",
     "get_chat_quota",
     "mark_chat_usage",
+    "next_week_start",
     "resolve_monthly_limit",
+    "resolve_weekly_limit",
     "start_chat_usage",
 ]

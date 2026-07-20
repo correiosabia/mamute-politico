@@ -50,13 +50,27 @@ class ChatResponse(BaseModel):
     answer: str
 
 
+class ChatQuotaWindow(BaseModel):
+    """Uma janela de cota (semanal ou mensal)."""
+
+    limit: int
+    used: int
+    remaining: int
+    reset_at: datetime
+    limit_reached: bool
+
+
 class ChatQuotaResponse(BaseModel):
+    # Campos de topo refletem a janela que "trava primeiro" (binding), mantidos
+    # por compatibilidade. weekly/monthly trazem o detalhe de cada janela.
     enabled: bool
     limit: Optional[int] = None
     used: int = 0
     remaining: Optional[int] = None
     reset_at: datetime
     limit_reached: bool = False
+    weekly: Optional[ChatQuotaWindow] = None
+    monthly: Optional[ChatQuotaWindow] = None
 
 
 class HealthcheckResponse(BaseModel):
