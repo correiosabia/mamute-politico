@@ -9,10 +9,11 @@ import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
 
 const siteRootUrl = '/#/';
+const parceriasUrl = 'https://mamutepolitico.com.br/seja-parceiro/';
 
 type NavItem =
   | { id: string; label: string; path: string }
-  | { id: string; label: string; href: string; external: true };
+  | { id: string; label: string; href: string; external: true; newTab?: boolean };
 
 const navItems: NavItem[] = [
   { id: 'home', path: '/', label: 'Início' },
@@ -20,6 +21,7 @@ const navItems: NavItem[] = [
   { id: 'dashboard', path: '/dashboard', label: 'Dashboard Geral' },
   { id: 'pesquisa', path: '/pesquisa', label: 'Pesquisa IA' },
   { id: 'blog', href: siteRootUrl, label: 'Blog', external: true },
+  { id: 'parcerias', href: parceriasUrl, label: 'Parcerias', external: true, newTab: true },
 ];
 
 export function Header() {
@@ -114,6 +116,7 @@ export function Header() {
                   href={item.href}
                   onClick={closeMobileMenu}
                   className={linkClassName}
+                  {...(item.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                 >
                   {item.label}
                 </a>
@@ -171,7 +174,12 @@ export function Header() {
 
               if ('external' in item) {
                 return (
-                  <a key={item.id} href={item.href} className={linkClassName}>
+                  <a
+                    key={item.id}
+                    href={item.href}
+                    className={linkClassName}
+                    {...(item.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  >
                     {item.label}
                   </a>
                 );
