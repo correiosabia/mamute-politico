@@ -216,7 +216,7 @@ const Index = () => {
           <p className="mx-auto mb-8 max-w-2xl text-[18px] font-semibold text-[#080808]">
             Selecione os parlamentares que deseja acompanhar e comece a monitorar suas atividades legislativas agora mesmo.
           </p>
-          <Link to="/selecao" className="inline-flex rounded-[76px] bg-[#468fff] px-8 py-3 text-[15px] font-bold uppercase tracking-wide text-white transition hover:opacity-90">
+          <Link to="/selecao" className="inline-flex rounded-[76px] bg-[#ff0004] px-8 py-3 text-[15px] font-bold uppercase tracking-wide text-white transition hover:opacity-90">
               SELECIONAR PARLAMENTARES
           </Link>
         </div>
