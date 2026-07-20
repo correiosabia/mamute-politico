@@ -15,6 +15,7 @@ export interface TierDetails {
   qtd_termos_camara?: number;
   qtd_termos_senado?: number;
   qtd_consultas_ia_mes?: number;
+  qtd_consultas_ia_semana?: number;
   periodicidade_email?: string[];
   orgao?: string[];
   preco_mensal?: number;

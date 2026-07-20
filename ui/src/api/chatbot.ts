@@ -12,13 +12,24 @@ export interface StreamChatBody {
   history: ChatMessagePayload[];
 }
 
+export interface ChatbotQuotaWindow {
+  limit: number;
+  used: number;
+  remaining: number;
+  reset_at: string;
+  limit_reached: boolean;
+}
+
 export interface ChatbotQuota {
+  /** Campos de topo = janela que trava primeiro (binding). */
   enabled: boolean;
   limit: number | null;
   used: number;
   remaining: number | null;
   reset_at: string;
   limit_reached: boolean;
+  weekly?: ChatbotQuotaWindow | null;
+  monthly?: ChatbotQuotaWindow | null;
 }
 
 export class ChatbotStreamError extends Error {
