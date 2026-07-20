@@ -234,4 +234,39 @@ describe('ParlamentarSelector', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
+
+  it('blocks a deputado when the câmara house quota is full', async () => {
+    renderSelector({
+      selectorProps: {
+        monitoradosQuota: {
+          camara: { used: 3, limit: 3, limit_reached: true },
+          senado: { used: 0, limit: 3, limit_reached: false },
+        },
+      },
+    });
+
+    const blockedButton = await screen.findByRole('button', {
+      name: 'Limite do plano atingido para Alan Rick',
+    });
+    expect(blockedButton).toBeDisabled();
+  });
+
+  it('allows a deputado when only the senado house quota is full', async () => {
+    const onAddParlamentar = vi.fn();
+    renderSelector({
+      onAddParlamentar,
+      selectorProps: {
+        monitoradosQuota: {
+          camara: { used: 0, limit: 3, limit_reached: false },
+          senado: { used: 3, limit: 3, limit_reached: true },
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByText('Alan Rick'));
+
+    expect(onAddParlamentar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '42', nome: 'Alan Rick' }),
+    );
+  });
 });

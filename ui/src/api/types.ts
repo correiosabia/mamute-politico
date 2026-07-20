@@ -112,11 +112,22 @@ export interface ProjectFavoriteOut {
   updated_at: string;
 }
 
-export interface ProjectFavoriteQuotaOut {
+export interface HouseFavoriteQuotaOut {
   limit: number;
   used: number;
   remaining: number;
   limit_reached: boolean;
+}
+
+export interface ProjectFavoriteQuotaOut {
+  /** Totais derivados (soma das casas), mantidos por compatibilidade. */
+  limit: number;
+  used: number;
+  remaining: number;
+  limit_reached: boolean;
+  /** Limites reais aplicados por casa. */
+  camara: HouseFavoriteQuotaOut;
+  senado: HouseFavoriteQuotaOut;
 }
 
 export interface DashboardStatsOut {

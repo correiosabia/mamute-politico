@@ -11,7 +11,12 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-_KEYS = ("qtd_termos", "qtd_consultas_ia_mes")
+_KEYS = (
+    "qtd_termos",
+    "qtd_termos_camara",
+    "qtd_termos_senado",
+    "qtd_consultas_ia_mes",
+)
 
 
 def bootstrap_tiers_from_env(session: Session, raw_json: str) -> list[str]:

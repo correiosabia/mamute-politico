@@ -47,3 +47,16 @@ def test_bootstrap_fills_and_is_idempotent() -> None:
     updated2 = bootstrap_tiers_from_env(session, RAW)
     assert updated2 == []
     session.close()
+
+
+def test_bootstrap_fills_per_house_keys() -> None:
+    session = _session()
+    raw = '{"cidadao-mamute": {"qtd_termos_camara": 6, "qtd_termos_senado": 4}}'
+    updated = bootstrap_tiers_from_env(session, raw)
+    assert updated == ["cidadao-mamute"]
+    detalhes = json.loads(
+        session.execute(text("select detalhes from tiers where id=1")).scalar_one()
+    )
+    assert detalhes["qtd_termos_camara"] == 6
+    assert detalhes["qtd_termos_senado"] == 4
+    session.close()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
@@ -12,6 +14,15 @@ from api.dependencies import get_db
 from api.routers import projects
 
 
+# Tipos por parlamentar usados nas fixtures: câmara (deputado) e senado (senador).
+_PARLIAMENTARIAN_TYPES = {
+    101: "Deputado",
+    202: "Deputado",
+    303: "Senador",
+    404: "Senador",
+}
+
+
 @pytest.fixture(autouse=True)
 def _clear_limit_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAMUTE_TIER_LIMITS_JSON", raising=False)
@@ -19,7 +30,9 @@ def _clear_limit_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_session(
     *,
-    qtd_termos: int,
+    qtd_termos: int = 0,
+    qtd_termos_camara: int | None = None,
+    qtd_termos_senado: int | None = None,
     existing_favorites: list[int] | None = None,
     tier_slug: str = "default-product",
     product_id: str = "target-tier-id",
@@ -29,6 +42,11 @@ def _make_session(
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    detalhes: dict = {"ghost": {"slug": tier_slug}}
+    if qtd_termos_camara is not None:
+        detalhes["qtd_termos_camara"] = qtd_termos_camara
+    if qtd_termos_senado is not None:
+        detalhes["qtd_termos_senado"] = qtd_termos_senado
     with engine.begin() as conn:
         conn.exec_driver_sql(
             """
@@ -109,20 +127,10 @@ def _make_session(
                 insert into tiers
                     (id, tier_name_debug, product_id, detalhes, created_at, updated_at)
                 values
-                    (
-                        1,
-                        'Plano teste',
-                        :product_id,
-                        :detalhes,
-                        '2026-01-01',
-                        '2026-01-01'
-                    )
+                    (1, 'Plano teste', :product_id, :detalhes, '2026-01-01', '2026-01-01')
                 """
             ),
-            {
-                "product_id": product_id,
-                "detalhes": f'{{"ghost": {{"slug": "{tier_slug}"}}}}',
-            },
+            {"product_id": product_id, "detalhes": json.dumps(detalhes)},
         )
         conn.execute(
             text(
@@ -130,31 +138,27 @@ def _make_session(
                 insert into projetos
                     (id, nome, cliente, email, tier_id, qtd_termos, created_at, updated_at)
                 values
-                    (
-                        10,
-                        'Assinante',
-                        :product_id,
-                        'assinante@example.com',
-                        1,
-                        :qtd_termos,
-                        '2026-01-01',
-                        '2026-01-01'
-                    )
+                    (10, 'Assinante', :product_id, 'assinante@example.com', 1, :qtd_termos,
+                     '2026-01-01', '2026-01-01')
                 """
             ),
             {"product_id": product_id, "qtd_termos": qtd_termos},
         )
-        for parliamentarian_id in [101, 202, 303]:
+        for parliamentarian_id, ptype in _PARLIAMENTARIAN_TYPES.items():
             conn.execute(
                 text(
                     """
                     insert into parliamentarian
-                        (id, name, created_at, updated_at)
+                        (id, type, name, created_at, updated_at)
                     values
-                        (:id, :name, '2026-01-01', '2026-01-01')
+                        (:id, :type, :name, '2026-01-01', '2026-01-01')
                     """
                 ),
-                {"id": parliamentarian_id, "name": f"Parlamentar {parliamentarian_id}"},
+                {
+                    "id": parliamentarian_id,
+                    "type": ptype,
+                    "name": f"Parlamentar {parliamentarian_id}",
+                },
             )
         for index, parliamentarian_id in enumerate(existing_favorites or [], start=1):
             conn.execute(
@@ -184,16 +188,8 @@ def _add_project(
             insert into projetos
                 (id, nome, cliente, email, tier_id, qtd_termos, created_at, updated_at)
             values
-                (
-                    :project_id,
-                    :nome,
-                    'target-tier-id',
-                    :email,
-                    1,
-                    :qtd_termos,
-                    '2026-01-01',
-                    '2026-01-01'
-                )
+                (:project_id, :nome, 'target-tier-id', :email, 1, :qtd_termos,
+                 '2026-01-01', '2026-01-01')
             """
         ),
         {
@@ -271,74 +267,137 @@ def _client_for_project(
     return TestClient(app)
 
 
-def test_create_project_favorite_allows_new_favorite_below_plan_limit() -> None:
-    db = _make_session(qtd_termos=2, existing_favorites=[101])
-    try:
-        favorite = projects._create_project_favorite(db, 10, 202)
+# --- Contagem por casa ---------------------------------------------------
 
-        assert favorite.projeto_id == 10
-        assert favorite.parliamentarian_id == 202
-        assert projects._get_project_favorite_count(db, 10) == 2
+
+def test_favorite_counts_split_by_house() -> None:
+    db = _make_session(qtd_termos=10, existing_favorites=[101, 202, 303])
+    try:
+        counts = projects._get_project_favorite_counts(db, 10)
+        assert counts == {"camara": 2, "senado": 1}
     finally:
         db.close()
 
 
-def test_create_project_favorite_rejects_new_favorite_at_plan_limit() -> None:
-    db = _make_session(qtd_termos=1, existing_favorites=[101])
+# --- Enforcement por casa ------------------------------------------------
+
+
+def test_add_deputado_allowed_below_house_limit() -> None:
+    db = _make_session(qtd_termos_camara=3, qtd_termos_senado=1, existing_favorites=[101])
+    try:
+        favorite = projects._create_project_favorite(db, 10, 202)
+        assert favorite.parliamentarian_id == 202
+        assert projects._get_project_favorite_counts(db, 10)["camara"] == 2
+    finally:
+        db.close()
+
+
+def test_add_deputado_rejected_at_house_limit_with_house_message() -> None:
+    db = _make_session(qtd_termos_camara=1, qtd_termos_senado=5, existing_favorites=[101])
     try:
         with pytest.raises(HTTPException) as excinfo:
             projects._create_project_favorite(db, 10, 202)
-
         assert excinfo.value.status_code == 403
-        assert "Limite de parlamentares monitorados atingido" in str(excinfo.value.detail)
-        assert projects._get_project_favorite_count(db, 10) == 1
+        assert "Limite de deputados monitorados atingido" in str(excinfo.value.detail)
+        assert projects._get_project_favorite_counts(db, 10)["camara"] == 1
     finally:
         db.close()
 
 
-def test_create_project_favorite_keeps_duplicate_conflict_before_limit() -> None:
-    db = _make_session(qtd_termos=1, existing_favorites=[101])
+def test_add_senador_not_blocked_when_camara_full() -> None:
+    db = _make_session(qtd_termos_camara=1, qtd_termos_senado=2, existing_favorites=[101])
+    try:
+        favorite = projects._create_project_favorite(db, 10, 303)
+        assert favorite.parliamentarian_id == 303
+        assert projects._get_project_favorite_counts(db, 10) == {"camara": 1, "senado": 1}
+    finally:
+        db.close()
+
+
+def test_add_senador_rejected_at_senado_limit_with_house_message() -> None:
+    db = _make_session(qtd_termos_camara=5, qtd_termos_senado=1, existing_favorites=[303])
+    try:
+        with pytest.raises(HTTPException) as excinfo:
+            projects._create_project_favorite(db, 10, 404)
+        assert excinfo.value.status_code == 403
+        assert "Limite de senadores monitorados atingido" in str(excinfo.value.detail)
+    finally:
+        db.close()
+
+
+def test_duplicate_conflict_takes_precedence_over_limit() -> None:
+    db = _make_session(qtd_termos_camara=1, qtd_termos_senado=1, existing_favorites=[101])
     try:
         with pytest.raises(HTTPException) as excinfo:
             projects._create_project_favorite(db, 10, 101)
-
         assert excinfo.value.status_code == 409
         assert excinfo.value.detail == "Parlamentar já está favoritado neste projeto."
     finally:
         db.close()
 
 
-def test_project_favorite_quota_reports_limit_used_and_remaining() -> None:
-    db = _make_session(qtd_termos=3, existing_favorites=[101, 202])
+# --- Quota por casa ------------------------------------------------------
+
+
+def test_quota_reports_per_house_used_and_remaining() -> None:
+    db = _make_session(
+        qtd_termos_camara=3,
+        qtd_termos_senado=2,
+        existing_favorites=[101, 202, 303],
+    )
     try:
         project = projects._ensure_active_project(db, 10)
         quota = projects._build_project_favorite_quota(db, project)
 
-        assert quota.limit == 3
-        assert quota.used == 2
-        assert quota.remaining == 1
-        assert quota.limit_reached is False
+        assert quota.camara.limit == 3
+        assert quota.camara.used == 2
+        assert quota.camara.remaining == 1
+        assert quota.senado.limit == 2
+        assert quota.senado.used == 1
+        assert quota.senado.remaining == 1
+        # Totais derivados (soma das casas) preservam o contrato antigo.
+        assert quota.limit == 5
+        assert quota.used == 3
     finally:
         db.close()
 
 
-def test_project_favorite_quota_uses_env_limit_by_tier_slug(
+def test_quota_uses_env_per_house_limit_by_tier_slug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
         "MAMUTE_TIER_LIMITS_JSON",
-        '{"default-product":{"qtd_termos":2}}',
+        '{"default-product":{"qtd_termos_camara":1,"qtd_termos_senado":5}}',
     )
     db = _make_session(qtd_termos=99, existing_favorites=[101])
     try:
         project = projects._ensure_active_project(db, 10)
         quota = projects._build_project_favorite_quota(db, project)
 
-        assert quota.limit == 2
-        assert quota.used == 1
-        assert quota.remaining == 1
+        assert quota.camara.limit == 1
+        assert quota.senado.limit == 5
+        assert quota.camara.used == 1
     finally:
         db.close()
+
+
+def test_legacy_global_limit_applies_to_each_house() -> None:
+    # Tier sem chaves por casa: o total global vira o limite de CADA casa
+    # (regra de seed sem regressão), então o efetivo é herdado por casa.
+    db = _make_session(qtd_termos=2, existing_favorites=[101])
+    try:
+        project = projects._ensure_active_project(db, 10)
+        quota = projects._build_project_favorite_quota(db, project)
+
+        assert quota.camara.limit == 2
+        assert quota.senado.limit == 2
+        assert quota.camara.used == 1
+        assert quota.senado.used == 0
+    finally:
+        db.close()
+
+
+# --- Isolamento de projeto (rotas legadas) -------------------------------
 
 
 def test_legacy_project_favorites_list_rejects_other_project(
