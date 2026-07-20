@@ -12,6 +12,8 @@ export function fetchWhoami(): Promise<WhoamiResponse> {
 
 export interface TierDetails {
   qtd_termos?: number;
+  qtd_termos_camara?: number;
+  qtd_termos_senado?: number;
   qtd_consultas_ia_mes?: number;
   periodicidade_email?: string[];
   orgao?: string[];

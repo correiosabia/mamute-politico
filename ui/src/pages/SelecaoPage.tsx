@@ -186,6 +186,14 @@ const SelecaoPage = () => {
                 monitoradosUsed={favoritesQuotaQuery.data?.used ?? favoriteIds.length}
                 monitoradosQuotaLoading={favoritesQuotaQuery.isLoading}
                 recentlyAdded={recentlyAdded}
+                monitoradosQuota={
+                  favoritesQuotaQuery.data
+                    ? {
+                        camara: favoritesQuotaQuery.data.camara,
+                        senado: favoritesQuotaQuery.data.senado,
+                      }
+                    : null
+                }
               />
             </div>
           </div>

@@ -33,7 +33,8 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
   {
     title: 'Limites do plano',
     fields: [
-      { key: 'qtd_termos', label: 'Parlamentares monitorados', hint: 'Máximo por plano', type: 'number' },
+      { key: 'qtd_termos_camara', label: 'Monitorados — Câmara', hint: 'Máximo de deputados por plano', type: 'number' },
+      { key: 'qtd_termos_senado', label: 'Monitorados — Senado', hint: 'Máximo de senadores por plano', type: 'number' },
       { key: 'qtd_consultas_ia_mes', label: 'Consultas de IA / mês', hint: 'Cota mensal do chatbot', type: 'number' },
       { key: 'preco_mensal', label: 'Preço mensal (R$)', hint: 'Sincronizado do Ghost — base da margem', type: 'number', step: '0.01', readOnly: true },
     ],

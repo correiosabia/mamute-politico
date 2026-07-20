@@ -90,6 +90,15 @@ interface ParlamentarSelectorProps {
   monitoradosQuotaLoading?: boolean;
   /** Parliamentarian whose favorite mutation most recently succeeded. */
   recentlyAdded?: Parlamentar | null;
+  /**
+   * Quota por casa. Quando presente, o limite é avaliado pela casa de cada
+   * parlamentar (deputado/senador); os props escalares acima seguem como
+   * fallback quando esta prop está ausente.
+   */
+  monitoradosQuota?: {
+    camara: { used: number; limit: number; limit_reached: boolean };
+    senado: { used: number; limit: number; limit_reached: boolean };
+  } | null;
 }
 
 export function ParlamentarSelector({
@@ -104,6 +113,7 @@ export function ParlamentarSelector({
   monitoradosUsed = null,
   monitoradosQuotaLoading = false,
   recentlyAdded = null,
+  monitoradosQuota = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const monitoradosCardRef = useRef<HTMLDivElement>(null);
@@ -220,13 +230,36 @@ export function ParlamentarSelector({
   const monitoradosLimitReached =
     typeof monitoradosLimit === 'number' &&
     quotaUsed >= monitoradosLimit;
-  const canAddParlamentar = !favoritosMutating && !monitoradosLimitReached;
-  const quotaLabel =
-    typeof monitoradosLimit === 'number'
-      ? `${quotaUsed}/${monitoradosLimit}`
-      : monitoradosQuotaLoading
-        ? '...'
-        : `+${parlamentaresSelecionados.length}`;
+
+  // Com quota por casa, o limite é avaliado pela casa de cada parlamentar; sem
+  // ela, cai no escalar monitoradosLimitReached (fallback / testes / loading).
+  const isCasaLimitReached = (casa: Parlamentar['casa']): boolean => {
+    if (monitoradosQuota) {
+      if (casa === 'senado') return monitoradosQuota.senado.limit_reached;
+      if (casa === 'camara') return monitoradosQuota.camara.limit_reached;
+      return monitoradosQuota.camara.limit_reached && monitoradosQuota.senado.limit_reached;
+    }
+    return monitoradosLimitReached;
+  };
+
+  const selectedCasaQuota =
+    monitoradosQuota && casaSelecionada !== 'ambas' ? monitoradosQuota[casaSelecionada] : null;
+  const headerLimitReached = selectedCasaQuota
+    ? selectedCasaQuota.limit_reached
+    : monitoradosQuota
+      ? monitoradosQuota.camara.limit_reached && monitoradosQuota.senado.limit_reached
+      : monitoradosLimitReached;
+
+  const quotaLabel = (() => {
+    if (selectedCasaQuota) return `${selectedCasaQuota.used}/${selectedCasaQuota.limit}`;
+    if (monitoradosQuota) {
+      const used = monitoradosQuota.camara.used + monitoradosQuota.senado.used;
+      const limit = monitoradosQuota.camara.limit + monitoradosQuota.senado.limit;
+      return `${used}/${limit}`;
+    }
+    if (typeof monitoradosLimit === 'number') return `${quotaUsed}/${monitoradosLimit}`;
+    return monitoradosQuotaLoading ? '...' : `+${parlamentaresSelecionados.length}`;
+  })();
 
   const partidosOptions = useMemo(() => {
     const siglas = new Set((rawList ?? []).map((p) => p.party).filter(Boolean) as string[]);
@@ -453,13 +486,14 @@ export function ParlamentarSelector({
               <TooltipProvider delayDuration={0} skipDelayDuration={0}>
                 <div className="flex flex-col gap-2 pr-4">
                   {parlamentaresDisponiveis.map((parlamentar) => {
+                    const reached = isCasaLimitReached(parlamentar.casa);
                     const addButton = (
                       <button
                         type="button"
-                        disabled={!canAddParlamentar}
+                        disabled={favoritosMutating || reached}
                         onClick={() => onAddParlamentar(parlamentar)}
                         aria-label={
-                          monitoradosLimitReached
+                          reached
                             ? `Limite do plano atingido para ${parlamentar.nome}`
                             : `Adicionar ${parlamentar.nome} aos parlamentares monitorados`
                         }
@@ -492,12 +526,12 @@ export function ParlamentarSelector({
                           className="ml-3 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-full bg-[#09e03b]/10 px-3 text-xs font-semibold text-[#116b25] transition-colors group-hover:bg-[#09e03b]/20 group-disabled:bg-muted group-disabled:text-muted-foreground"
                         >
                           <PlusCircle className="h-4 w-4" />
-                          <span>{monitoradosLimitReached ? 'Limite' : 'Adicionar'}</span>
+                          <span>{reached ? 'Limite' : 'Adicionar'}</span>
                         </span>
                       </button>
                     );
 
-                    if (!monitoradosLimitReached) {
+                    if (!reached) {
                       return <Fragment key={parlamentar.id}>{addButton}</Fragment>;
                     }
 
@@ -546,7 +580,7 @@ export function ParlamentarSelector({
             <Badge variant="secondary" className="min-w-14 justify-center bg-transparent text-[18px] font-medium text-[#7f7c7c]">{quotaLabel}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {monitoradosLimitReached
+            {headerLimitReached
               ? MONITORADOS_LIMIT_MESSAGE
               : 'Clique no parlamentar para acessar seu dashboard completo'}
           </p>
