@@ -114,3 +114,23 @@ def test_update_rejects_negative(client: TestClient) -> None:
 def test_update_unknown_tier_404(client: TestClient) -> None:
     resp = client.put("/api/admin/tiers/999", json={"qtd_termos": 5})
     assert resp.status_code == 404
+
+
+def test_update_tier_persists_per_house_limits(client: TestClient) -> None:
+    resp = client.put(
+        "/api/admin/tiers/1",
+        json={"qtd_termos_camara": 5, "qtd_termos_senado": 2},
+    )
+    assert resp.status_code == 200
+    detalhes = resp.json()["detalhes"]
+    assert detalhes["qtd_termos_camara"] == 5
+    assert detalhes["qtd_termos_senado"] == 2
+    # persistência
+    again = client.get("/api/admin/tiers").json()
+    assert again[0]["detalhes"]["qtd_termos_camara"] == 5
+    assert again[0]["detalhes"]["qtd_termos_senado"] == 2
+
+
+def test_update_rejects_negative_per_house(client: TestClient) -> None:
+    resp = client.put("/api/admin/tiers/1", json={"qtd_termos_camara": -1})
+    assert resp.status_code == 422
