@@ -32,43 +32,9 @@ const queryClient = new QueryClient();
 const routerBasename =
   import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 
-// Keeps path comparisons stable for `/app` and `/app/`.
-const normalizePath = (path: string) => {
-  const normalized = path.replace(/\/+$/, "");
-  return normalized === "" ? "/" : normalized;
-};
-
-const initialPathname =
-  typeof window !== "undefined" ? normalizePath(window.location.pathname) : "/";
-
-const initialBasePath = normalizePath(routerBasename ?? "/");
-
-const shouldCheckInitialRootRedirect = initialPathname === initialBasePath;
-
-let hasHandledInitialRootRoute = false;
-
-function shouldRunInitialRootRedirect(token: string | null) {
-  return (
-    !hasHandledInitialRootRoute &&
-    shouldCheckInitialRootRedirect &&
-    Boolean(token)
-  );
-}
-
-function markInitialRootRouteAsHandled() {
-  // Redirect should be evaluated only once, during the very first root render.
-  hasHandledInitialRootRoute = true;
-}
-
-function RootRoute() {
-  const token = useGhostAuth();
-  const shouldRedirectNow = shouldRunInitialRootRedirect(token);
-  markInitialRootRouteAsHandled();
-
-  if (shouldRedirectNow) {
-    return <Navigate to="/selecao" replace />;
-  }
-
+export function RootRoute() {
+  // A raiz sempre mostra a tela de Início. (Antes, um usuário logado era
+  // redirecionado para /selecao no primeiro carregamento da raiz.)
   return <Index />;
 }
 
