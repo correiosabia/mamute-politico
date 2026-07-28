@@ -51,8 +51,12 @@ PYTHONPATH=/app
 # do banco (pesado ao vivo) + cotação USD→BRL do dia. A API só lê essas tabelas.
 0 4 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh admin-caches -- /usr/local/bin/python -m mamute_scrappers.scripts.refresh_admin_caches >> /proc/1/fd/1 2>> /proc/1/fd/2
 
-# Nome + preço mensal dos tiers a partir do Ghost (fonte da verdade — diário às 04h15).
-# Casa por product_id (== id do tier no Ghost; "free" para o gratuito). A API só lê.
+# Catálogo de planos a partir do Ghost (fonte da verdade — diário às 04h15).
+# Casa por product_id (== id do tier no Ghost; "free" para o gratuito) e espelha
+# nome, preço e status: cria plano novo herdando limites, marca arquivado (sem
+# tirar do ar quem ainda tem assinante) e sinaliza plano sem par no Ghost. Os
+# limites são do painel admin e nunca são sobrescritos aqui. O painel também
+# dispara este mesmo sync sob demanda por POST /api/admin/tiers/sync.
 15 4 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh ghost-tiers-sync -- /usr/local/bin/python -m mamute_scrappers.scripts.ghost_tiers_sync >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Votações nominais do Senado (a cada 3h)

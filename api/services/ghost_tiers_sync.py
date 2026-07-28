@@ -14,28 +14,38 @@ Regras (CS-28):
 - plano reativado no Ghost → volta a valer aqui;
 - plano local sem par no Ghost → marcado como órfão, nunca apagado.
 
-Roda no container dos scrappers (tem GHOST_API/GHOST_ADMIN_URL): cron das 04h15
-e reconciliação de startup. Também dá para rodar na mão:
-
-    python -m mamute_scrappers.scripts.ghost_tiers_sync
-
-Espelho deste módulo em ``api/services/ghost_tiers_sync.py``, usado pelo botão
-"Sincronizar agora" do painel admin. Ao mudar uma regra aqui, mudar lá também.
-Reaproveita o mesmo esquema de token do create_users (JWT HS256, aud "/admin/").
+Este módulo tem um espelho em ``mamute_scrappers/scripts/ghost_tiers_sync.py``,
+que roda no cron das 04h15 e no startup do container dos scrappers. Ao mudar uma
+regra aqui, mudar lá também.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
-import jwt
+import requests
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-logger = logging.getLogger("ghost_tiers_sync")
+try:
+    from ..db.models.project import Projetos, Tiers
+    from .ghost_admin import (
+        fetch_ghost_tiers,
+        generate_admin_token,
+        get_ghost_admin_settings,
+    )
+except ImportError:  # execução dentro de api/
+    from db.models.project import Projetos, Tiers
+    from services.ghost_admin import (
+        fetch_ghost_tiers,
+        generate_admin_token,
+        get_ghost_admin_settings,
+    )
 
-TIERS_PATH = "/tiers/?include=monthly_price&limit=all"
+logger = logging.getLogger(__name__)
 
 # Chaves de limite que pertencem ao painel admin. O sync só as escreve ao criar
 # um plano novo (herança); em plano existente, jamais.
@@ -51,19 +61,36 @@ ENTITLEMENT_KEYS = (
 )
 
 
-def generate_admin_token(api_key: str) -> str:
-    """JWT do Ghost Admin API. `api_key` no formato '<kid>:<secret_hex>'."""
-    try:
-        kid, secret = api_key.split(":")
-    except ValueError as exc:  # pragma: no cover - erro de config
-        raise RuntimeError("GHOST_API inválido. Esperado '<key>:<secret>'.") from exc
-    iat = int(datetime.now(timezone.utc).timestamp())
-    return jwt.encode(
-        {"iat": iat, "exp": iat + 5 * 60, "aud": "/admin/"},
-        bytes.fromhex(secret),
-        algorithm="HS256",
-        headers={"alg": "HS256", "typ": "JWT", "kid": kid},
-    )
+class GhostTiersSyncError(RuntimeError):
+    """Configuração ausente ou Ghost indisponível."""
+
+
+@dataclass
+class TierSyncSummary:
+    created: list[dict[str, Any]] = field(default_factory=list)
+    updated: list[str] = field(default_factory=list)
+    archived: list[dict[str, Any]] = field(default_factory=list)
+    reactivated: list[str] = field(default_factory=list)
+    orphans: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "created": self.created,
+            "updated": self.updated,
+            "archived": self.archived,
+            "reactivated": self.reactivated,
+            "orphans": self.orphans,
+        }
+
+    @property
+    def changed(self) -> bool:
+        return bool(
+            self.created or self.archived or self.reactivated or self.orphans
+        )
+
+
+def _coerce_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _to_reais(monthly_price: Any) -> float:
@@ -73,18 +100,16 @@ def _to_reais(monthly_price: Any) -> float:
     return 0.0
 
 
-def _coerce_mapping(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+def normalize_ghost_tiers(raw_tiers: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Achata a resposta do Admin API no formato usado pelo sync.
 
-
-def parse_ghost_tiers(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extrai o catálogo da resposta do Admin API.
-
-    ``product_id`` casa com o tier local: 'free' para o gratuito, senão o id do
-    Ghost. ``active`` distingue plano vivo de plano arquivado.
+    ``product_id`` casa com o tier local: ``"free"`` para o gratuito (o membro
+    sem assinatura não traz id de tier), senão o id do Ghost.
     """
     out: list[dict[str, Any]] = []
-    for tier in payload.get("tiers", []) or []:
+    for tier in raw_tiers:
+        if not isinstance(tier, Mapping):
+            continue
         is_free = tier.get("type") == "free"
         product_id = "free" if is_free else tier.get("id")
         if not product_id:
@@ -92,33 +117,23 @@ def parse_ghost_tiers(payload: dict[str, Any]) -> list[dict[str, Any]]:
         active = tier.get("active")
         out.append(
             {
-                "product_id": product_id,
+                "product_id": str(product_id),
                 "ghost_tier_id": tier.get("id"),
                 "slug": tier.get("slug"),
                 "type": tier.get("type"),
                 "name": (tier.get("name") or "").strip(),
                 "monthly_price": _to_reais(tier.get("monthly_price")),
-                # Ausência do campo é tratada como ativo: nunca arquivar por
-                # falta de informação.
+                # Ghost sempre manda o campo; ausência é tratada como ativo para
+                # não arquivar plano por engano.
                 "active": True if active is None else bool(active),
             }
         )
     return out
 
 
-def fetch_ghost_tiers(
-    admin_url: str, token: str, http_get: Callable[..., Any]
-) -> list[dict[str, Any]]:
-    url = f"{admin_url.rstrip('/')}{TIERS_PATH}"
-    resp = http_get(url, headers={"Authorization": f"Ghost {token}"}, timeout=30)
-    resp.raise_for_status()
-    return parse_ghost_tiers(resp.json())
-
-
-def _tier_lookup_keys(tier: Any) -> set[str]:
+def _tier_lookup_keys(tier: Tiers) -> set[str]:
     keys = {tier.product_id}
-    detalhes = tier.detalhes if isinstance(tier.detalhes, dict) else {}
-    ghost = _coerce_mapping(detalhes.get("ghost"))
+    ghost = _coerce_mapping(_coerce_mapping(tier.detalhes).get("ghost"))
     for key in ("slug", "target_tier_id", "source_tier_id"):
         value = ghost.get(key)
         if isinstance(value, str) and value.strip():
@@ -126,7 +141,9 @@ def _tier_lookup_keys(tier: Any) -> set[str]:
     return {key for key in keys if isinstance(key, str) and key.strip()}
 
 
-def _find_local_tier(tier_map: dict[str, Any], ghost_tier: dict[str, Any]) -> Any:
+def _find_local_tier(
+    tier_map: Mapping[str, Tiers], ghost_tier: Mapping[str, Any]
+) -> Optional[Tiers]:
     for key in (
         ghost_tier.get("product_id"),
         ghost_tier.get("ghost_tier_id"),
@@ -137,11 +154,23 @@ def _find_local_tier(tier_map: dict[str, Any], ghost_tier: dict[str, Any]) -> An
     return None
 
 
-def pick_inheritance_source(tiers: list[Any], monthly_price: float) -> Any:
+def _active_project_count(session: Session, tier_id: Any) -> int:
+    if tier_id is None:
+        return 0
+    stmt = select(Projetos.id).where(
+        Projetos.tier_id == tier_id, Projetos.deleted_at.is_(None)
+    )
+    return len(session.execute(stmt).all())
+
+
+def pick_inheritance_source(
+    tiers: Iterable[Tiers], monthly_price: float
+) -> Optional[Tiers]:
     """Plano do qual um plano novo herda limites.
 
     Regra: o plano ativo mais caro entre os que custam até o preço do novo. Se
-    nenhum couber, herda do mais barato existente.
+    nenhum couber (o novo é o mais barato de todos), herda do mais barato
+    existente. Determinístico e explicável para quem olha o painel depois.
     """
     candidates = [
         tier
@@ -152,7 +181,7 @@ def pick_inheritance_source(tiers: list[Any], monthly_price: float) -> Any:
     if not candidates:
         return None
 
-    def price_of(tier: Any) -> float:
+    def price_of(tier: Tiers) -> float:
         raw = _coerce_mapping(tier.detalhes).get("preco_mensal")
         return float(raw) if isinstance(raw, (int, float)) else 0.0
 
@@ -162,7 +191,7 @@ def pick_inheritance_source(tiers: list[Any], monthly_price: float) -> Any:
     return min(candidates, key=lambda tier: (price_of(tier), str(tier.product_id)))
 
 
-def _inherited_details(source: Any) -> dict[str, Any]:
+def _inherited_details(source: Optional[Tiers]) -> dict[str, Any]:
     if source is None:
         return {}
     source_details = _coerce_mapping(source.detalhes)
@@ -171,7 +200,7 @@ def _inherited_details(source: Any) -> dict[str, Any]:
     }
 
 
-def _apply_ghost_block(detalhes: dict[str, Any], ghost_tier: dict[str, Any]) -> None:
+def _apply_ghost_block(detalhes: dict[str, Any], ghost_tier: Mapping[str, Any]) -> None:
     ghost = _coerce_mapping(detalhes.get("ghost"))
     if ghost_tier.get("slug"):
         ghost["slug"] = ghost_tier["slug"]
@@ -185,64 +214,44 @@ def _apply_ghost_block(detalhes: dict[str, Any], ghost_tier: dict[str, Any]) -> 
 
 
 def sync_tiers(
-    session: Any,
+    session: Session,
     ghost_tiers: list[dict[str, Any]],
     *,
     now: Optional[datetime] = None,
-) -> dict[str, Any]:
-    """Aplica o catálogo do Ghost na tabela `tiers`. Idempotente.
-
-    Import do model é lazy (mamute_scrappers.db.engine exige DATABASE_URL no
-    import).
-    """
-    from mamute_scrappers.db.models.project import Projetos, Tiers
-
+) -> TierSyncSummary:
+    """Aplica o catálogo do Ghost na tabela `tiers`. Idempotente."""
     moment = now or datetime.now(timezone.utc)
-    summary: dict[str, Any] = {
-        "created": [],
-        "updated": [],
-        "archived": [],
-        "reactivated": [],
-        "orphans": [],
-    }
+    summary = TierSyncSummary()
 
-    local_tiers = list(session.query(Tiers).all())
-    tier_map: dict[str, Any] = {}
+    local_tiers = list(session.execute(select(Tiers)).scalars().all())
+    tier_map: dict[str, Tiers] = {}
     for tier in local_tiers:
         for key in _tier_lookup_keys(tier):
-            # Linha viva ganha da soft-deletada quando as chaves colidem.
+            # Linha viva ganha da soft-deletada quando as chaves colidem (é o
+            # caso do gratuito duplicado que existiu em produção).
             existing = tier_map.get(key)
             if existing is None or (
                 existing.deleted_at is not None and tier.deleted_at is None
             ):
                 tier_map[key] = tier
 
-    def _assinantes(tier: Any) -> int:
-        if tier.id is None:
-            return 0
-        return (
-            session.query(Projetos)
-            .filter(Projetos.tier_id == tier.id, Projetos.deleted_at.is_(None))
-            .count()
-        )
-
     matched: set[int] = set()
 
-    for gt in ghost_tiers:
-        tier = _find_local_tier(tier_map, gt)
-        is_active = bool(gt.get("active", True))
+    for ghost_tier in ghost_tiers:
+        tier = _find_local_tier(tier_map, ghost_tier)
+        is_active = bool(ghost_tier.get("active", True))
 
         if tier is None:
-            source = pick_inheritance_source(local_tiers, gt["monthly_price"])
+            source = pick_inheritance_source(local_tiers, ghost_tier["monthly_price"])
             detalhes = _inherited_details(source)
-            detalhes["preco_mensal"] = gt["monthly_price"]
-            _apply_ghost_block(detalhes, gt)
+            detalhes["preco_mensal"] = ghost_tier["monthly_price"]
+            _apply_ghost_block(detalhes, ghost_tier)
             detalhes["ghost"]["pending_review"] = True
             if source is not None:
                 detalhes["ghost"]["herdado_de"] = source.product_id
             tier = Tiers(
-                tier_name_debug=gt["name"] or gt["product_id"],
-                product_id=gt["product_id"],
+                tier_name_debug=ghost_tier["name"] or ghost_tier["product_id"],
+                product_id=ghost_tier["product_id"],
                 detalhes=detalhes,
                 deleted_at=None if is_active else moment,
             )
@@ -250,7 +259,7 @@ def sync_tiers(
             local_tiers.append(tier)
             for key in _tier_lookup_keys(tier):
                 tier_map.setdefault(key, tier)
-            summary["created"].append(
+            summary.created.append(
                 {
                     "product_id": tier.product_id,
                     "name": tier.tier_name_debug,
@@ -258,30 +267,23 @@ def sync_tiers(
                     "active": is_active,
                 }
             )
-            logger.info(
-                "Tier novo no Ghost: %s (%s) criado herdando de %s",
-                gt["product_id"],
-                gt["name"],
-                detalhes["ghost"].get("herdado_de"),
-            )
             continue
 
         matched.add(id(tier))
 
-        if gt["name"]:
-            tier.tier_name_debug = gt["name"]
+        if ghost_tier["name"]:
+            tier.tier_name_debug = ghost_tier["name"]
         detalhes = _coerce_mapping(tier.detalhes)
-        detalhes["preco_mensal"] = gt["monthly_price"]
-        _apply_ghost_block(detalhes, gt)
+        detalhes["preco_mensal"] = ghost_tier["monthly_price"]
+        _apply_ghost_block(detalhes, ghost_tier)
 
         if is_active:
             if tier.deleted_at is not None:
                 tier.deleted_at = None
                 detalhes["ghost"].pop("archived_with_subscribers", None)
-                summary["reactivated"].append(tier.product_id)
-                logger.info("Tier reativado no Ghost: %s", tier.product_id)
+                summary.reactivated.append(tier.product_id)
         else:
-            subscribers = _assinantes(tier)
+            subscribers = _active_project_count(session, tier.id)
             if subscribers:
                 # "Arquivado mantém": quem já assina continua atendido.
                 detalhes["ghost"]["archived_with_subscribers"] = True
@@ -290,75 +292,58 @@ def sync_tiers(
                 if tier.deleted_at is None:
                     tier.deleted_at = moment
             if tier.deleted_at is not None or subscribers:
-                summary["archived"].append(
+                summary.archived.append(
                     {
                         "product_id": tier.product_id,
                         "name": tier.tier_name_debug,
                         "assinantes": subscribers,
                     }
                 )
-                logger.info(
-                    "Tier arquivado no Ghost: %s (%s assinante(s))",
-                    tier.product_id,
-                    subscribers,
-                )
 
         tier.detalhes = detalhes
-        summary["updated"].append(tier.product_id)
+        summary.updated.append(tier.product_id)
 
     for tier in local_tiers:
         if id(tier) in matched or tier.deleted_at is not None:
             continue
-        if any(entry["product_id"] == tier.product_id for entry in summary["created"]):
+        if any(entry["product_id"] == tier.product_id for entry in summary.created):
             continue
         detalhes = _coerce_mapping(tier.detalhes)
         ghost = _coerce_mapping(detalhes.get("ghost"))
         ghost["orphan"] = True
         detalhes["ghost"] = ghost
         tier.detalhes = detalhes
-        summary["orphans"].append(tier.product_id)
-        logger.warning("Tier local sem par no Ghost: %s", tier.product_id)
+        summary.orphans.append(tier.product_id)
 
     session.commit()
     return summary
 
 
-def run(session: Any, http_get: Callable[..., Any]) -> dict[str, Any]:
-    api_key = os.getenv("GHOST_API") or os.getenv("GHOST_API_KEY")
-    admin_url = os.getenv("GHOST_ADMIN_URL")
-    if not api_key or not admin_url:
-        raise RuntimeError(
-            "GHOST_API_KEY/GHOST_ADMIN_URL ausentes — sync de tiers do Ghost pulado."
+def run_sync(
+    session: Session,
+    http_get: Callable[..., Any] = requests.get,
+    *,
+    now: Optional[datetime] = None,
+) -> TierSyncSummary:
+    """Busca o catálogo no Ghost e aplica. Levanta se faltar configuração."""
+    settings = get_ghost_admin_settings()
+    if settings is None:
+        raise GhostTiersSyncError(
+            "GHOST_API/GHOST_ADMIN_URL ausentes — sync de tiers indisponível."
         )
-    token = generate_admin_token(api_key)
-    ghost_tiers = fetch_ghost_tiers(admin_url, token, http_get)
-    summary = sync_tiers(session, ghost_tiers)
-    logger.info(
-        "Ghost tiers sincronizados: %s atualizados, %s criados, %s arquivados, "
-        "%s reativados, %s órfãos",
-        len(summary["updated"]),
-        len(summary["created"]),
-        len(summary["archived"]),
-        len(summary["reactivated"]),
-        len(summary["orphans"]),
-    )
+    token = generate_admin_token(settings.api_key)
+    raw = fetch_ghost_tiers(settings.admin_url, token, http_get)
+    summary = sync_tiers(session, normalize_ghost_tiers(raw), now=now)
+    logger.info("Ghost tiers sincronizados: %s", summary.as_dict())
     return summary
 
 
-def main() -> None:
-    import requests
-
-    from mamute_scrappers.db.session import get_session
-
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
-    session = get_session()
-    try:
-        run(session, requests.get)
-    finally:
-        session.close()
-
-
-if __name__ == "__main__":
-    main()
+__all__ = [
+    "ENTITLEMENT_KEYS",
+    "GhostTiersSyncError",
+    "TierSyncSummary",
+    "normalize_ghost_tiers",
+    "pick_inheritance_source",
+    "run_sync",
+    "sync_tiers",
+]

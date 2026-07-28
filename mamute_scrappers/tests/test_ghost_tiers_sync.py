@@ -103,7 +103,7 @@ def test_fetch_ghost_tiers_hits_admin_endpoint() -> None:
     assert out[0]["monthly_price"] == 50.0
 
 
-def _tiers_session():
+def _tiers_session(projetos_no_tier_2: int = 0):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -118,6 +118,14 @@ def _tiers_session():
                 updated_at datetime default current_timestamp, deleted_at datetime)"""
         )
         conn.exec_driver_sql(
+            """create table projetos (
+                id integer primary key, nome text not null, cliente text,
+                email text not null, tier_id integer, tag_ghost text,
+                qtd_termos integer not null default 0,
+                created_at datetime default current_timestamp,
+                updated_at datetime default current_timestamp, deleted_at datetime)"""
+        )
+        conn.exec_driver_sql(
             "insert into tiers (id, tier_name_debug, product_id, detalhes) values "
             "(1, 'debug-free', 'free', :d1), (2, 'debug-mamute', 'ghost_paid_id', :d2)",
             {
@@ -125,6 +133,11 @@ def _tiers_session():
                 "d2": json.dumps({"qtd_termos": 10, "preco_mensal": 1.0}),
             },
         )
+        for i in range(projetos_no_tier_2):
+            conn.exec_driver_sql(
+                "insert into projetos (id, nome, email, tier_id) values (:i, :n, :e, 2)",
+                {"i": i + 1, "n": f"bot-{i}", "e": f"m{i}@x.com"},
+            )
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
@@ -147,11 +160,10 @@ def test_sync_tiers_updates_name_and_price() -> None:
             "name": "Cidadão Mamute",
             "monthly_price": 89.0,
         },
-        {"product_id": "sem_match", "name": "Fantasma", "monthly_price": 10.0},
     ]
-    updated = gts.sync_tiers(session, ghost_tiers)
+    summary = gts.sync_tiers(session, ghost_tiers)
 
-    assert set(updated) == {"free", "ghost_paid_id"}  # 'sem_match' ignorado
+    assert set(summary["updated"]) == {"free", "ghost_paid_id"}
 
     from mamute_scrappers.db.models.project import Tiers
 
@@ -165,3 +177,92 @@ def test_sync_tiers_updates_name_and_price() -> None:
     assert paid.detalhes["qtd_termos"] == 10
     assert paid.detalhes["ghost"]["slug"] == "cidadao-mamute"
     assert paid.detalhes["ghost"]["target_tier_id"] == "ghost_paid_id"
+
+
+def test_parse_reads_active_flag() -> None:
+    payload = {
+        "tiers": [
+            {"id": "a", "name": "A", "type": "paid", "monthly_price": 100, "active": False},
+            {"id": "b", "name": "B", "type": "paid", "monthly_price": 100},
+        ]
+    }
+    parsed = {t["product_id"]: t for t in gts.parse_ghost_tiers(payload)}
+    assert parsed["a"]["active"] is False
+    # sem o campo, assume ativo: nunca arquivar por falta de informação
+    assert parsed["b"]["active"] is True
+
+
+def _ghost(product_id: str, name: str, price: float, active: bool = True) -> dict:
+    return {
+        "product_id": product_id,
+        "ghost_tier_id": product_id,
+        "slug": product_id,
+        "type": "paid",
+        "name": name,
+        "monthly_price": price,
+        "active": active,
+    }
+
+
+def test_sync_creates_tier_new_in_ghost_inheriting_limits() -> None:
+    session = _tiers_session()
+    summary = gts.sync_tiers(
+        session,
+        [
+            _ghost("free", "Livre", 0.0),
+            _ghost("ghost_paid_id", "Mamute", 1.0),
+            _ghost("ghost_novo", "Mamute Turbo", 90.0),
+        ],
+    )
+
+    assert [c["product_id"] for c in summary["created"]] == ["ghost_novo"]
+
+    from mamute_scrappers.db.models.project import Tiers
+
+    novo = session.query(Tiers).filter_by(product_id="ghost_novo").one()
+    assert novo.detalhes["qtd_termos"] == 10  # herdou do pago existente
+    assert novo.detalhes["preco_mensal"] == 90.0
+    assert novo.detalhes["ghost"]["pending_review"] is True
+    assert novo.detalhes["ghost"]["herdado_de"] == "ghost_paid_id"
+
+
+def test_sync_archives_tier_without_subscribers() -> None:
+    session = _tiers_session()
+    summary = gts.sync_tiers(
+        session,
+        [_ghost("free", "Livre", 0.0), _ghost("ghost_paid_id", "Mamute", 1.0, active=False)],
+    )
+
+    from mamute_scrappers.db.models.project import Tiers
+
+    paid = session.query(Tiers).filter_by(product_id="ghost_paid_id").one()
+    assert paid.deleted_at is not None
+    assert paid.detalhes["ghost"]["active"] is False
+    assert summary["archived"][0]["assinantes"] == 0
+
+
+def test_sync_keeps_archived_tier_alive_when_it_has_subscribers() -> None:
+    session = _tiers_session(projetos_no_tier_2=3)
+    summary = gts.sync_tiers(
+        session,
+        [_ghost("free", "Livre", 0.0), _ghost("ghost_paid_id", "Mamute", 1.0, active=False)],
+    )
+
+    from mamute_scrappers.db.models.project import Tiers
+
+    paid = session.query(Tiers).filter_by(product_id="ghost_paid_id").one()
+    assert paid.deleted_at is None, "assinante ativo não pode perder o plano"
+    assert paid.detalhes["ghost"]["archived_with_subscribers"] is True
+    assert summary["archived"][0]["assinantes"] == 3
+
+
+def test_sync_flags_local_tier_without_ghost_pair() -> None:
+    session = _tiers_session()
+    summary = gts.sync_tiers(session, [_ghost("free", "Livre", 0.0)])
+
+    from mamute_scrappers.db.models.project import Tiers
+
+    paid = session.query(Tiers).filter_by(product_id="ghost_paid_id").one()
+    assert paid.deleted_at is None
+    assert paid.detalhes["ghost"]["orphan"] is True
+    assert summary["orphans"] == ["ghost_paid_id"]
