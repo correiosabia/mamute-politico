@@ -252,6 +252,25 @@ dele: o container dos scrappers roda uma reconciliação idempotente no startup
 projetos já existentes. Desative com `MAMUTE_GHOST_RECONCILE_ON_STARTUP=false`
 somente se o ambiente tiver outro mecanismo de reconciliação.
 
+### Catálogo de planos: o Ghost manda
+
+O Ghost é a fonte da verdade do **catálogo** (nome, preço, slug e status). Os
+**limites** são do painel admin e o sync nunca os sobrescreve. O
+`ghost_tiers_sync` roda no cron das 04h15, na reconciliação de startup e sob
+demanda pelo botão "Sincronizar agora" do painel (`POST /api/admin/tiers/sync`,
+que executa o espelho em `api/services/ghost_tiers_sync.py`):
+
+| Situação no Ghost | O que acontece na tabela `tiers` |
+|-------------------|----------------------------------|
+| Plano novo, sem par local | Cria a linha herdando os limites do plano ativo mais caro entre os que custam até o preço do novo (ou do mais barato, se o novo for o menor de todos). Marca `ghost.pending_review` e `ghost.herdado_de` para o painel destacar que os limites precisam de revisão. |
+| Plano arquivado (`active: false`) | Marca `ghost.active = false`. Sai do ar (`deleted_at`) **apenas se não houver projeto ativo**; com assinantes, continua atendendo e recebe `ghost.archived_with_subscribers`. |
+| Plano reativado | Volta a valer aqui: `deleted_at` é limpo. Pelo painel, o botão "Reativar no Ghost" escreve o status **no Ghost** e depois re-sincroniza. |
+| Plano local sem par no Ghost | Recebe `ghost.orphan = true` e **nunca** é apagado automaticamente. |
+
+Quando um membro assina um plano criado no Ghost depois do último sync, o
+webhook busca o catálogo na hora antes de desistir, para ninguém ficar sem
+projeto (`missing_tier`).
+
 O arquivo local `mamute_scrappers/ghost_tier_entitlements.json` pode ser usado para preparar mapeamentos de tiers em uma máquina ou ambiente específico, mas não deve ser versionado. Em deploy, prefira configurar os limites por variáveis de ambiente.
 
 ## Links rápidos

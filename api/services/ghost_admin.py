@@ -63,6 +63,84 @@ def fetch_ghost_tiers(
     return [tier for tier in tiers if isinstance(tier, dict)]
 
 
+# Campos que o Ghost aceita num PUT de tier. O resto (id, datas, contadores) é
+# read-only e faz o Admin API recusar a edição.
+_EDITABLE_TIER_FIELDS = frozenset(
+    {
+        "name",
+        "description",
+        "slug",
+        "active",
+        "visibility",
+        "welcome_page_url",
+        "monthly_price",
+        "yearly_price",
+        "currency",
+        "benefits",
+        "trial_days",
+    }
+)
+
+
+def fetch_ghost_tier(
+    admin_url: str,
+    token: str,
+    tier_id: str,
+    http_get: Callable[..., Any] = requests.get,
+) -> Optional[dict[str, Any]]:
+    response = http_get(
+        f"{admin_url.rstrip('/')}/tiers/{tier_id}/",
+        params={"include": "monthly_price"},
+        headers=_headers(token),
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        return None
+    for tier in payload.get("tiers", []) or []:
+        if isinstance(tier, dict):
+            return tier
+    return None
+
+
+def set_ghost_tier_active(
+    admin_url: str,
+    token: str,
+    tier_id: str,
+    active: bool,
+    http_get: Callable[..., Any] = requests.get,
+    http_put: Callable[..., Any] = requests.put,
+) -> dict[str, Any]:
+    """Liga ou desliga um tier no Ghost (o Ghost é a fonte da verdade do status).
+
+    Lê o tier atual e devolve o objeto inteiro com o `active` trocado: o Admin
+    API do Ghost espera a representação do recurso, não um patch.
+    """
+    current = fetch_ghost_tier(admin_url, token, tier_id, http_get)
+    if current is None:
+        raise LookupError(f"Tier {tier_id} não encontrado no Ghost.")
+
+    payload_tier = {
+        key: value for key, value in current.items() if key in _EDITABLE_TIER_FIELDS
+    }
+    payload_tier["active"] = active
+
+    response = http_put(
+        f"{admin_url.rstrip('/')}/tiers/{tier_id}/",
+        json={"tiers": [payload_tier]},
+        headers=_headers(token),
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if isinstance(payload, dict):
+        for tier in payload.get("tiers", []) or []:
+            if isinstance(tier, dict):
+                return tier
+    return payload_tier
+
+
 def fetch_ghost_members(
     admin_url: str,
     token: str,
@@ -148,7 +226,9 @@ __all__ = [
     "fetch_ghost_member_by_email",
     "fetch_ghost_member_by_email_from_env",
     "fetch_ghost_members",
+    "fetch_ghost_tier",
     "fetch_ghost_tiers",
     "generate_admin_token",
     "get_ghost_admin_settings",
+    "set_ghost_tier_active",
 ]

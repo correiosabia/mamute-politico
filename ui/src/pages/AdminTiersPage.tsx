@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { AdminShell } from '@/components/layout/AdminShell';
-import { useTiers, useUpdateTier } from '@/hooks/useTiers';
+import {
+  useSyncTiers,
+  useTiers,
+  useUnarchiveTier,
+  useUpdateTier,
+} from '@/hooks/useTiers';
 import type { Tier, TierDetails } from '@/api/admin';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -110,10 +115,73 @@ function MultiSelectChips({
   );
 }
 
+/** Etiquetas de estado vindas do Ghost. Só aparecem quando há o que dizer. */
+function TierStatusBadges({ tier }: { tier: Tier }) {
+  const badges: { label: string; className: string; title: string }[] = [];
+
+  if (tier.arquivado) {
+    badges.push({
+      label: tier.assinantes ? `Arquivado · ${tier.assinantes} assinante(s)` : 'Arquivado',
+      className: 'bg-[#b45309]/10 text-[#b45309]',
+      title: tier.assinantes
+        ? 'Arquivado no Ghost. Quem já assina continua sendo atendido.'
+        : 'Arquivado no Ghost e sem assinantes.',
+    });
+  }
+  if (tier.pending_review) {
+    badges.push({
+      label: 'Novo — revisar limites',
+      className: 'bg-[#1b76ff]/10 text-[#1b76ff]',
+      title: 'Criado pela sincronização com limites herdados de outro plano.',
+    });
+  }
+  if (tier.orphan) {
+    badges.push({
+      label: 'Sem par no Ghost',
+      className: 'bg-[#9b2c2c]/10 text-[#9b2c2c]',
+      title: 'Existe aqui, mas não foi encontrado no Ghost. Nada é apagado automaticamente.',
+    });
+  }
+
+  return (
+    <>
+      {badges.map((b) => (
+        <span
+          key={b.label}
+          title={b.title}
+          className={`rounded-full px-3 py-1 text-[11px] font-bold ${b.className}`}
+        >
+          {b.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function TierCard({ tier }: { tier: Tier }) {
   const update = useUpdateTier();
+  const unarchive = useUnarchiveTier();
   const { toast } = useToast();
   const [form, setForm] = useState<Record<string, string>>(() => initialForm(tier));
+  // Plano fora do ar (arquivado no Ghost e sem assinante) não aceita edição de
+  // limites: a API recusa. Só resta reativar no Ghost.
+  const foraDoAr = Boolean(tier.deleted_at);
+
+  const reativar = async () => {
+    try {
+      await unarchive.mutateAsync(tier.id);
+      toast({
+        title: 'Plano reativado no Ghost',
+        description: `${tier.tier_name_debug} voltou a valer.`,
+      });
+    } catch (e) {
+      toast({
+        title: 'Não foi possível reativar',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'destructive',
+      });
+    }
+  };
 
   const set = (key: string, value: string) =>
     setForm((s) => ({ ...s, [key]: value }));
@@ -148,9 +216,12 @@ function TierCard({ tier }: { tier: Tier }) {
         <h2 className="text-[24px] font-bold leading-none text-[#090909]">
           {tier.tier_name_debug}
         </h2>
-        <span className="rounded-full bg-[#1b76ff]/10 px-3 py-1 text-[11px] font-bold text-[#1b76ff]">
-          {tier.product_id}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <TierStatusBadges tier={tier} />
+          <span className="rounded-full bg-[#383838]/10 px-3 py-1 text-[11px] font-bold text-[#383838]">
+            {tier.product_id}
+          </span>
+        </div>
       </div>
 
       {GROUPS.map((group) => (
@@ -197,21 +268,72 @@ function TierCard({ tier }: { tier: Tier }) {
         </div>
       ))}
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={update.isPending}
-        className="inline-flex items-center gap-2 rounded-full bg-[#1b76ff] px-6 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
-        {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-        {update.isPending ? 'Salvando…' : 'Salvar alterações'}
-      </button>
+      {foraDoAr ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={reativar}
+            disabled={unarchive.isPending}
+            className="inline-flex items-center gap-2 rounded-full bg-[#1b76ff] px-6 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {unarchive.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {unarchive.isPending ? 'Reativando…' : 'Reativar no Ghost'}
+          </button>
+          <p className="text-[12px] text-[#383838]/60">
+            Plano arquivado no Ghost. Os limites voltam a ser editáveis depois de reativar.
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={save}
+          disabled={update.isPending}
+          className="inline-flex items-center gap-2 rounded-full bg-[#1b76ff] px-6 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          {update.isPending ? 'Salvando…' : 'Salvar alterações'}
+        </button>
+      )}
     </div>
   );
 }
 
+function resumoDoSync(r: {
+  created: unknown[];
+  archived: unknown[];
+  reactivated: unknown[];
+  orphans: unknown[];
+}): string {
+  const partes = [
+    r.created.length && `${r.created.length} novo(s)`,
+    r.archived.length && `${r.archived.length} arquivado(s)`,
+    r.reactivated.length && `${r.reactivated.length} reativado(s)`,
+    r.orphans.length && `${r.orphans.length} sem par no Ghost`,
+  ].filter(Boolean);
+  return partes.length ? partes.join(' · ') : 'Nenhuma mudança: já estava tudo igual ao Ghost.';
+}
+
 export default function AdminTiersPage() {
-  const { data: tiers, isLoading, error } = useTiers();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: tiers, isLoading, error } = useTiers(showArchived);
+  const sync = useSyncTiers();
+  const { toast } = useToast();
+
+  const sincronizar = async () => {
+    try {
+      const resultado = await sync.mutateAsync();
+      toast({
+        title: 'Catálogo sincronizado com o Ghost',
+        description: resumoDoSync(resultado),
+      });
+    } catch (e) {
+      toast({
+        title: 'Não foi possível sincronizar',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <AdminShell footer="green">
@@ -228,8 +350,31 @@ export default function AdminTiersPage() {
             Gestão de Tiers
           </h1>
           <p className="mt-1 text-[18px] font-normal text-[#383838]">
-            Edite os limites de cada plano. Nome e preço vêm do Ghost (sincronizados 1x/dia). As mudanças de limite valem na hora, sem redeploy.
+            Edite os limites de cada plano. Nome, preço e status vêm do Ghost, que é a fonte da verdade do catálogo e sincroniza 1x/dia. As mudanças de limite valem na hora, sem redeploy.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={sincronizar}
+            disabled={sync.isPending}
+            className="inline-flex items-center gap-2 rounded-full border border-[#1b76ff] px-4 py-1.5 text-[13px] font-semibold text-[#1b76ff] transition-colors hover:bg-[#1b76ff]/10 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${sync.isPending ? 'animate-spin' : ''}`} />
+            {sync.isPending ? 'Sincronizando…' : 'Sincronizar agora'}
+          </button>
+          <button
+            type="button"
+            aria-pressed={showArchived}
+            onClick={() => setShowArchived((v) => !v)}
+            className={
+              showArchived
+                ? 'rounded-full bg-[#383838] px-4 py-1.5 text-[13px] font-semibold text-white'
+                : 'rounded-full border border-[#383838]/20 px-4 py-1.5 text-[13px] font-semibold text-[#383838] transition-colors hover:bg-[#383838]/10'
+            }
+          >
+            {showArchived ? 'Ocultar arquivados' : 'Mostrar arquivados'}
+          </button>
         </div>
       </div>
 

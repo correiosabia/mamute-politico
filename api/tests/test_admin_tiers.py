@@ -49,9 +49,29 @@ def _make_session() -> Session:
             """
         )
         conn.exec_driver_sql(
+            """
+            create table projetos (
+                id integer primary key,
+                nome text not null,
+                cliente text,
+                email text not null,
+                tier_id integer,
+                tag_ghost text,
+                qtd_termos integer not null default 0,
+                created_at datetime not null default current_timestamp,
+                updated_at datetime not null default current_timestamp,
+                deleted_at datetime
+            )
+            """
+        )
+        conn.exec_driver_sql(
             "insert into tiers (id, tier_name_debug, product_id, detalhes) "
             "values (1, 'Cidadão', 'cidadao-mamute', :d)",
             {"d": json.dumps({"qtd_termos": 10, "qtd_consultas_ia_mes": 200})},
+        )
+        conn.exec_driver_sql(
+            "insert into projetos (id, nome, email, tier_id) "
+            "values (1, 'bot-um', 'um@x.com', 1), (2, 'bot-dois', 'dois@x.com', 1)"
         )
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
 

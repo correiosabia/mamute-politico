@@ -27,10 +27,42 @@ export interface Tier {
   tier_name_debug: string;
   product_id: string;
   detalhes: TierDetails;
+  /** Estado espelhado do Ghost (CS-28). */
+  deleted_at?: string | null;
+  /** Arquivado no Ghost. Enquanto houver assinante, segue atendendo. */
+  arquivado?: boolean;
+  /** Criado pelo sync herdando limites — precisa de revisão humana. */
+  pending_review?: boolean;
+  /** Existe aqui e não existe mais no Ghost. */
+  orphan?: boolean;
+  assinantes?: number;
 }
 
-export function fetchTiers(): Promise<Tier[]> {
-  return request<Tier[]>('/admin/tiers');
+/** Resumo do que o sync mudou, para mostrar o resultado ao admin. */
+export interface TierSyncResult {
+  created: { product_id: string; name: string; herdado_de?: string | null }[];
+  updated: string[];
+  archived: { product_id: string; name: string; assinantes: number }[];
+  reactivated: string[];
+  orphans: string[];
+}
+
+export function fetchTiers(includeArchived = false): Promise<Tier[]> {
+  // Dois literais em vez de querystring interpolada: o checador de contrato
+  // (scripts/check_ui_api_contract.py) só separa a query quando o '?' é literal.
+  return includeArchived
+    ? request<Tier[]>('/admin/tiers?include_archived=true')
+    : request<Tier[]>('/admin/tiers');
+}
+
+/** Puxa o catálogo do Ghost na hora, sem esperar o cron das 04h15. */
+export function syncTiers(): Promise<TierSyncResult> {
+  return request<TierSyncResult>('/admin/tiers/sync', { method: 'POST' });
+}
+
+/** Reativa o plano no Ghost (fonte da verdade) e traz o catálogo de volta. */
+export function unarchiveTier(id: number): Promise<Tier> {
+  return request<Tier>(`/admin/tiers/${id}/unarchive`, { method: 'POST' });
 }
 
 export function updateTier(id: number, patch: TierDetails): Promise<Tier> {

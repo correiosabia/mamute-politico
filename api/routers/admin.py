@@ -3,19 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from requests import RequestException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 try:
     from ..security import require_ghost_admin
     from ..dependencies import get_db
-    from ..db.models.project import Tiers
+    from ..db.models.project import Projetos, Tiers
     from ..db.models.admin_audit_log import AdminAuditLog
+    from ..services.ghost_admin import (
+        generate_admin_token,
+        get_ghost_admin_settings,
+        set_ghost_tier_active,
+    )
+    from ..services.ghost_tiers_sync import (
+        GhostTiersSyncError,
+        run_sync as run_ghost_tiers_sync,
+    )
     from ..services.admin_coverage import db_coverage
     from ..services.admin_metrics import (
         current_period_start,
@@ -32,8 +43,17 @@ try:
 except ImportError:  # execução dentro de api/
     from security import require_ghost_admin
     from dependencies import get_db
-    from db.models.project import Tiers
+    from db.models.project import Projetos, Tiers
     from db.models.admin_audit_log import AdminAuditLog
+    from services.ghost_admin import (
+        generate_admin_token,
+        get_ghost_admin_settings,
+        set_ghost_tier_active,
+    )
+    from services.ghost_tiers_sync import (
+        GhostTiersSyncError,
+        run_sync as run_ghost_tiers_sync,
+    )
     from services.admin_coverage import db_coverage
     from services.admin_metrics import (
         current_period_start,
@@ -47,6 +67,8 @@ except ImportError:  # execução dentro de api/
         metrics_user_detail,
         metrics_users,
     )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -66,6 +88,23 @@ class TierOut(BaseModel):
     detalhes: dict[str, Any]
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Estado espelhado do Ghost (CS-28). `arquivado` é o status lá; `deleted_at`
+    # é o efeito aqui, que só acontece quando não há assinante.
+    deleted_at: Optional[datetime] = None
+    arquivado: bool = False
+    pending_review: bool = False
+    orphan: bool = False
+    assinantes: int = 0
+
+
+class TierSyncOut(BaseModel):
+    """Resumo do que o sync mudou, para o painel mostrar o resultado."""
+
+    created: list[dict[str, Any]] = Field(default_factory=list)
+    updated: list[str] = Field(default_factory=list)
+    archived: list[dict[str, Any]] = Field(default_factory=list)
+    reactivated: list[str] = Field(default_factory=list)
+    orphans: list[str] = Field(default_factory=list)
 
 
 class TierDetailsUpdate(BaseModel):
@@ -102,13 +141,152 @@ def _log_admin_action(
     )
 
 
+def _tier_out(tier: Tiers, assinantes: int) -> TierOut:
+    ghost = tier.detalhes.get("ghost") if isinstance(tier.detalhes, dict) else None
+    ghost = ghost if isinstance(ghost, dict) else {}
+    return TierOut(
+        id=tier.id,
+        tier_name_debug=tier.tier_name_debug,
+        product_id=tier.product_id,
+        detalhes=dict(tier.detalhes or {}),
+        created_at=tier.created_at,
+        updated_at=tier.updated_at,
+        deleted_at=tier.deleted_at,
+        arquivado=ghost.get("active") is False,
+        pending_review=bool(ghost.get("pending_review")),
+        orphan=bool(ghost.get("orphan")),
+        assinantes=assinantes,
+    )
+
+
+def _assinantes_por_tier(db: Session) -> dict[Any, int]:
+    stmt = (
+        select(Projetos.tier_id, func.count(Projetos.id))
+        .where(Projetos.deleted_at.is_(None), Projetos.tier_id.is_not(None))
+        .group_by(Projetos.tier_id)
+    )
+    return {tier_id: total for tier_id, total in db.execute(stmt).all()}
+
+
 @router.get("/tiers", response_model=list[TierOut])
 def list_tiers(
+    include_archived: bool = False,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_ghost_admin),
-) -> list[Tiers]:
-    stmt = select(Tiers).where(Tiers.deleted_at.is_(None)).order_by(Tiers.id)
-    return list(db.execute(stmt).scalars().all())
+) -> list[TierOut]:
+    """Lista os planos. `include_archived` traz também os arquivados no Ghost."""
+    stmt = select(Tiers)
+    if not include_archived:
+        stmt = stmt.where(Tiers.deleted_at.is_(None))
+    stmt = stmt.order_by(Tiers.id)
+
+    assinantes = _assinantes_por_tier(db)
+    tiers = list(db.execute(stmt).scalars().all())
+    return [_tier_out(tier, assinantes.get(tier.id, 0)) for tier in tiers]
+
+
+@router.post("/tiers/sync", response_model=TierSyncOut)
+def sync_tiers_route(
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> TierSyncOut:
+    """Puxa o catálogo do Ghost na hora, sem esperar o cron das 04h15."""
+    try:
+        summary = run_ghost_tiers_sync(db)
+    except GhostTiersSyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except RequestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Falha ao consultar os planos no Ghost.",
+        ) from exc
+
+    resultado = summary.as_dict()
+    if summary.changed:
+        _log_admin_action(
+            db,
+            admin_email=admin_email,
+            action="sync_tiers",
+            entity="tiers",
+            entity_id="*",
+            before=None,
+            after=resultado,
+        )
+        db.commit()
+    return TierSyncOut(**resultado)
+
+
+@router.post("/tiers/{tier_id}/unarchive", response_model=TierOut)
+def unarchive_tier(
+    tier_id: int,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> TierOut:
+    """Reativa o plano no Ghost e traz o catálogo de volta.
+
+    O status é do Ghost, não do painel: por isso a reativação é escrita lá e o
+    estado local só reflete o que voltou.
+    """
+    tier = db.get(Tiers, tier_id)
+    if tier is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
+        )
+
+    detalhes = dict(tier.detalhes or {})
+    ghost = detalhes.get("ghost") if isinstance(detalhes.get("ghost"), dict) else {}
+    ghost_tier_id = ghost.get("target_tier_id") or (
+        tier.product_id if tier.product_id != "free" else None
+    )
+    if not ghost_tier_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Plano sem id do Ghost; não dá para reativar por aqui.",
+        )
+
+    settings = get_ghost_admin_settings()
+    if settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GHOST_API/GHOST_ADMIN_URL ausentes.",
+        )
+
+    try:
+        token = generate_admin_token(settings.api_key)
+        set_ghost_tier_active(settings.admin_url, token, str(ghost_tier_id), True)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plano não existe mais no Ghost.",
+        ) from exc
+    except RequestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Falha ao reativar o plano no Ghost.",
+        ) from exc
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="unarchive_tier",
+        entity="tiers",
+        entity_id=str(tier_id),
+        before={"deleted_at": str(tier.deleted_at), "ghost": ghost},
+        after={"active": True},
+    )
+    db.commit()
+
+    try:
+        run_ghost_tiers_sync(db)
+    except (GhostTiersSyncError, RequestException):
+        # O Ghost já aceitou a reativação; o cron reconcilia o resto.
+        logger.warning("Reativação gravada no Ghost, mas o re-sync falhou.", exc_info=True)
+
+    db.refresh(tier)
+    assinantes = _assinantes_por_tier(db).get(tier.id, 0)
+    return _tier_out(tier, assinantes)
 
 
 @router.put("/tiers/{tier_id}", response_model=TierOut)

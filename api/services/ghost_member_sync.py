@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
@@ -15,6 +16,30 @@ try:
     from ..db.models.project import Projetos, Tiers
 except (ImportError, ValueError):  # pragma: no cover - caminho Docker/top-level.
     from db.models.project import Projetos, Tiers
+
+logger = logging.getLogger(__name__)
+
+
+def _run_tier_sync(session: Session) -> bool:
+    """Puxa o catálogo de planos do Ghost. Fail-soft: webhook nunca quebra.
+
+    Rede de segurança do CS-28: se o cliente cria um plano no Ghost e alguém
+    assina antes do cron das 04h15, o tier ainda não existe aqui e o membro
+    ficaria sem projeto. Aqui a gente busca o catálogo na hora e tenta de novo.
+    """
+    try:
+        try:
+            from .ghost_tiers_sync import run_sync
+        except ImportError:  # pragma: no cover - caminho Docker/top-level.
+            from services.ghost_tiers_sync import run_sync
+
+        run_sync(session)
+        return True
+    except Exception:  # noqa: BLE001 — indisponibilidade do Ghost não pode quebrar o webhook
+        logger.warning(
+            "Falha ao sincronizar tiers do Ghost sob demanda; seguindo.", exc_info=True
+        )
+        return False
 
 
 @dataclass(frozen=True)
@@ -157,6 +182,9 @@ def sync_member_project(
 
     product_ids = resolve_product_ids(current_member)
     tier = _get_tier_by_product_ids(session, product_ids)
+    if tier is None and _run_tier_sync(session):
+        # Plano recém-criado no Ghost: agora que o catálogo veio, tenta de novo.
+        tier = _get_tier_by_product_ids(session, product_ids)
     product_id = tier.product_id if tier is not None else product_ids[0]
     if tier is None:
         return GhostMemberProjectSyncResult(
