@@ -48,8 +48,11 @@ export interface TierSyncResult {
 }
 
 export function fetchTiers(includeArchived = false): Promise<Tier[]> {
-  const qs = includeArchived ? '?include_archived=true' : '';
-  return request<Tier[]>(`/admin/tiers${qs}`);
+  // Dois literais em vez de querystring interpolada: o checador de contrato
+  // (scripts/check_ui_api_contract.py) só separa a query quando o '?' é literal.
+  return includeArchived
+    ? request<Tier[]>('/admin/tiers?include_archived=true')
+    : request<Tier[]>('/admin/tiers');
 }
 
 /** Puxa o catálogo do Ghost na hora, sem esperar o cron das 04h15. */
