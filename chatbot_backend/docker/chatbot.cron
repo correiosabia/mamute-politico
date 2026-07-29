@@ -1,0 +1,16 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PYTHONPATH=/app
+
+# Sincronização incremental das notas taquigráficas com o índice vetorial.
+#
+# Cadência de 6h com janela de 8h: a sobreposição garante que uma execução que
+# falhe não deixe um buraco permanente no índice — a rodada seguinte recobre o
+# período. Reprocessar é seguro porque o script apaga os chunks anteriores do
+# discurso (por `source`) antes de reinserir.
+#
+# O flock evita que uma rodada lenta se acumule com a próxima.
+#
+# `cd /app` é obrigatório: as configurações são lidas de /app/.env, resolvido a
+# partir do diretório de trabalho.
+7 */6 * * * cd /app && /usr/bin/flock -n /tmp/sync_transcripts.lock /usr/local/bin/python -m chatbot_backend.scripts.sync_transcripts --window-hours 8 >> /proc/1/fd/1 2>> /proc/1/fd/2

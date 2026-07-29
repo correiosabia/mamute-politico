@@ -52,6 +52,12 @@ const PesquisaIAPage = () => {
   const messagesRef = useRef<Message[]>(messages);
   messagesRef.current = messages;
   const urlAutoSendConsumed = useRef(false);
+  /**
+   * Vínculo com o parlamentar quando a pergunta veio da nuvem de palavras. Fica
+   * amarrado ao texto exato que foi pré-preenchido: se a pessoa reescrever a
+   * pergunta, o filtro deixa de valer e a busca volta a ser ampla.
+   */
+  const perguntaComParlamentar = useRef<{ question: string; id: number } | null>(null);
   const quotaQuery = useQuery({
     queryKey: ['chatbot-quota'],
     queryFn: () => getChatbotQuota(),
@@ -147,9 +153,17 @@ const PesquisaIAPage = () => {
     };
 
     try {
+      const vinculo = perguntaComParlamentar.current;
+      const filters =
+        vinculo && vinculo.question === question
+          ? { parliamentarian_ids: [vinculo.id] }
+          : undefined;
+      perguntaComParlamentar.current = null;
+
       await streamChat({
         question,
         history: historyForApi,
+        ...(filters ? { filters } : {}),
         signal: controller.signal,
         onToken: (t) => {
           pending += t;
@@ -192,6 +206,12 @@ const PesquisaIAPage = () => {
     const pergunta = searchParams.get('pergunta')?.trim();
     if (!pergunta || pergunta.length < MIN_QUESTION_LEN) return;
     if (urlAutoSendConsumed.current) return;
+
+    const parlamentarId = Number(searchParams.get('parlamentarId'));
+    perguntaComParlamentar.current =
+      Number.isInteger(parlamentarId) && parlamentarId > 0
+        ? { question: pergunta, id: parlamentarId }
+        : null;
 
     urlAutoSendConsumed.current = true;
     setInput(pergunta);

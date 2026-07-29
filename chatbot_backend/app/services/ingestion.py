@@ -72,11 +72,49 @@ def build_documents(
         metadatas=[metadata],
     )
 
+    # Cada chunk é recuperado isoladamente pela busca vetorial. Sem repetir a
+    # identificação em todos eles, um trecho que caia no meio do discurso chega
+    # ao LLM sem dizer quem falou — foi assim que perguntas do tipo "o que o
+    # parlamentar X diz sobre Y" passaram a não encontrar nada.
+    header = _build_speaker_header(row)
+
     for index, document in enumerate(documents):
+        if header:
+            document.page_content = f"{header}\n{document.page_content}"
         document.metadata["chunk_index"] = index
         document.metadata["chunk_id"] = f"{source}:{index}"
 
     return documents
+
+
+def _build_speaker_header(row: Mapping[str, object]) -> str:
+    """Monta a linha de identificação repetida em todos os chunks."""
+
+    name = (str(row.get("parliamentarian_name") or "")).strip()
+    if not name:
+        return ""
+
+    party = (str(row.get("parliamentarian_party") or "")).strip().upper()
+    state = (str(row.get("parliamentarian_state") or "")).strip().upper()
+    role = (str(row.get("parliamentarian_role") or "")).strip()
+
+    identification = name
+    if party and state:
+        identification += f" ({party}-{state})"
+    elif party:
+        identification += f" ({party})"
+    elif state:
+        identification += f" ({state})"
+
+    parts = [f"Parlamentar: {identification}"]
+    if role:
+        parts.append(role.capitalize())
+
+    date = _format_date(row.get("date"))
+    if date:
+        parts.append(f"Data: {date}")
+
+    return " • ".join(parts)
 
 
 def _format_date(value: object) -> str | None:

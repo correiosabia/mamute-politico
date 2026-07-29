@@ -47,8 +47,41 @@ python -m chatbot_backend.scripts.init_vector_collection
 O script garante que as extensões necessárias (`vector`, `pgcrypto`) estejam ativas, cria as tabelas padrão (`langchain_pg_collection`, `langchain_pg_embedding`), configura índices e registra a coleção definida em `PGVECTOR_COLLECTION`. Caso já exista, nada é sobrescrito. Use `--dimension 3072` para informar manualmente a dimensão do vetor (por padrão é detectada via API do OpenAI).
 
 > Observação: se preferir não expor `OPENAI_API_KEY` nesse momento, utilize o parâmetro `--dimension` para evitar a chamada à API de embeddings.
->
-> Limite de índices: o índice IVFFLAT não é criado automaticamente quando a dimensão do embedding excede 2000 (limitação do pgvector). Para embeddings maiores, considere usar um modelo menor (`text-embedding-3-small`, 1536 dimensões) ou criar manualmente uma estratégia alternativa (por exemplo, HNSW quando disponível).
+
+### Por que a coluna de embedding é `halfvec`
+
+O pgvector recusa criar índice — HNSW ou IVFFlat — em coluna `vector` com mais de
+2000 dimensões:
+
+```
+ERROR: column cannot have more than 2000 dimensions for hnsw index
+```
+
+O modelo em uso (`text-embedding-3-large`) devolve 3072. Sem índice, cada
+pergunta vira um scan sequencial da tabela inteira. Medido em produção com 20 mil
+linhas — extrapolando para os ~332 mil chunks do acervo completo:
+
+| Estratégia | 20k linhas | ~332k chunks (projetado) |
+| --- | --- | --- |
+| `vector(3072)` sem índice | 712 ms | ~9 s por pergunta |
+| `halfvec(3072)` + HNSW | **5 ms** | ~5 ms |
+
+Por isso o `init_vector_collection` grava a coluna como `halfvec(dimensão)`
+quando a dimensão passa de 2000, e cria índice HNSW de distância cosseno. O
+`halfvec` **preserva todas as 3072 dimensões** — o que muda é a precisão
+numérica de cada componente (meia precisão), abordagem recomendada pelo próprio
+pgvector acima de 2000 dimensões. O modelo de embeddings não é alterado.
+
+Duas consequências a ter em mente:
+
+- exige **pgvector >= 0.7** no banco apontado por `PGVECTOR_CONNECTION` (o
+  serviço `pgvector-db` do compose roda 0.8.x; o Postgres do host, 0.6.0, não
+  serve);
+- HNSW é um índice **aproximado** por construção, em qualquer dimensão. O recall
+  típico fica em 95-99% e é ajustável via `ef_search`. Busca exata só sem índice.
+
+O `ALTER TABLE` gerado converte a coluna preservando os dados, então roda tanto
+em tabela vazia quanto populada.
 
 Caso o banco já tenha um esquema anterior (ex.: tabelas criadas com outra estrutura), rode com `--reset` para remover e recriar:
 
@@ -66,16 +99,70 @@ python -m chatbot_backend.scripts.ingest_transcripts --batch-size 200
 
 O script lê as notas diretamente da tabela `speeches_transcripts`, cria chunks com `RecursiveCharacterTextSplitter` e adiciona documentos ao índice definido em `PGVECTOR_COLLECTION`.
 
-Cada chunk recebe metadados `speech_id`, `parliamentarian_id`, `date`, `session_number` e `type`, permitindo rastreamento e filtros posteriores no JSONB (`cmetadata`) armazenado no PostgreSQL.
+Cada chunk recebe metadados `speech_id`, `parliamentarian_id`, `date`, `session_number` e `type`, permitindo rastreamento e filtros posteriores no JSONB (`cmetadata`) armazenado no PostgreSQL. O texto de cada chunk começa por uma linha identificando quem discursou (`Parlamentar: Nome (PARTIDO-UF) • ... • Data: ...`): como os chunks são recuperados isoladamente, sem essa repetição um trecho do meio do discurso chega ao modelo sem dizer de quem é a fala.
+
+A carga é paginada por *keyset* (`id > último`) e grava o progresso a cada lote:
+
+```bash
+# retoma automaticamente de onde parou
+python -m chatbot_backend.scripts.ingest_transcripts --batch-size 200
+
+# recomeça do zero, ignorando o checkpoint
+python -m chatbot_backend.scripts.ingest_transcripts --no-resume
+```
+
+O arquivo de checkpoint é `ingest_transcripts.checkpoint` no diretório de trabalho (ajustável com `--checkpoint`). Os embeddings de um lote inteiro vão numa única chamada à API — uma requisição por discurso tornaria a carga completa (~122 mil discursos) inviável.
+
 ## Sincronização contínua
 
 Para manter o índice atualizado, execute periodicamente:
 
 ```bash
-python -m chatbot_backend.scripts.sync_transcripts --window-hours 6
+python -m chatbot_backend.scripts.sync_transcripts --window-hours 8
 ```
 
 O comando carrega discursos inseridos/atualizados na janela especificada, remove chunks anteriores do mesmo discurso e reindexa os novos. Utilize `--since 2024-03-01T00:00:00Z` para sincronizar a partir de um instante fixo ou `--dry-run` para apenas inspecionar o que seria carregado.
+
+**Em produção isso já roda sozinho**: o container do chatbot sobe um `cron`
+(`docker/chatbot.cron`) que executa a sincronização a cada 6 horas com janela de
+8 — a sobreposição garante que uma execução falha não deixe buraco permanente no
+índice, já que reprocessar é idempotente. A saída dos jobs aparece no
+`docker logs` do container.
+
+## Carga inicial em produção (runbook)
+
+A sincronização de 6h só cobre o que mudou na janela — ela **não** popula um
+índice vazio. A carga inicial é manual e roda uma vez:
+
+```bash
+# 1. Confirmar para onde aponta o índice (precisa ser pgvector >= 0.7)
+docker exec prod-mamute-politico-chatbot sh -c 'grep PGVECTOR_CONNECTION /app/.env'
+
+# 2. Criar coleção, tipo halfvec da coluna e índice HNSW
+docker exec prod-mamute-politico-chatbot \
+  python -m chatbot_backend.scripts.init_vector_collection --dimension 3072
+
+# 3. Carga completa (~122 mil discursos). Longa: rode destacada do terminal.
+#    O checkpoint permite reexecutar o mesmo comando para retomar após queda.
+docker exec -d prod-mamute-politico-chatbot \
+  python -m chatbot_backend.scripts.ingest_transcripts --batch-size 200
+
+# 4. Acompanhar
+docker exec prod-mamute-politico-chatbot cat /app/ingest_transcripts.checkpoint
+```
+
+Conferência de que o índice saiu do zero:
+
+```sql
+SELECT count(*) AS chunks,
+       count(DISTINCT cmetadata->>'speech_id') AS discursos
+FROM langchain_pg_embedding;
+```
+
+> O índice HNSW é criado no passo 2, com a tabela ainda vazia — o pgvector
+> constrói o grafo incrementalmente conforme as linhas entram. Criar o índice
+> depois da carga também funciona e é mais rápido, mas exige `maintenance_work_mem`
+> alto para não degradar.
 
 ## Executando a API
 
