@@ -28,6 +28,10 @@ try:
         run_sync as run_ghost_tiers_sync,
     )
     from ..services.admin_coverage import db_coverage
+    from ..services.word_cloud_terms import (
+        get_terms as get_word_cloud_terms,
+        replace_terms as replace_word_cloud_terms,
+    )
     from ..services.admin_metrics import (
         current_period_start,
         get_usd_brl_rate,
@@ -55,6 +59,10 @@ except ImportError:  # execução dentro de api/
         run_sync as run_ghost_tiers_sync,
     )
     from services.admin_coverage import db_coverage
+    from services.word_cloud_terms import (
+        get_terms as get_word_cloud_terms,
+        replace_terms as replace_word_cloud_terms,
+    )
     from services.admin_metrics import (
         current_period_start,
         get_usd_brl_rate,
@@ -405,3 +413,45 @@ def metrics_user_detail_route(
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")
     return detail
+
+
+class WordCloudTermsUpdate(BaseModel):
+    """Listas completas — a tela edita e salva de uma vez."""
+
+    stopwords: list[str] = Field(default_factory=list)
+    excluded_terms: list[str] = Field(default_factory=list)
+
+
+class WordCloudTermsOut(BaseModel):
+    stopwords: list[str]
+    excluded_terms: list[str]
+
+
+@router.get("/settings/word-cloud-terms", response_model=WordCloudTermsOut)
+def read_word_cloud_terms_admin(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, list[str]]:
+    return get_word_cloud_terms(db)
+
+
+@router.put("/settings/word-cloud-terms", response_model=WordCloudTermsOut)
+def update_word_cloud_terms_route(
+    payload: WordCloudTermsUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict[str, list[str]]:
+    before = get_word_cloud_terms(db)
+    after = replace_word_cloud_terms(db, payload.stopwords, payload.excluded_terms)
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_word_cloud_terms",
+        entity="word_cloud_terms",
+        entity_id="global",
+        before=before,
+        after=after,
+    )
+    db.commit()
+    return after

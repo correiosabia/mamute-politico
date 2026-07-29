@@ -2,14 +2,15 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { listParliamentarianSpeechAnalysis } from '@/api/endpoints';
+import { fetchWordCloudTermsPublic, listParliamentarianSpeechAnalysis } from '@/api/endpoints';
 import type { SpeechAnalysisSummaryOut } from '@/api/types';
 import { Loader2 } from 'lucide-react';
-
-// TODO: Extract to a config file
-const STOPWORDS = new Set(
-  'aprovação projeto aprovamos pec relator presidente obrigado sessão senador senadora a o e de da do em um uma os as dos das ao aos no na nos nas pelo pela pelos pelas que para por com sem sob sobre até durante'.split(' ')
-);
+import {
+  FALLBACK_TERM_LISTS,
+  buildTermLists,
+  filterWordCloudTerm,
+  type WordCloudTermLists,
+} from './wordCloudTerms';
 
 interface CloudWord {
   text: string;
@@ -19,6 +20,7 @@ interface CloudWord {
 
 function extractWordsFromAnalysis(
   analysisSummaries: SpeechAnalysisSummaryOut[],
+  lists: WordCloudTermLists,
   maxWords = 20
 ): CloudWord[] {
   const aggregated = new Map<string, { frequency: number; rank: number }>();
@@ -30,12 +32,8 @@ function extractWordsFromAnalysis(
     const rawTerm = keyword.term || keyword.keyword;
     if (!rawTerm) continue;
 
-    const term = rawTerm
-      .toLowerCase()
-      .replace(/[^\p{L}\s]/gu, ' ')
-      .trim();
-
-    if (!term || STOPWORDS.has(term) || term.length <= 2) continue;
+    const term = filterWordCloudTerm(rawTerm, lists);
+    if (!term) continue;
 
     const current = aggregated.get(term);
     if (current) {
@@ -90,10 +88,25 @@ export function WordCloud({ parliamentarianId, parlamentarNome }: WordCloudProps
     enabled: parliamentarianId != null && parliamentarianId > 0,
   });
 
+  // Listas geridas em Configurações gerais. Globais e de mudança rara, por isso
+  // cache longo. Se a chamada falhar, cai no fallback embutido: nuvem sem
+  // filtro nenhum é pior que nuvem com filtro desatualizado.
+  const { data: termsPayload } = useQuery({
+    queryKey: ['word-cloud-terms'],
+    queryFn: fetchWordCloudTermsPublic,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+
+  const termLists = useMemo(
+    () => (termsPayload ? buildTermLists(termsPayload) : FALLBACK_TERM_LISTS),
+    [termsPayload]
+  );
+
   const words = useMemo(() => {
     if (!analysisSummaries?.length) return [];
-    return extractWordsFromAnalysis(analysisSummaries);
-  }, [analysisSummaries]);
+    return extractWordsFromAnalysis(analysisSummaries, termLists);
+  }, [analysisSummaries, termLists]);
 
   if (parliamentarianId == null || parliamentarianId <= 0) {
     return (

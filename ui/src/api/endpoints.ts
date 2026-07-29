@@ -384,3 +384,13 @@ export function listParliamentarianSpeechAnalysis(
     `/analysis/parliamentarian/${parliamentarianCode}${q ? `?${q}` : ''}`
   );
 }
+
+/** Listas de filtro da nuvem de palavras, geridas em Configurações gerais. */
+export function fetchWordCloudTermsPublic(): Promise<{
+  stopwords: string[];
+  excluded_terms: string[];
+}> {
+  return request<{ stopwords: string[]; excluded_terms: string[] }>(
+    '/settings/word-cloud-terms'
+  );
+}

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listParliamentarianSpeechAnalysis } from '@/api/endpoints';
+import { fetchWordCloudTermsPublic, listParliamentarianSpeechAnalysis } from '@/api/endpoints';
 import { WordCloud } from './WordCloud';
 
 /**
@@ -21,9 +21,11 @@ vi.mock('react-router-dom', async () => {
 
 vi.mock('@/api/endpoints', () => ({
   listParliamentarianSpeechAnalysis: vi.fn(),
+  fetchWordCloudTermsPublic: vi.fn(),
 }));
 
 const mockedList = vi.mocked(listParliamentarianSpeechAnalysis);
+const mockedTerms = vi.mocked(fetchWordCloudTermsPublic);
 
 function renderCloud() {
   const queryClient = new QueryClient({
@@ -42,6 +44,7 @@ function renderCloud() {
 describe('WordCloud — navegação para a Pesquisa IA', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedTerms.mockResolvedValue({ stopwords: [], excluded_terms: [] });
     mockedList.mockResolvedValue([
       {
         primary_keyword: { term: 'banco', frequency: 42, rank: 1 },
@@ -64,6 +67,29 @@ describe('WordCloud — navegação para a Pesquisa IA', () => {
 
     expect(destino.pathname).toBe('/pesquisa');
     expect(params.get('parlamentarId')).toBe('544');
+  });
+
+  it('aplica as listas vindas da API', async () => {
+    mockedTerms.mockResolvedValue({ stopwords: [], excluded_terms: ['banco'] });
+
+    renderCloud();
+
+    expect(await screen.findByText(/segurança pública/i)).toBeInTheDocument();
+    expect(screen.queryByText(/banco/i)).not.toBeInTheDocument();
+  });
+
+  it('cai no fallback embutido quando a API de termos falha', async () => {
+    // Nuvem sem filtro nenhum é pior que nuvem com filtro desatualizado.
+    mockedTerms.mockRejectedValue(new Error('502'));
+    mockedList.mockResolvedValue([
+      { primary_keyword: { term: 'presidente', frequency: 90, rank: 1 } },
+      { primary_keyword: { term: 'amazônia', frequency: 10, rank: 2 } },
+    ] as never);
+
+    renderCloud();
+
+    expect(await screen.findByText(/amazônia/i)).toBeInTheDocument();
+    expect(screen.queryByText(/presidente/i)).not.toBeInTheDocument();
   });
 
   it('mantém a pergunta e o autoSend', async () => {

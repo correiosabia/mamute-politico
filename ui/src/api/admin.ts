@@ -290,3 +290,26 @@ export interface UserDetail extends MetricsUser {
 export function fetchUserDetail(id: number): Promise<UserDetail> {
   return request<UserDetail>(`/admin/metrics/users/${id}`);
 }
+
+/**
+ * Listas de filtro da nuvem de palavras (Configurações gerais).
+ *
+ * `stopwords` somem palavra a palavra de dentro de expressões;
+ * `excluded_terms` descartam a entrada inteira.
+ */
+export interface WordCloudTerms {
+  stopwords: string[];
+  excluded_terms: string[];
+}
+
+export function fetchWordCloudTerms(): Promise<WordCloudTerms> {
+  return request<WordCloudTerms>('/admin/settings/word-cloud-terms');
+}
+
+/** Substitui as duas listas por completo — a tela salva o estado inteiro. */
+export function saveWordCloudTerms(terms: WordCloudTerms): Promise<WordCloudTerms> {
+  return request<WordCloudTerms>('/admin/settings/word-cloud-terms', {
+    method: 'PUT',
+    body: JSON.stringify(terms),
+  });
+}

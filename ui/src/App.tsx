@@ -11,6 +11,7 @@ import DashboardPage from "./pages/DashboardPage";
 import PesquisaIAPage from "./pages/PesquisaIAPage";
 import AdminPage from "./pages/AdminPage";
 import AdminTiersPage from "./pages/AdminTiersPage";
+import AdminSettingsPage from './pages/AdminSettingsPage';
 import AdminMetricsPage from "./pages/AdminMetricsPage";
 import AdminMetricsUsersPage from "./pages/AdminMetricsUsersPage";
 import AdminToolsPage from "./pages/AdminToolsPage";
@@ -127,6 +128,14 @@ const App = () => (
                 element={
                   <RequireAdmin>
                     <AdminTiersPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/configuracoes"
+                element={
+                  <RequireAdmin>
+                    <AdminSettingsPage />
                   </RequireAdmin>
                 }
               />
