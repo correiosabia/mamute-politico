@@ -22,9 +22,10 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import text
 
+from chatbot_backend.app.core.config import get_settings
 from chatbot_backend.app.core.database import get_session
 from chatbot_backend.app.services.ingestion import build_documents, create_splitter
-from chatbot_backend.app.services.vector_store import get_vector_store
+from chatbot_backend.app.services.vector_store import get_vector_engine, get_vector_store
 
 DEFAULT_CHECKPOINT = Path("ingest_transcripts.checkpoint")
 
@@ -56,9 +57,43 @@ def documents_for_rows(
     return documents
 
 
-def _fetch_batch(after_id: Optional[int], limit: int) -> list[dict]:
-    query = text(
-        """
+def delete_chunks_by_ids(chunk_ids: Sequence[str]) -> None:
+    """Apaga chunks pelo `custom_id`, tornando a reinserção do lote segura.
+
+    `PGVector.add_embeddings` usa `bulk_save_objects` — INSERT puro, sem upsert.
+    Com `custom_id` UNIQUE, refazer um lote já gravado estouraria IntegrityError.
+    """
+
+    if not chunk_ids:
+        return
+
+    settings = get_settings()
+    statement = text(
+        "DELETE FROM langchain_pg_embedding "
+        "WHERE custom_id = ANY(:ids) "
+        "AND collection_id = ("
+        "SELECT uuid FROM langchain_pg_collection WHERE name = :collection"
+        ")"
+    )
+    with get_vector_engine().begin() as conn:
+        conn.execute(
+            statement,
+            {
+                "ids": list(chunk_ids),
+                "collection": settings.pgvector_collection_name,
+            },
+        )
+
+
+def build_fetch_batch_sql() -> str:
+    """Consulta paginada por keyset.
+
+    O cast `::bigint` é obrigatório: no primeiro lote `after_id` vai como NULL e,
+    sem o tipo declarado, o Postgres recusa a consulta com
+    `AmbiguousParameter: could not determine data type of parameter $1`.
+    """
+
+    return """
         SELECT
             st.id,
             st.date,
@@ -73,11 +108,14 @@ def _fetch_batch(after_id: Optional[int], limit: int) -> list[dict]:
             p.type AS parliamentarian_role
         FROM speeches_transcripts st
         LEFT JOIN parliamentarian p ON p.id = st.parliamentarian_id
-        WHERE (:after_id IS NULL OR st.id > :after_id)
+        WHERE (:after_id::bigint IS NULL OR st.id > :after_id::bigint)
         ORDER BY st.id ASC
         LIMIT :limit
         """
-    )
+
+
+def _fetch_batch(after_id: Optional[int], limit: int) -> list[dict]:
+    query = text(build_fetch_batch_sql())
     with get_session() as session:
         rows = session.execute(
             query, {"after_id": after_id, "limit": limit}
@@ -114,6 +152,10 @@ def run(
                 for doc in documents
                 if doc.metadata and isinstance(doc.metadata.get("chunk_id"), str)
             ]
+            # Apagar antes de inserir deixa o lote idempotente: se o processo
+            # cair entre o commit e a gravação do checkpoint, a retomada refaz
+            # este lote sem colidir com o UNIQUE de `custom_id`.
+            delete_chunks_by_ids(chunk_ids)
             vector_store.add_documents(documents, ids=chunk_ids)
             processed_chunks += len(documents)
 

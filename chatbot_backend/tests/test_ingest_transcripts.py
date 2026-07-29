@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from chatbot_backend.app.services.ingestion import create_splitter
 from chatbot_backend.scripts import ingest_transcripts as ingest
 
@@ -62,6 +64,30 @@ class TestDocumentosPorLote:
         assert "Discurso número 2" not in conteudo
 
 
+class TestSQLDePaginacao:
+    """O primeiro lote manda `after_id = NULL`.
+
+    Sem cast explícito o Postgres não consegue inferir o tipo do parâmetro e
+    recusa a consulta inteira com `AmbiguousParameter: could not determine data
+    type of parameter $1` — a carga nem começava.
+    """
+
+    def test_after_id_tem_cast_explicito(self) -> None:
+        sql = ingest.build_fetch_batch_sql()
+
+        assert ":after_id::bigint" in sql
+        assert ":after_id IS NULL" not in sql
+
+    def test_pagina_por_keyset_e_nao_por_offset(self) -> None:
+        sql = ingest.build_fetch_batch_sql()
+
+        assert "st.id >" in sql
+        assert "OFFSET" not in sql.upper()
+
+    def test_ordena_por_id_para_o_keyset_ser_estavel(self) -> None:
+        assert "ORDER BY st.id ASC" in ingest.build_fetch_batch_sql()
+
+
 class TestCheckpoint:
     def test_grava_e_recupera_o_ultimo_id(self, tmp_path: Path) -> None:
         caminho = tmp_path / "ingest.checkpoint"
@@ -80,7 +106,64 @@ class TestCheckpoint:
         assert ingest.read_checkpoint(caminho) is None
 
 
+class TestIdempotenciaDoLote:
+    """`add_embeddings` do LangChain é INSERT puro (`bulk_save_objects`).
+
+    Como `custom_id` é UNIQUE, reprocessar um lote já gravado estoura
+    IntegrityError. A janela existe de verdade: se o processo cair entre o commit
+    do lote e a escrita do checkpoint, a retomada refaz esse lote. Numa carga de
+    ~600 lotes isso não é hipótese remota.
+    """
+
+    def test_remove_os_chunks_do_lote_antes_de_inserir(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        removidos: list[list[str]] = []
+        monkeypatch.setattr(ingest, "get_vector_store", lambda: FakeVectorStore())
+        monkeypatch.setattr(
+            ingest,
+            "_fetch_batch",
+            lambda after_id, limit: [_row(1)] if after_id is None else [],
+        )
+        monkeypatch.setattr(
+            ingest, "delete_chunks_by_ids", lambda ids: removidos.append(list(ids))
+        )
+
+        ingest.run(batch_size=200, checkpoint_path=tmp_path / "ck", resume=False)
+
+        assert removidos == [["speeches_transcripts:1:0"]]
+
+    def test_remove_antes_de_inserir_e_nao_depois(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        eventos: list[str] = []
+
+        class Store(FakeVectorStore):
+            def add_documents(self, documents, ids=None):  # noqa: ANN001
+                eventos.append("add")
+
+        monkeypatch.setattr(ingest, "get_vector_store", Store)
+        monkeypatch.setattr(
+            ingest,
+            "_fetch_batch",
+            lambda after_id, limit: [_row(1)] if after_id is None else [],
+        )
+        monkeypatch.setattr(
+            ingest, "delete_chunks_by_ids", lambda ids: eventos.append("delete")
+        )
+
+        ingest.run(batch_size=200, checkpoint_path=tmp_path / "ck", resume=False)
+
+        assert eventos == ["delete", "add"]
+
+
 class TestExecucao:
+    @pytest.fixture(autouse=True)
+    def _sem_banco_vetorial(self, monkeypatch):
+        """Neutraliza a limpeza do lote; ela tem cobertura própria acima."""
+
+        monkeypatch.setattr(ingest, "delete_chunks_by_ids", lambda ids: None)
+
     def test_envia_um_lote_unico_e_nao_uma_chamada_por_discurso(
         self, monkeypatch, tmp_path: Path
     ) -> None:
