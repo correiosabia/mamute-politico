@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     openai_embeddings_model: str = Field(
         default="text-embedding-3-large", alias="OPENAI_EMBEDDINGS_MODEL"
     )
+    # Textos por requisição de embeddings. A API recusa acima de 300k tokens por
+    # chamada, e limitar o lote por número de discursos não protege disso: um
+    # discurso longo rende muito mais chunks que um curto. 200 chunks de ~1200
+    # caracteres ficam na casa de 80k tokens — folga de mais de 3x.
+    openai_embeddings_batch_size: int = Field(
+        default=200, alias="OPENAI_EMBEDDINGS_BATCH_SIZE", ge=1
+    )
 
     database_url: str = Field(..., alias="DATABASE_URL")
     pgvector_connection: str = Field(..., alias="PGVECTOR_CONNECTION")

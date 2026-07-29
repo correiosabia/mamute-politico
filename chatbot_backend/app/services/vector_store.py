@@ -37,6 +37,10 @@ def get_embeddings() -> OpenAIEmbeddings:
         api_key=settings.openai_api_key.get_secret_value(),
         model=settings.openai_embeddings_model,
         base_url=settings.openai_base_url or None,
+        # Teto de textos por requisição HTTP. É esta trava — e não o tamanho do
+        # lote montado pelo script — que impede estourar o limite de tokens da
+        # API, já que o número de chunks por discurso varia muito.
+        chunk_size=settings.openai_embeddings_batch_size,
     )
 
 
