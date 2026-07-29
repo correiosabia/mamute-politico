@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 from chatbot_backend.app.services.ingestion import create_splitter
 from chatbot_backend.scripts import ingest_transcripts as ingest
@@ -72,11 +73,25 @@ class TestSQLDePaginacao:
     type of parameter $1` — a carga nem começava.
     """
 
-    def test_after_id_tem_cast_explicito(self) -> None:
+    def test_after_id_continua_sendo_um_bind_param(self) -> None:
+        """Asserção que pega o cast escrito na sintaxe errada.
+
+        O SQLAlchemy ignora `:param` seguido de `::` — o lookahead do parser
+        existe justamente para não quebrar casts de Postgres. Com
+        `:after_id::bigint` o `:after_id` literal chega ao banco e vira
+        `SyntaxError`. Só `CAST(:after_id AS bigint)` mantém o bind.
+        """
+
+        stmt = text(ingest.build_fetch_batch_sql())
+
+        assert "after_id" in stmt._bindparams
+
+    def test_after_id_tem_tipo_declarado(self) -> None:
         sql = ingest.build_fetch_batch_sql()
 
-        assert ":after_id::bigint" in sql
+        assert "CAST(:after_id AS bigint)" in sql
         assert ":after_id IS NULL" not in sql
+        assert ":after_id::" not in sql
 
     def test_pagina_por_keyset_e_nao_por_offset(self) -> None:
         sql = ingest.build_fetch_batch_sql()
