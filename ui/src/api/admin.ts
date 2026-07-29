@@ -313,3 +313,29 @@ export function saveWordCloudTerms(terms: WordCloudTerms): Promise<WordCloudTerm
     body: JSON.stringify(terms),
   });
 }
+
+/**
+ * Saldo do OpenRouter e repartição do gasto (CS-31).
+ *
+ * `embeddings_usd` é derivado: a API do provedor não separa por finalidade
+ * (o endpoint de atividade exige management key), então o gasto de embeddings
+ * sai da diferença entre o total consumido e o custo medido do chatbot.
+ */
+export type CreditStatus = 'ok' | 'atencao' | 'critico' | 'desconhecido';
+
+export interface CreditsMetrics {
+  /** false quando o OpenRouter não respondeu — os valores vêm nulos. */
+  disponivel: boolean;
+  status: CreditStatus;
+  total_credits_usd: number | null;
+  total_usage_usd: number | null;
+  disponivel_usd: number | null;
+  chatbot_usd: number | null;
+  embeddings_usd: number | null;
+  limiar_atencao_usd: number;
+  limiar_critico_usd: number;
+}
+
+export function fetchCredits(): Promise<CreditsMetrics> {
+  return request<CreditsMetrics>('/admin/metrics/credits');
+}

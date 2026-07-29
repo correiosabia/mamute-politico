@@ -10,14 +10,18 @@ import {
   YAxis,
 } from 'recharts';
 import { MetricsLayout } from '@/components/admin/MetricsLayout';
-import { useIa } from '@/hooks/useMetrics';
+import { useCredits, useIa } from '@/hooks/useMetrics';
+import { CreditsPanel } from '@/components/admin/CreditsPanel';
 import { brl, num } from '@/lib/adminFormat';
 
 export default function AdminIaPage() {
   const { data, isLoading } = useIa();
+  const credits = useCredits();
 
   return (
     <MetricsLayout title="IA" subtitle="Uso, custo e tokens do chatbot no mês corrente.">
+      {credits.data && <CreditsPanel data={credits.data} />}
+
       {isLoading && (
         <div className="mp-card flex items-center gap-2 bg-white p-6 text-[#383838]/60">
           <Loader2 className="h-5 w-5 animate-spin" />
