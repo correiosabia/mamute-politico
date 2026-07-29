@@ -48,6 +48,52 @@ class InitCollectionConfig(BaseSettings):
     )
 
 
+# Acima deste limite o pgvector recusa criar índice (HNSW ou IVFFlat) sobre uma
+# coluna `vector`. O tipo `halfvec` indexa até 4000 dimensões guardando cada
+# componente em meia precisão — todas as dimensões do vetor são preservadas.
+MAX_INDEXABLE_VECTOR_DIMS = 2000
+
+
+def vector_column_type(dimension: int) -> str:
+    """Tipo de coluna capaz de armazenar E indexar vetores dessa dimensão."""
+
+    if dimension > MAX_INDEXABLE_VECTOR_DIMS:
+        return f"halfvec({dimension})"
+    return f"vector({dimension})"
+
+
+def vector_index_opclass(dimension: int) -> str:
+    """Operator class de distância cosseno correspondente ao tipo da coluna."""
+
+    if dimension > MAX_INDEXABLE_VECTOR_DIMS:
+        return "halfvec_cosine_ops"
+    return "vector_cosine_ops"
+
+
+def build_vector_index_statements(dimension: int) -> list[str]:
+    """DDL que ajusta o tipo da coluna e cria o índice HNSW.
+
+    O ALTER converte a coluna já existente (o LangChain cria `vector` sem
+    dimensão declarada, e coluna sem dimensão não aceita índice nenhum). Como o
+    cast preserva os valores, roda tanto em tabela vazia quanto populada.
+    """
+
+    column_type = vector_column_type(dimension)
+    opclass = vector_index_opclass(dimension)
+
+    return [
+        (
+            "ALTER TABLE langchain_pg_embedding "
+            f"ALTER COLUMN embedding TYPE {column_type} "
+            f"USING embedding::{column_type}"
+        ),
+        (
+            "CREATE INDEX IF NOT EXISTS langchain_pg_embedding_embedding_idx "
+            f"ON langchain_pg_embedding USING hnsw (embedding {opclass})"
+        ),
+    ]
+
+
 def _normalize_connection_url(connection: str) -> str:
     url = connection.strip()
     if "://" not in url:
@@ -156,7 +202,7 @@ def _ensure_tables(engine: Engine, dimension: int) -> None:
                     uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
                     custom_id TEXT UNIQUE,
                     collection_id UUID REFERENCES langchain_pg_collection(uuid) ON DELETE CASCADE,
-                    embedding VECTOR({dimension}),
+                    embedding {vector_column_type(dimension)},
                     document TEXT,
                     cmetadata JSONB,
                     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -172,32 +218,12 @@ def _ensure_tables(engine: Engine, dimension: int) -> None:
                 """
             )
         )
-        if dimension <= 2000:
-            conn.execute(
-                text(
-                    """
-                    DO $$
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1
-                            FROM pg_indexes
-                            WHERE schemaname = current_schema()
-                              AND indexname = 'langchain_pg_embedding_embedding_idx'
-                        ) THEN
-                            CREATE INDEX langchain_pg_embedding_embedding_idx
-                            ON langchain_pg_embedding
-                            USING ivfflat (embedding vector_cosine_ops)
-                            WITH (lists = 100);
-                        END IF;
-                    END $$;
-                    """
-                )
-            )
-        else:
-            print(
-                "[aviso] Dimensão do embedding excede 2000; índice IVFFLAT não será criado. "
-                "Considere usar um modelo de embeddings menor ou ajustar manualmente a estratégia de indexação."
-            )
+        for statement in build_vector_index_statements(dimension):
+            conn.execute(text(statement))
+        print(
+            f"[info] Coluna de embedding em {vector_column_type(dimension)} "
+            "com índice HNSW (distância cosseno)."
+        )
         conn.execute(
             text(
                 """

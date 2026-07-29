@@ -88,11 +88,36 @@ class ChatbotService:
             metadata = doc.metadata or {}
             source = metadata.get("source") or metadata.get("id") or "desconhecido"
             heading = f"Fonte: {source}"
+            # Sem o autor no cabeçalho o modelo não consegue atribuir a fala a
+            # ninguém — era a causa das respostas "não encontrei informações
+            # sobre o parlamentar X" mesmo com o trecho dele em mãos.
+            speaker = ChatbotService._describe_speaker(metadata)
+            if speaker:
+                heading += f" • Parlamentar: {speaker}"
             if "date" in metadata:
                 heading += f" • Data: {metadata['date']}"
             body = doc.page_content.strip()
             chunks.append(f"{heading}\n{body}")
         return "\n\n".join(chunks)
+
+    @staticmethod
+    def _describe_speaker(metadata: Dict[str, Any]) -> str:
+        """Descreve o parlamentar de um trecho recuperado."""
+
+        name = str(metadata.get("parliamentarian") or "").strip()
+        if not name:
+            return ""
+
+        party = str(metadata.get("party") or "").strip().upper()
+        state = str(metadata.get("state") or "").strip().upper()
+
+        if party and state:
+            return f"{name} ({party}-{state})"
+        if party:
+            return f"{name} ({party})"
+        if state:
+            return f"{name} ({state})"
+        return name
 
     @staticmethod
     def _normalize_filters(raw_filters: Dict[str, Any] | None) -> Dict[str, List[object]] | None:

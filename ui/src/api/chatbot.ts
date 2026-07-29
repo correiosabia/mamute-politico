@@ -7,9 +7,21 @@ export interface ChatMessagePayload {
   content: string;
 }
 
+/**
+ * Restringe a busca vetorial antes de ela acontecer. Sem isso, uma pergunta que
+ * nomeia um parlamentar depende do nome dele aparecer no texto recuperado.
+ */
+export interface ChatFilters {
+  parliamentarian_ids?: number[];
+  parties?: string[];
+  states?: string[];
+  roles?: string[];
+}
+
 export interface StreamChatBody {
   question: string;
   history: ChatMessagePayload[];
+  filters?: ChatFilters;
 }
 
 export interface ChatbotQuotaWindow {
@@ -105,7 +117,7 @@ export interface StreamChatOptions extends StreamChatBody {
  * POST stream endpoint; parses SSE `data: {...}` lines from the chatbot backend.
  */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { question, history, signal, onToken } = options;
+  const { question, history, filters, signal, onToken } = options;
 
   const res = await fetch(getChatbotStreamUrl(), {
     method: 'POST',
@@ -113,7 +125,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     }),
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify(filters ? { question, history, filters } : { question, history }),
     signal,
   });
 

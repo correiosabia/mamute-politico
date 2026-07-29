@@ -8,9 +8,42 @@ from typing import Iterable
 
 from sqlalchemy import text
 
+from chatbot_backend.app.core.config import get_settings
 from chatbot_backend.app.core.database import get_session
 from chatbot_backend.app.services.ingestion import build_documents, create_splitter
-from chatbot_backend.app.services.vector_store import get_vector_store
+from chatbot_backend.app.services.vector_store import get_vector_engine, get_vector_store
+
+
+def build_delete_by_source_sql() -> str:
+    """DELETE dos chunks de um discurso, restrito à coleção configurada.
+
+    `PGVector.delete()` só remove por `ids` — argumentos como `filter` são
+    engolidos pelo `**kwargs` sem erro nenhum. Como a quantidade de chunks de um
+    discurso muda quando o texto é editado, apagar por id deixaria sobras; o
+    filtro por `source` remove a versão anterior inteira.
+    """
+
+    return (
+        "DELETE FROM langchain_pg_embedding "
+        "WHERE cmetadata->>'source' = :source "
+        "AND collection_id = ("
+        "SELECT uuid FROM langchain_pg_collection WHERE name = :collection"
+        ")"
+    )
+
+
+def delete_chunks_by_source(source: str) -> None:
+    """Remove do índice todos os chunks de um discurso."""
+
+    settings = get_settings()
+    with get_vector_engine().begin() as conn:
+        conn.execute(
+            text(build_delete_by_source_sql()),
+            {
+                "source": source,
+                "collection": settings.pgvector_collection_name,
+            },
+        )
 
 
 def _parse_since(window_hours: float, since: str | None) -> datetime:
@@ -79,8 +112,10 @@ def run(window_hours: float, since: str | None, limit: int, dry_run: bool) -> No
         ]
 
         if not dry_run:
+            # A remoção precisa vir antes da reinserção: invertida, apagaria os
+            # chunks recém-gravados.
             if source:
-                vector_store.delete(filter={"source": source})
+                delete_chunks_by_source(source)
             vector_store.add_documents(
                 documents,
                 ids=[chunk_id for chunk_id in chunk_ids if isinstance(chunk_id, str)],

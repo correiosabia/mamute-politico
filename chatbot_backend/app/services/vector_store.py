@@ -10,6 +10,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from langchain_community.vectorstores.pgvector import PGVector
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import OpenAIEmbeddings
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from ..core.config import get_settings
 
@@ -70,6 +72,21 @@ def get_vector_store() -> PGVector:
     return vector_store
 
 
+@lru_cache
+def get_vector_engine() -> Engine:
+    """Engine SQLAlchemy apontando para o banco do índice vetorial.
+
+    O `PGVector` não expõe remoção por metadado — `delete()` só age sobre `ids`.
+    Operações de manutenção que precisam filtrar por `cmetadata` usam esta
+    engine diretamente.
+    """
+
+    return create_engine(
+        _with_application_name(settings.pgvector_connection),
+        future=True,
+    )
+
+
 def get_retriever(
     search_kwargs: Optional[dict[str, object]] = None,
 ) -> VectorStoreRetriever:
@@ -91,4 +108,9 @@ def get_retriever(
     )
 
 
-__all__ = ["get_embeddings", "get_vector_store", "get_retriever"]
+__all__ = [
+    "get_embeddings",
+    "get_vector_store",
+    "get_vector_engine",
+    "get_retriever",
+]

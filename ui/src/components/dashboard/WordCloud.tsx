@@ -161,6 +161,11 @@ export function WordCloud({ parliamentarianId, parlamentarNome }: WordCloudProps
       pergunta,
       autoSend: '1',
     });
+    // O nome dentro do texto da pergunta não restringe a busca vetorial: quem
+    // faz isso é o filtro por id do outro lado.
+    if (parliamentarianId != null && parliamentarianId > 0) {
+      params.set('parlamentarId', String(parliamentarianId));
+    }
     navigate({ pathname: '/pesquisa', search: params.toString() });
   };
 
