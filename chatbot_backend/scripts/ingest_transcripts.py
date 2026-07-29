@@ -88,9 +88,14 @@ def delete_chunks_by_ids(chunk_ids: Sequence[str]) -> None:
 def build_fetch_batch_sql() -> str:
     """Consulta paginada por keyset.
 
-    O cast `::bigint` é obrigatório: no primeiro lote `after_id` vai como NULL e,
-    sem o tipo declarado, o Postgres recusa a consulta com
+    O tipo precisa ser declarado: no primeiro lote `after_id` vai como NULL e,
+    sem isso, o Postgres recusa a consulta com
     `AmbiguousParameter: could not determine data type of parameter $1`.
+
+    E precisa ser `CAST(... AS bigint)`, não `::bigint`: o SQLAlchemy não trata
+    `:param` seguido de `::` como bind param (o lookahead do parser existe para
+    não quebrar casts), então `:after_id` chegaria literal ao banco e viraria
+    `SyntaxError`.
     """
 
     return """
@@ -108,7 +113,7 @@ def build_fetch_batch_sql() -> str:
             p.type AS parliamentarian_role
         FROM speeches_transcripts st
         LEFT JOIN parliamentarian p ON p.id = st.parliamentarian_id
-        WHERE (:after_id::bigint IS NULL OR st.id > :after_id::bigint)
+        WHERE (CAST(:after_id AS bigint) IS NULL OR st.id > CAST(:after_id AS bigint))
         ORDER BY st.id ASC
         LIMIT :limit
         """
