@@ -102,3 +102,11 @@ PYTHONPATH=/app
 
 # Relatório mensal — dia 1, 11:00 UTC (08:00 BRT)
 0 11 1 * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh notif-month -- /usr/local/bin/python -m mamute_scrappers.scripts.notificacao --periodicidade month >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Saldo do OpenRouter (de hora em hora) — CS-31.
+# Em 29/07/2026 os créditos zeraram no meio da carga de embeddings e o chatbot
+# saiu do ar (chat e busca vetorial em 402) sem aviso nenhum. Este job avisa os
+# admins de MAMUTE_ADMIN_EMAILS antes de chegar nesse ponto.
+# O próprio script controla a repetição: piora avisa na hora, mesmo estado só
+# repete a cada 24h, melhora não gera e-mail. Por isso pode rodar de hora em hora.
+25 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh openrouter-credits -- /usr/local/bin/python -m mamute_scrappers.scripts.check_openrouter_credits >> /proc/1/fd/1 2>> /proc/1/fd/2

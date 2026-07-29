@@ -28,6 +28,7 @@ try:
         run_sync as run_ghost_tiers_sync,
     )
     from ..services.admin_coverage import db_coverage
+    from ..services.openrouter_credits import credits_overview
     from ..services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -59,6 +60,7 @@ except ImportError:  # execução dentro de api/
         run_sync as run_ghost_tiers_sync,
     )
     from services.admin_coverage import db_coverage
+    from services.openrouter_credits import credits_overview
     from services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -455,3 +457,13 @@ def update_word_cloud_terms_route(
     )
     db.commit()
     return after
+
+
+@router.get("/metrics/credits")
+def metrics_credits_route(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict[str, Any]:
+    """Saldo do OpenRouter e repartição do gasto entre chatbot e embeddings."""
+
+    return credits_overview(db)

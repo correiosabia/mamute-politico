@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchEmails,
+  fetchCredits,
   fetchIa,
   fetchMetricsOverview,
   fetchMetricsUsers,
@@ -49,6 +50,17 @@ export function useParliamentarians() {
 
 export function useIa() {
   return useQuery({ queryKey: ['admin', 'metrics', 'ia'], queryFn: fetchIa });
+}
+
+export function useCredits() {
+  return useQuery({
+    queryKey: ['admin', 'metrics', 'credits'],
+    queryFn: fetchCredits,
+    // Saldo muda a cada consulta do chat; sem refetch o painel mostraria valor
+    // velho justamente quando ele importa.
+    refetchInterval: 60_000,
+    retry: false,
+  });
 }
 
 export function useEmails() {
