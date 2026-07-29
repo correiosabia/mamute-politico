@@ -22,6 +22,7 @@ from .speeches_transcripts_keyword import SpeechesTranscriptsKeyword
 from .speeches_transcripts_proposition import SpeechesTranscriptsProposition
 from .usage_event import UsageEvent
 from .videos_audios import VideoAudio
+from .word_cloud_term import WordCloudTerm
 
 __all__ = [
     "AdminAuditLog",
@@ -49,4 +50,5 @@ __all__ = [
     "Tiers",
     "UsageEvent",
     "VideoAudio",
+    "WordCloudTerm",
 ]

@@ -21,6 +21,7 @@ try:
         parliamentarians,
         propositions,
         roll_call_votes,
+        settings,
         speeches_transcripts,
         speeches_transcripts_proposition,
     )
@@ -39,6 +40,7 @@ except ImportError:
         parliamentarians,
         propositions,
         roll_call_votes,
+        settings,
         speeches_transcripts,
         speeches_transcripts_proposition,
     )
@@ -112,6 +114,7 @@ def create_app() -> FastAPI:
     api_router.include_router(events.router)
 
     api_router.include_router(analysis.router, dependencies=auth_dependencies)
+    api_router.include_router(settings.router, dependencies=auth_dependencies)
     api_router.include_router(parliamentarians.router, dependencies=auth_dependencies)
     api_router.include_router(propositions.router, dependencies=auth_dependencies)
     api_router.include_router(projects.router, dependencies=auth_dependencies)
