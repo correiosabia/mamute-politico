@@ -33,6 +33,10 @@ class ChatRequest(BaseModel):
         max_length=MAX_CHAT_HISTORY_MESSAGES,
     )
     filters: Optional[ChatFilters] = None
+    # Tema explícito quando a pergunta nasceu de um clique na nuvem de
+    # palavras: vira condição obrigatória na busca em vez de depender da
+    # interpretação da pergunta templated.
+    topic: Optional[str] = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def validate_total_context_size(self) -> "ChatRequest":

@@ -83,6 +83,32 @@ describe('PesquisaIAPage — filtro vindo da nuvem de palavras', () => {
     });
   });
 
+  it('envia o tema estruturado quando presente na URL da nuvem', async () => {
+    renderPage(`${URL_NUVEM}&tema=Banco`);
+    await aguardarPreenchimento();
+
+    enviar();
+
+    await waitFor(() => expect(mockedStreamChat).toHaveBeenCalled());
+    expect(mockedStreamChat.mock.calls[0][0]).toMatchObject({
+      question: PERGUNTA,
+      filters: { parliamentarian_ids: [544] },
+      topic: 'Banco',
+    });
+  });
+
+  it('descarta o tema junto com o filtro se a pergunta for reescrita', async () => {
+    renderPage(`${URL_NUVEM}&tema=Banco`);
+    const input = await aguardarPreenchimento();
+
+    fireEvent.change(input, { target: { value: 'Quais projetos sobre educação?' } });
+    enviar();
+
+    await waitFor(() => expect(mockedStreamChat).toHaveBeenCalled());
+    expect(mockedStreamChat.mock.calls[0][0]).not.toHaveProperty('topic');
+    expect(mockedStreamChat.mock.calls[0][0]).not.toHaveProperty('filters');
+  });
+
   it('descarta o filtro se o usuário reescrever a pergunta', async () => {
     renderPage(URL_NUVEM);
     const input = await aguardarPreenchimento();

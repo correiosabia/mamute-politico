@@ -345,20 +345,36 @@ def fetch_sql_context(
     question: str,
     filters: Dict[str, List[object]] | None = None,
     request_id: str = "n/a",
+    topic: str | None = None,
 ) -> str:
-    """Executa consultas simples para enriquecer o contexto do LLM."""
+    """Executa consultas simples para enriquecer o contexto do LLM.
+
+    `topic` chega quando a pergunta nasceu de um clique na nuvem de palavras:
+    nesse caso o tema é conhecido e vira condição obrigatória (frase inteira,
+    AND), em vez de depender da extração de keywords da pergunta templated.
+    É o que garante que a mesma régua que montou a nuvem alimente a resposta.
+    """
 
     started_at = perf_counter()
-    extra_stopwords = _load_dynamic_stopwords() | _filtered_parliamentarian_name_tokens(
-        filters
-    )
-    keywords = _extract_keywords(question, extra_stopwords)
-    keyword_clauses, pattern_params = _build_keyword_clauses(keywords)
+    topic = (topic or "").strip()
+    if topic:
+        keywords = [topic]
+        keyword_clauses = [
+            "(st.speech_text ILIKE :topic_pattern OR st.summary ILIKE :topic_pattern)"
+        ]
+        pattern_params: Dict[str, str] = {"topic_pattern": f"%{topic}%"}
+    else:
+        extra_stopwords = _load_dynamic_stopwords() | (
+            _filtered_parliamentarian_name_tokens(filters)
+        )
+        keywords = _extract_keywords(question, extra_stopwords)
+        keyword_clauses, pattern_params = _build_keyword_clauses(keywords)
     filter_clause, filter_params = _build_filter_clause(filters)
     logger.info(
-        "🧮 SQL context started | request_id=%s | keywords=%s | has_filters=%s",
+        "🧮 SQL context started | request_id=%s | keywords=%s | has_topic=%s | has_filters=%s",
         request_id,
         len(keywords),
+        bool(topic),
         bool(filter_clause),
     )
 

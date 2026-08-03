@@ -66,7 +66,11 @@ const PesquisaIAPage = () => {
    * amarrado ao texto exato que foi pré-preenchido: se a pessoa reescrever a
    * pergunta, o filtro deixa de valer e a busca volta a ser ampla.
    */
-  const perguntaComParlamentar = useRef<{ question: string; id: number } | null>(null);
+  const perguntaComParlamentar = useRef<{
+    question: string;
+    id: number;
+    tema?: string;
+  } | null>(null);
   const quotaQuery = useQuery({
     queryKey: ['chatbot-quota'],
     queryFn: () => getChatbotQuota(),
@@ -169,16 +173,17 @@ const PesquisaIAPage = () => {
 
     try {
       const vinculo = perguntaComParlamentar.current;
-      const filters =
-        vinculo && vinculo.question === question
-          ? { parliamentarian_ids: [vinculo.id] }
-          : undefined;
+      const vinculoAtivo = vinculo && vinculo.question === question ? vinculo : null;
+      const filters = vinculoAtivo
+        ? { parliamentarian_ids: [vinculoAtivo.id] }
+        : undefined;
       perguntaComParlamentar.current = null;
 
       await streamChat({
         question,
         history: historyForApi,
         ...(filters ? { filters } : {}),
+        ...(vinculoAtivo?.tema ? { topic: vinculoAtivo.tema } : {}),
         signal: controller.signal,
         onToken: (t) => {
           receivedChars += t.length;
@@ -240,9 +245,10 @@ const PesquisaIAPage = () => {
     if (urlAutoSendConsumed.current) return;
 
     const parlamentarId = Number(searchParams.get('parlamentarId'));
+    const tema = searchParams.get('tema')?.trim() || undefined;
     perguntaComParlamentar.current =
       Number.isInteger(parlamentarId) && parlamentarId > 0
-        ? { question: pergunta, id: parlamentarId }
+        ? { question: pergunta, id: parlamentarId, tema }
         : null;
 
     urlAutoSendConsumed.current = true;
