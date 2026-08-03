@@ -475,3 +475,46 @@ def test_legacy_project_favorites_still_allow_owner_operations(
         assert _favorite_count(db, 10, 202) == 0
     finally:
         db.close()
+
+
+def test_admin_project_bypasses_house_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Admins (MAMUTE_ADMIN_EMAILS) monitoram sem limite de parlamentares."""
+    monkeypatch.setenv("MAMUTE_ADMIN_EMAILS", "outro@x.com,Assinante@Example.com")
+    db = _make_session(qtd_termos_camara=1, qtd_termos_senado=1, existing_favorites=[101])
+    try:
+        favorite = projects._create_project_favorite(db, 10, 202)
+        assert favorite.parliamentarian_id == 202
+        assert projects._get_project_favorite_counts(db, 10)["camara"] == 2
+    finally:
+        db.close()
+
+
+def test_admin_quota_marca_unlimited_e_nao_atinge_limite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAMUTE_ADMIN_EMAILS", "assinante@example.com")
+    db = _make_session(
+        qtd_termos_camara=1, qtd_termos_senado=1, existing_favorites=[101, 202, 303]
+    )
+    try:
+        project = projects._ensure_active_project(db, 10)
+        quota = projects._build_project_favorite_quota(db, project)
+
+        assert quota.unlimited is True
+        assert quota.limit_reached is False
+        assert quota.camara.unlimited is True
+        assert quota.camara.limit_reached is False
+        assert quota.senado.limit_reached is False
+    finally:
+        db.close()
+
+
+def test_nao_admin_continua_limitado(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MAMUTE_ADMIN_EMAILS", "outra-pessoa@x.com")
+    db = _make_session(qtd_termos_camara=1, qtd_termos_senado=1, existing_favorites=[101])
+    try:
+        with pytest.raises(HTTPException) as excinfo:
+            projects._create_project_favorite(db, 10, 202)
+        assert excinfo.value.status_code == 403
+    finally:
+        db.close()

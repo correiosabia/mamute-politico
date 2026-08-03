@@ -27,6 +27,7 @@ try:
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
+    from ..security import get_admin_settings
     from .propositions import PropositionOut, _serialize_proposition
     from .roll_call_votes import (
         RollCallVoteOut,
@@ -46,6 +47,7 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
+    from security import get_admin_settings
     from routers.propositions import PropositionOut, _serialize_proposition
     from routers.roll_call_votes import (
         RollCallVoteOut,
@@ -85,6 +87,9 @@ class HouseFavoriteQuotaOut(BaseModel):
     used: int
     remaining: int
     limit_reached: bool
+    # Admins (MAMUTE_ADMIN_EMAILS) monitoram sem limite. Quando True, os campos
+    # numéricos refletem só o uso atual — o front deve ignorar o limite.
+    unlimited: bool = False
 
 
 class ProjectFavoriteQuotaOut(BaseModel):
@@ -99,6 +104,7 @@ class ProjectFavoriteQuotaOut(BaseModel):
     used: int
     remaining: int
     limit_reached: bool
+    unlimited: bool = False
     camara: HouseFavoriteQuotaOut
     senado: HouseFavoriteQuotaOut
 
@@ -579,8 +585,16 @@ def _project_favorite_limit_for_house(project: Projetos, house: str) -> int:
     return _legacy_global_favorite_limit(project)
 
 
+def _is_admin_project(project: Projetos) -> bool:
+    """Projetos de admins (MAMUTE_ADMIN_EMAILS) monitoram sem limite."""
+
+    email = (project.email or "").strip().lower()
+    return bool(email) and email in get_admin_settings()["emails"]
+
+
 def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavoriteQuotaOut:
     counts = _get_project_favorite_counts(db, int(project.id))
+    unlimited = _is_admin_project(project)
     houses: dict[str, HouseFavoriteQuotaOut] = {}
     for house in _HOUSES:
         limit = _project_favorite_limit_for_house(project, house)
@@ -589,7 +603,8 @@ def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavo
             limit=limit,
             used=used,
             remaining=max(0, limit - used),
-            limit_reached=used >= limit,
+            limit_reached=False if unlimited else used >= limit,
+            unlimited=unlimited,
         )
     total_limit = houses["camara"].limit + houses["senado"].limit
     total_used = houses["camara"].used + houses["senado"].used
@@ -597,7 +612,8 @@ def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavo
         limit=total_limit,
         used=total_used,
         remaining=max(0, total_limit - total_used),
-        limit_reached=total_used >= total_limit,
+        limit_reached=False if unlimited else total_used >= total_limit,
+        unlimited=unlimited,
         camara=houses["camara"],
         senado=houses["senado"],
     )
@@ -606,6 +622,8 @@ def _build_project_favorite_quota(db: Session, project: Projetos) -> ProjectFavo
 def _ensure_project_favorite_quota_available(
     db: Session, project: Projetos, house: str
 ) -> None:
+    if _is_admin_project(project):
+        return
     limit = _project_favorite_limit_for_house(project, house)
     used = _get_project_favorite_counts(db, int(project.id))[house]
     if used >= limit:
