@@ -346,13 +346,18 @@ def fetch_sql_context(
     filters: Dict[str, List[object]] | None = None,
     request_id: str = "n/a",
     topic: str | None = None,
+    derived_topics: List[str] | None = None,
 ) -> str:
     """Executa consultas simples para enriquecer o contexto do LLM.
 
-    `topic` chega quando a pergunta nasceu de um clique na nuvem de palavras:
-    nesse caso o tema é conhecido e vira condição obrigatória (frase inteira,
-    AND), em vez de depender da extração de keywords da pergunta templated.
-    É o que garante que a mesma régua que montou a nuvem alimente a resposta.
+    Ordem de precedência das âncoras de busca:
+    1. `topic` — clique na nuvem de palavras: tema explícito, condição
+       obrigatória (frase inteira).
+    2. `derived_topics` — temas interpretados da pergunta pelo LLM
+       (query_understanding): frases inteiras, OR entre si.
+    3. Fallback heurístico — regex + stoplists, só quando a interpretação
+       falhou (a heurística olha palavras, não contexto: foi ela que promoveu
+       "geral" a termo de busca).
     """
 
     started_at = perf_counter()
@@ -363,6 +368,9 @@ def fetch_sql_context(
             "(st.speech_text ILIKE :topic_pattern OR st.summary ILIKE :topic_pattern)"
         ]
         pattern_params: Dict[str, str] = {"topic_pattern": f"%{topic}%"}
+    elif derived_topics:
+        keywords = [t.strip() for t in derived_topics if t and t.strip()][:5]
+        keyword_clauses, pattern_params = _build_keyword_clauses(keywords)
     else:
         extra_stopwords = _load_dynamic_stopwords() | (
             _filtered_parliamentarian_name_tokens(filters)

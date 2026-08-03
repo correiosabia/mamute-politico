@@ -14,6 +14,7 @@ from langchain_openai import ChatOpenAI
 
 from ..core.config import get_settings
 from .prompts import build_prompt
+from .query_understanding import QueryUnderstanding
 from .reranker import LLMReranker
 from .sql_context import fetch_sql_context
 from .vector_store import get_retriever
@@ -28,6 +29,25 @@ class ChatbotService:
     def __init__(self) -> None:
         self.prompt = build_prompt()
         self.reranker = LLMReranker()
+        self.query_understanding = QueryUnderstanding()
+
+    async def _enrich_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Interpreta a pergunta ANTES da busca e anexa os temas centrais.
+
+        Com tema explícito (clique na nuvem) não há o que interpretar. Nos
+        demais casos, o LLM extrai as âncoras de busca da pergunta — é o que
+        impede "no geral" de virar termo de busca com o mesmo peso de "APAE".
+        Fail-soft: sem interpretação, o SQL context cai na heurística antiga.
+        """
+
+        if inputs.get("topic"):
+            return inputs
+        intent = await self.query_understanding.ainterpret(
+            inputs["question"], request_id=str(inputs.get("request_id") or "n/a")
+        )
+        if not intent:
+            return inputs
+        return {**inputs, "derived_topics": intent["temas"]}
 
     @staticmethod
     def _convert_history(raw_history: Sequence[dict[str, str]]) -> List[BaseMessage]:
@@ -231,8 +251,13 @@ class ChatbotService:
         )
         retriever = get_retriever(search_kwargs=search_kwargs or None, diverse=diverse)
         documents = self._dedupe_documents(list(await retriever.ainvoke(question)))
+        derived_topics = inputs.get("derived_topics") or []
         if topic:
             documents = self._prioritize_topic_documents(documents, topic)
+        elif derived_topics:
+            # Tema principal interpretado da pergunta: chunks que o citam
+            # literalmente vêm antes dos apenas semanticamente próximos.
+            documents = self._prioritize_topic_documents(documents, derived_topics[0])
         logger.info(
             "📄 Retrieval finished | request_id=%s | documents=%s | elapsed_ms=%.2f",
             request_id,
@@ -295,12 +320,15 @@ class ChatbotService:
 
         retriever_chain = RunnableLambda(self._retrieve_and_rerank)
 
+        enrich_chain = RunnableLambda(self._enrich_inputs)
+
         sql_chain = RunnableLambda(
             lambda x: fetch_sql_context(
                 x["question"],
                 x.get("filters"),
                 request_id=str(x.get("request_id") or "n/a"),
                 topic=x.get("topic"),
+                derived_topics=x.get("derived_topics"),
             )
         )
 
@@ -315,7 +343,7 @@ class ChatbotService:
             sql_context=sql_chain,
         )
 
-        return assembler | self.prompt | llm
+        return enrich_chain | assembler | self.prompt | llm
 
     async def stream_response(
         self, inputs: Dict[str, Any], request_id: str | None = None
