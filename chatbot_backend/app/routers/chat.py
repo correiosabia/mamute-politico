@@ -178,6 +178,8 @@ async def stream_chat(
         inputs = {"question": request.question, "history": [msg.model_dump() for msg in request.history]}
         if filters:
             inputs["filters"] = filters
+        if request.topic and request.topic.strip():
+            inputs["topic"] = request.topic.strip()
         logger.info(
             "📨 Stream request received | request_id=%s | question_chars=%s | history_messages=%s | has_filters=%s",
             request_id,
@@ -284,6 +286,8 @@ async def query_chat(
     }
     if request.filters:
         payload["filters"] = request.filters.model_dump(exclude_none=True)
+    if request.topic and request.topic.strip():
+        payload["topic"] = request.topic.strip()
     logger.info(
         "📨 Query request received | request_id=%s | question_chars=%s | history_messages=%s | has_filters=%s",
         request_id,

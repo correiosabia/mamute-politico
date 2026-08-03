@@ -158,22 +158,51 @@ class ChatbotService:
 
         return vector_filter or None
 
+    @staticmethod
+    def _prioritize_topic_documents(
+        documents: List[Document], topic: str
+    ) -> List[Document]:
+        """Reordena os documentos: quem menciona o tema literal vem primeiro.
+
+        A busca vetorial sozinha pode enterrar os poucos chunks que citam o
+        tema clicado na nuvem ("greve") sob discursos apenas semanticamente
+        próximos — era o "diz que não tem a palavra" relatado pelos usuários.
+        Ordenação estável: dentro de cada grupo a ordem por similaridade fica.
+        """
+
+        needle = topic.casefold()
+        with_topic = [d for d in documents if needle in (d.page_content or "").casefold()]
+        without_topic = [
+            d for d in documents if needle not in (d.page_content or "").casefold()
+        ]
+        return with_topic + without_topic
+
     async def _retrieve_and_rerank(self, inputs: Dict[str, Any]) -> str:
         """Recupera documentos, executa reranking e prepara o contexto."""
 
         request_id = str(inputs.get("request_id") or "n/a")
         stage_started = perf_counter()
         question = inputs["question"]
+        topic = str(inputs.get("topic") or "").strip()
         normalized_filters = inputs.get("filters")
         filter_payload = self._build_retriever_filter(normalized_filters)
-        search_kwargs = {"filter": filter_payload} if filter_payload else None
+        search_kwargs: Dict[str, Any] = {}
+        if filter_payload:
+            search_kwargs["filter"] = filter_payload
+        if topic:
+            # Com tema conhecido, busca mais candidatos para dar chance aos
+            # chunks que citam o termo literal antes do corte do rerank.
+            search_kwargs["k"] = max(settings.retriever_k, settings.retriever_topic_k)
         logger.info(
-            "🔍 Retrieval started | request_id=%s | has_vector_filter=%s",
+            "🔍 Retrieval started | request_id=%s | has_vector_filter=%s | has_topic=%s",
             request_id,
             bool(filter_payload),
+            bool(topic),
         )
-        retriever = get_retriever(search_kwargs=search_kwargs)
+        retriever = get_retriever(search_kwargs=search_kwargs or None)
         documents = await retriever.ainvoke(question)
+        if topic:
+            documents = self._prioritize_topic_documents(list(documents), topic)
         logger.info(
             "📄 Retrieval finished | request_id=%s | documents=%s | elapsed_ms=%.2f",
             request_id,
@@ -194,7 +223,16 @@ class ChatbotService:
             len(reranked),
             (perf_counter() - rerank_started) * 1000,
         )
-        return self._format_documents(reranked)
+        formatted = self._format_documents(reranked)
+        if topic:
+            # Deixa explícito para o modelo que o tema veio de um clique na
+            # nuvem de palavras da plataforma (não é invenção do usuário).
+            header = (
+                "Tema selecionado pelo usuário na nuvem de palavras da "
+                f"plataforma: {topic}"
+            )
+            formatted = f"{header}\n\n{formatted}" if formatted else header
+        return formatted
 
     def _build_chain(self) -> RunnableSequence:
         """Monta o pipeline de execução."""
@@ -216,6 +254,7 @@ class ChatbotService:
                 x["question"],
                 x.get("filters"),
                 request_id=str(x.get("request_id") or "n/a"),
+                topic=x.get("topic"),
             )
         )
 

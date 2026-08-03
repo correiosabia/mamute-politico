@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     )
 
     retriever_k: int = Field(default=6, alias="RETRIEVER_K")
+    # k ampliado quando a pergunta traz tema explícito (clique na nuvem):
+    # mais candidatos antes do rerank para os chunks com o termo literal.
+    retriever_topic_k: int = Field(default=12, alias="RETRIEVER_TOPIC_K", ge=1)
     retriever_score_threshold: float = Field(
         default=0.35, alias="RETRIEVER_SCORE_THRESHOLD"
     )

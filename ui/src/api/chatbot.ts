@@ -22,6 +22,8 @@ export interface StreamChatBody {
   question: string;
   history: ChatMessagePayload[];
   filters?: ChatFilters;
+  /** Tema clicado na nuvem de palavras — vira condição obrigatória na busca. */
+  topic?: string;
 }
 
 export interface ChatbotQuotaWindow {
@@ -117,7 +119,11 @@ export interface StreamChatOptions extends StreamChatBody {
  * POST stream endpoint; parses SSE `data: {...}` lines from the chatbot backend.
  */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { question, history, filters, signal, onToken } = options;
+  const { question, history, filters, topic, signal, onToken } = options;
+
+  const body: StreamChatBody = { question, history };
+  if (filters) body.filters = filters;
+  if (topic) body.topic = topic;
 
   const res = await fetch(getChatbotStreamUrl(), {
     method: 'POST',
@@ -125,7 +131,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     }),
-    body: JSON.stringify(filters ? { question, history, filters } : { question, history }),
+    body: JSON.stringify(body),
     signal,
   });
 

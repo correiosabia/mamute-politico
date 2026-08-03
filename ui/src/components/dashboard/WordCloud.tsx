@@ -173,6 +173,9 @@ export function WordCloud({ parliamentarianId, parlamentarNome }: WordCloudProps
     const params = new URLSearchParams({
       pergunta,
       autoSend: '1',
+      // O tema segue estruturado até o backend: lá ele vira condição
+      // obrigatória na busca (a mesma régua que montou a nuvem).
+      tema,
     });
     // O nome dentro do texto da pergunta não restringe a busca vetorial: quem
     // faz isso é o filtro por id do outro lado.
