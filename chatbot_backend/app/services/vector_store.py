@@ -93,14 +93,28 @@ def get_vector_engine() -> Engine:
 
 def get_retriever(
     search_kwargs: Optional[dict[str, object]] = None,
+    *,
+    diverse: bool = False,
 ) -> VectorStoreRetriever:
-    """Expõe um retriever com parâmetros padrão."""
+    """Expõe um retriever com parâmetros padrão.
+
+    `diverse=True` usa MMR: para perguntas panorâmicas (sem filtro de
+    parlamentar), a similaridade pura tende a devolver k chunks do MESMO
+    orador dominante — caso real: "o que parlamentares falaram sobre a APAE"
+    trouxe 5 de 6 chunks de um único deputado. O MMR troca um pouco de
+    similaridade por variedade de fontes.
+    """
 
     kwargs: dict[str, object] = {"k": settings.retriever_k}
     if search_kwargs:
         kwargs.update(search_kwargs)
 
-    if settings.retriever_score_threshold is not None:
+    if diverse:
+        # MMR não aceita score_threshold; fetch_k amplia o pool a diversificar.
+        kwargs.setdefault("fetch_k", int(kwargs["k"]) * 5)
+        kwargs.pop("score_threshold", None)
+        search_type = "mmr"
+    elif settings.retriever_score_threshold is not None:
         kwargs.setdefault("score_threshold", settings.retriever_score_threshold)
         search_type = "similarity_score_threshold"
     else:

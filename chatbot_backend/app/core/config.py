@@ -108,6 +108,23 @@ class Settings(BaseSettings):
             "câmara",
             "camara",
             "senado",
+            # Genéricas que já derrubaram consultas reais: "no geral" virou
+            # ILIKE '%geral%' (11k+ discursos, ~10% da base) e afogou o tema.
+            "geral",
+            "gerais",
+            "exemplo",
+            "exemplos",
+            "coisa",
+            "coisas",
+            "questão",
+            "questao",
+            "questões",
+            "questoes",
+            "respeito",
+            "assunto",
+            "assuntos",
+            "tema",
+            "temas",
         ],
         alias="SQL_KEYWORD_STOPWORDS",
     )
