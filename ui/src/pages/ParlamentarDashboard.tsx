@@ -182,7 +182,11 @@ const ParlamentarDashboard = () => {
           {/* Temas do discurso */}
           <TrackSection page="parlamentar" section="temas-discurso" className="mp-card bg-white p-6">
             <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Temas do discurso</h2>
-            <WordCloud parliamentarianId={parliamentarianCode} parlamentarNome={parlamentar.nome} />
+            <WordCloud
+              parliamentarianCode={parliamentarianCode}
+              parliamentarianId={numericId}
+              parlamentarNome={parlamentar.nome}
+            />
           </TrackSection>
 
           {/* Últimas ações */}

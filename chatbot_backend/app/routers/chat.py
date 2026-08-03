@@ -181,11 +181,12 @@ async def stream_chat(
         if request.topic and request.topic.strip():
             inputs["topic"] = request.topic.strip()
         logger.info(
-            "📨 Stream request received | request_id=%s | question_chars=%s | history_messages=%s | has_filters=%s",
+            "📨 Stream request received | request_id=%s | question_chars=%s | history_messages=%s | filters=%s | topic=%s",
             request_id,
             len(request.question or ""),
             len(request.history),
-            bool(filters),
+            filters or {},
+            inputs.get("topic") or "-",
         )
         prompt_tokens: int | None = None
         completion_tokens: int | None = None
