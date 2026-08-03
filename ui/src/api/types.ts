@@ -117,6 +117,8 @@ export interface HouseFavoriteQuotaOut {
   used: number;
   remaining: number;
   limit_reached: boolean;
+  /** Admins monitoram sem limite; quando true, ignore `limit`. */
+  unlimited?: boolean;
 }
 
 export interface ProjectFavoriteQuotaOut {
@@ -125,6 +127,8 @@ export interface ProjectFavoriteQuotaOut {
   used: number;
   remaining: number;
   limit_reached: boolean;
+  /** Admins monitoram sem limite; quando true, ignore `limit`. */
+  unlimited?: boolean;
   /** Limites reais aplicados por casa. */
   camara: HouseFavoriteQuotaOut;
   senado: HouseFavoriteQuotaOut;

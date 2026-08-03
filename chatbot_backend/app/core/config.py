@@ -136,6 +136,15 @@ class Settings(BaseSettings):
     chatbot_quota_fail_open: bool = Field(
         default=False, alias="MAMUTE_CHATBOT_QUOTA_FAIL_OPEN"
     )
+    # Mesma lista do gate de admin da API (cada serviço tem .env próprio).
+    # Admins não têm limite de consultas IA — o uso continua registrado.
+    admin_emails: str = Field(default="", alias="MAMUTE_ADMIN_EMAILS")
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        return frozenset(
+            e.strip().lower() for e in self.admin_emails.split(",") if e.strip()
+        )
 
     ghost_base_url: Optional[str] = Field(default=None, alias="GHOST_BASE_URL")
     prefix_url: Optional[str] = Field(default=None, alias="PREFIX_URL")

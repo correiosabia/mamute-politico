@@ -182,7 +182,11 @@ const SelecaoPage = () => {
                 monitoradosLoading={monitoradosLoading}
                 monitoradosError={monitoradosError}
                 favoritosMutating={favoritosMutating}
-                monitoradosLimit={favoritesQuotaQuery.data?.limit ?? null}
+                monitoradosLimit={
+                  favoritesQuotaQuery.data?.unlimited
+                    ? null // admin: sem limite — o seletor trata null como ilimitado
+                    : (favoritesQuotaQuery.data?.limit ?? null)
+                }
                 monitoradosUsed={favoritesQuotaQuery.data?.used ?? favoriteIds.length}
                 monitoradosQuotaLoading={favoritesQuotaQuery.isLoading}
                 recentlyAdded={recentlyAdded}

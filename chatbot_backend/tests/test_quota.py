@@ -233,3 +233,40 @@ def test_quota_can_be_disabled_without_touching_usage_tables(monkeypatch: pytest
         assert current.remaining is None
     finally:
         session.close()
+
+
+def test_admin_bypassa_limite_mas_registra_uso(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Admins (MAMUTE_ADMIN_EMAILS) não têm limite de consultas IA, mas o uso
+    continua sendo registrado (custo e métricas de saúde)."""
+    _configure_settings(monkeypatch, limits_json='{"default-product": 1}')
+    monkeypatch.setenv("MAMUTE_ADMIN_EMAILS", "Outro@x.com, Assinante@Example.com")
+    get_settings.cache_clear()
+    session = _make_session(existing_statuses=["completed"])
+    try:
+        usage = quota.start_chat_usage(
+            session,
+            "assinante@example.com",
+            request_id="req-admin",
+            question_chars=18,
+            model="gpt-test",
+        )
+        assert usage.usage_id is not None
+        usage_count = session.execute(text("select count(*) from chatbot_usage")).scalar_one()
+        assert usage_count == 2
+    finally:
+        session.close()
+        get_settings.cache_clear()
+
+
+def test_admin_quota_endpoint_vira_ilimitado(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_settings(monkeypatch, limits_json='{"default-product": 1}')
+    monkeypatch.setenv("MAMUTE_ADMIN_EMAILS", "assinante@example.com")
+    get_settings.cache_clear()
+    session = _make_session(existing_statuses=["completed"])
+    try:
+        current = quota.get_chat_quota(session, "assinante@example.com")
+        assert current.enabled is False  # front esconde o chip: ilimitado
+        assert current.limit_reached is False
+    finally:
+        session.close()
+        get_settings.cache_clear()

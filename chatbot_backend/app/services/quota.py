@@ -399,11 +399,21 @@ def _resolve_quota_windows(
     return weekly, monthly
 
 
+def _is_admin_email(email: str) -> bool:
+    """Admins (MAMUTE_ADMIN_EMAILS) não têm limite de consultas IA."""
+
+    return (email or "").strip().lower() in get_settings().admin_email_set
+
+
 def get_chat_quota(session: Session, email: str) -> ChatQuotaResponse:
     """Return quota status for an authenticated project."""
 
     settings = get_settings()
     if not settings.chatbot_quota_enabled:
+        return disabled_quota_response()
+    if _is_admin_email(email):
+        # enabled=False esconde o chip de cota no front — para o admin a
+        # experiência é "ilimitado", mas o uso segue registrado nas métricas.
         return disabled_quota_response()
 
     project = _load_project(session, email)
@@ -431,22 +441,25 @@ def start_chat_usage(
 
     project = _load_project(session, email, lock_for_update=True)
     weekly, monthly = _resolve_quota_windows(session, project)
-    if weekly is not None and weekly.limit_reached:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Limite semanal de consultas IA atingido para seu plano "
-                f"({weekly.used}/{weekly.limit}). A cota reseta na segunda-feira."
-            ),
-        )
-    if monthly.limit_reached:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Limite mensal de consultas IA atingido para seu plano "
-                f"({monthly.used}/{monthly.limit})."
-            ),
-        )
+    # Admins não têm limite, mas a inserção do uso continua: custo e métricas
+    # de saúde precisam enxergar essas consultas também.
+    if not _is_admin_email(email):
+        if weekly is not None and weekly.limit_reached:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Limite semanal de consultas IA atingido para seu plano "
+                    f"({weekly.used}/{weekly.limit}). A cota reseta na segunda-feira."
+                ),
+            )
+        if monthly.limit_reached:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Limite mensal de consultas IA atingido para seu plano "
+                    f"({monthly.used}/{monthly.limit})."
+                ),
+            )
 
     row = session.execute(
         text(
