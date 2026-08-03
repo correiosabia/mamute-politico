@@ -31,6 +31,15 @@ const exampleQuestions = [
 
 const MIN_QUESTION_LEN = 1;
 
+/**
+ * Perguntas com cache frio no banco levam ~100s hoje; 3 minutos dá folga sem
+ * deixar o usuário eternamente nos três pontinhos quando algo travou de vez.
+ */
+const STREAM_TIMEOUT_MS = 180_000;
+
+const EMPTY_ANSWER_FALLBACK =
+  'Não consegui gerar uma resposta agora. Tente reformular a pergunta ou tente novamente em instantes.';
+
 const PesquisaIAPage = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,6 +143,12 @@ const PesquisaIAPage = () => {
 
     let pending = '';
     let rafId = 0;
+    let receivedChars = 0;
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, STREAM_TIMEOUT_MS);
 
     const flushPending = () => {
       if (!pending) return;
@@ -166,24 +181,39 @@ const PesquisaIAPage = () => {
         ...(filters ? { filters } : {}),
         signal: controller.signal,
         onToken: (t) => {
+          receivedChars += t.length;
           pending += t;
           scheduleFlush();
         },
       });
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       flushPending();
+      if (receivedChars === 0) {
+        // Stream fechou "com sucesso" mas sem nenhum token (resposta vazia do
+        // modelo). Sem este fallback a bolha ficava nos três pontinhos para
+        // sempre — era o principal sintoma do chat "não funcionar".
+        toast.error(EMPTY_ANSWER_FALLBACK);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId && m.role === 'assistant' && !m.content
+              ? { ...m, content: EMPTY_ANSWER_FALLBACK }
+              : m
+          )
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: ['chatbot-quota'] });
     } catch (e) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       pending = '';
-      if (e instanceof DOMException && e.name === 'AbortError') {
+      if (e instanceof DOMException && e.name === 'AbortError' && !timedOut) {
         setMessages((prev) =>
           prev.filter((m) => !(m.id === assistantId && m.role === 'assistant' && !m.content))
         );
         return;
       }
-      const msg =
-        e instanceof ChatbotStreamError
+      const msg = timedOut
+        ? 'O assistente demorou demais para responder. Tente novamente.'
+        : e instanceof ChatbotStreamError
           ? e.message
           : 'Falha ao contactar o assistente. Tente novamente.';
       toast.error(msg);
@@ -191,10 +221,12 @@ const PesquisaIAPage = () => {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId && m.role === 'assistant' && !m.content
-            ? { ...m, content: 'Não foi possível obter uma resposta agora.' }
+            ? { ...m, content: msg }
             : m
         )
       );
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }, [queryClient, quotaLimitReached]);
 

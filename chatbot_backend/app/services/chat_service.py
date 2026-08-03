@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import logging
 from time import perf_counter
 from typing import Any, AsyncIterator, Dict, Iterable, List, Sequence
 
-from langchain.callbacks.base import AsyncCallbackHandler
-from langchain.callbacks.streaming_aiter import AsyncIteratorCallbackHandler
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnableSequence
@@ -19,41 +16,10 @@ from ..core.config import get_settings
 from .prompts import build_prompt
 from .reranker import LLMReranker
 from .sql_context import fetch_sql_context
-from .usage_extract import extract_usage
 from .vector_store import get_retriever
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-
-
-class JSONTokenStreamingHandler(AsyncCallbackHandler):
-    """Callback customizado para formar eventos JSON."""
-
-    def __init__(self, iterator_handler: AsyncIteratorCallbackHandler) -> None:
-        self.iterator_handler = iterator_handler
-        self.usage: Dict[str, Any] | None = None
-
-    async def on_llm_new_token(
-        self,
-        token: str,
-        *,
-        run_id: str,
-        parent_run_id: str | None = None,
-        **kwargs: Any,
-    ) -> None:
-        await self.iterator_handler.on_llm_new_token(token, run_id=run_id, **kwargs)
-
-    async def on_llm_end(self, response: Any, **kwargs: Any) -> None:
-        # Captura os tokens de uso do chunk final (stream_usage=True). Fail-soft.
-        self.usage = extract_usage(response)
-        # Este wrapper é o ÚNICO callback do chain: sem encaminhar o fim ao
-        # iterator, o done nunca é setado, o aiter() pendura após o último
-        # token e o stream nunca emite 'usage'/'end' — toda consulta acabava
-        # registrada como 'cancelled' sem tokens quando o cliente desistia.
-        await self.iterator_handler.on_llm_end(response, **kwargs)
-
-    async def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
-        await self.iterator_handler.on_llm_error(error, **kwargs)
 
 
 class ChatbotService:
@@ -291,56 +257,59 @@ class ChatbotService:
             len(inputs.get("history", [])),
             "filters" in inputs,
         )
-        iterator_handler = AsyncIteratorCallbackHandler()
-        json_handler = JSONTokenStreamingHandler(iterator_handler)
         chain = self._build_chain()
 
-        task = asyncio.create_task(
-            chain.ainvoke(
-                inputs,
-                config={
-                    "callbacks": [json_handler],
-                },
-            )
-        )
-        task_error: Exception | None = None
-
+        # chain.astream() é o caminho de streaming nativo do LangChain. O padrão
+        # anterior (ainvoke em task + AsyncIteratorCallbackHandler embrulhado num
+        # handler custom) parou de streamar em silêncio: o handler não é
+        # reconhecido como streaming handler pelo _should_stream, a chamada vira
+        # não-streaming e NENHUM token chega ao cliente — a resposta era gerada
+        # (usage registrado) mas o usuário via só o indicador de digitação.
+        usage: Dict[str, Any] | None = None
+        streamed_chars = 0
         try:
-            async for token in iterator_handler.aiter():
-                yield {"type": "token", "value": token}
+            async for chunk in chain.astream(inputs):
+                usage_metadata = getattr(chunk, "usage_metadata", None)
+                if usage_metadata:
+                    usage = {
+                        "prompt_tokens": usage_metadata.get("input_tokens"),
+                        "completion_tokens": usage_metadata.get("output_tokens"),
+                    }
+                content = getattr(chunk, "content", chunk)
+                if isinstance(content, str) and content:
+                    streamed_chars += len(content)
+                    yield {"type": "token", "value": content}
         except asyncio.CancelledError:
             logger.warning(
                 "⚠️ Stream pipeline cancelled | request_id=%s",
                 effective_request_id,
             )
-            task.cancel()
             raise
-        finally:
-            # Ensure aiter() waiters are always released, including disconnects.
-            iterator_handler.done.set()
-            if not task.done():
-                task.cancel()
-            try:
-                with suppress(asyncio.CancelledError):
-                    await task
-            except Exception as exc:
-                task_error = exc
-
-        if task_error is not None:
+        except Exception as exc:
             logger.exception(
-                "❌ Stream chain task failed | request_id=%s | error=%s",
+                "❌ Stream chain failed | request_id=%s | error=%s",
                 effective_request_id,
-                task_error,
+                exc,
             )
-            raise task_error
+            raise
+
+        if streamed_chars == 0:
+            # O LLM concluiu sem conteúdo visível (ex.: resposta vazia do
+            # provedor). Sem este aviso o cliente ficaria com uma bolha vazia.
+            logger.warning(
+                "⚠️ Stream finished with empty content | request_id=%s | usage=%s",
+                effective_request_id,
+                usage,
+            )
 
         logger.info(
-            "✅ Stream pipeline finished | request_id=%s | elapsed_ms=%.2f",
+            "✅ Stream pipeline finished | request_id=%s | chars=%s | elapsed_ms=%.2f",
             effective_request_id,
+            streamed_chars,
             (perf_counter() - started_at) * 1000,
         )
-        if json_handler.usage:
-            yield {"type": "usage", **json_handler.usage}
+        if usage:
+            yield {"type": "usage", **usage}
         yield {"type": "end"}
 
     async def invoke(self, inputs: Dict[str, Any], request_id: str | None = None) -> str:
