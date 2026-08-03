@@ -160,11 +160,23 @@ export function fetchParliamentarians(): Promise<ParliamentariansMetrics> {
   return request<ParliamentariansMetrics>('/admin/metrics/parliamentarians');
 }
 
+export interface IaSaude {
+  /** Consultas completed com resposta entregue ao usuário. */
+  respostas_ok: number;
+  /** Completed sem nenhum token entregue — usuário viu só o "digitando". */
+  respostas_vazias: number;
+  falhas: number;
+  canceladas: number;
+  tempo_medio_s: number | null;
+  tempo_p95_s: number | null;
+}
+
 export interface IaMetrics {
   consultas_mes: number;
   tokens_mes: number;
   custo_mes_brl: number;
   usd_brl_rate: number;
+  saude: IaSaude;
   por_dia: { dia: string; consultas: number; custo_brl: number }[];
   top_usuarios: {
     projeto_id: number;
