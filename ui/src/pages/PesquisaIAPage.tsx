@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Bot, User, PlusCircle, Send } from 'lucide-react';
@@ -22,9 +22,14 @@ interface Message {
   timestamp: Date;
 }
 
+/**
+ * Somente perguntas respondíveis com a base real: nada de parlamentar
+ * fictício ("Deputado João Silva") — clicar numa sugestão que não tem
+ * resposta garante frustração logo no primeiro uso.
+ */
 const exampleQuestions = [
-  'Quais foram os projetos de lei sobre educação apresentados em 2024?',
-  'Como votou o Deputado João Silva na reforma tributária?',
+  'Quais foram os projetos de lei sobre educação apresentados em 2025?',
+  'O que disse o senador Romário sobre esporte?',
   'Quantas proposições foram aprovadas este mês?',
   'Quais senadores mais discursaram sobre meio ambiente?',
 ];
@@ -56,7 +61,22 @@ const PesquisaIAPage = () => {
   const [hueRingBurst, setHueRingBurst] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * Auto-grow estilo ChatGPT: a caixa começa com 1 linha e cresce com o texto
+   * até ~5 linhas; daí em diante rola internamente.
+   */
+  const resizeMessageInput = useCallback(() => {
+    const el = messageInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeMessageInput();
+  }, [input, resizeMessageInput]);
   const prevMessageCountRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>(messages);
   messagesRef.current = messages;
@@ -267,8 +287,8 @@ const PesquisaIAPage = () => {
           <h1 className="text-center md:text-left text-[36px] md:text-[48px] leading-none font-bold text-[#383838]">Pesquisa IA</h1>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <p className="text-center md:text-left mt-2 max-w-4xl text-[18px] font-normal leading-snug text-[#383838]">
-              Consulte dados legislativos em linguagem natural. Acesse um banco de dados com as proposições, votações e discursos.
-              Combine SQL + processamento de linguagem natural para uma abordagem híbrida.
+              Pergunte com suas palavras e o assistente busca a resposta nas proposições,
+              votações e discursos do Congresso Nacional.
             </p>
             {quotaLabel && (
               <span className="self-center whitespace-nowrap rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-[#383838] shadow-sm md:self-auto">
@@ -368,19 +388,27 @@ const PesquisaIAPage = () => {
                 className="flex gap-3"
               >
                 <div className="relative flex min-w-0 flex-1">
-                  <Input
+                  <Textarea
                     ref={messageInputRef}
                     value={input}
+                    rows={1}
                     onChange={(e) => setInput(e.target.value)}
                     onFocus={() => setHueRingBurst((k) => k + 1)}
+                    onKeyDown={(e) => {
+                      // Enter envia; Shift+Enter quebra linha (padrão ChatGPT).
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
                     placeholder="Digite sua pergunta sobre dados legislativos..."
-                    className="peer relative z-[1] w-full rounded-full border-0 bg-[#efeeee] text-[13px] text-[#7f7b7b] placeholder:text-[#7f7b7b] focus-visible:ring-0"
+                    className="peer relative z-[1] max-h-[140px] min-h-0 w-full resize-none overflow-y-auto rounded-[22px] border-0 bg-[#efeeee] px-4 py-2.5 text-[13px] text-[#383838] placeholder:text-[#7f7b7b] focus-visible:ring-0 focus-visible:ring-offset-0"
                     minLength={MIN_QUESTION_LEN}
                   />
                   <div
                     key={hueRingBurst}
                     aria-hidden
-                    className="pointer-events-none absolute -inset-[4px] z-0 rounded-full border-2 border-[#1b76ff] opacity-0 peer-focus-visible:opacity-100 motion-safe:animate-pesquisa-input-ring-hue motion-reduce:animate-none"
+                    className="pointer-events-none absolute -inset-[4px] z-0 rounded-[26px] border-2 border-[#1b76ff] opacity-0 peer-focus-visible:opacity-100 motion-safe:animate-pesquisa-input-ring-hue motion-reduce:animate-none"
                   />
                 </div>
                 <button
