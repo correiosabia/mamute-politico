@@ -82,3 +82,12 @@ def test_sem_filtro_nao_consulta_nomes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sql_context, "_execute_query", boom)
     assert sql_context._filtered_parliamentarian_name_tokens(None) == set()
     assert sql_context._filtered_parliamentarian_name_tokens({}) == set()
+
+
+def test_palavras_genericas_nao_viram_keywords() -> None:
+    """Caso real: 'no geral' virou ILIKE '%geral%' (11k+ discursos) e afogou
+    o tema da pergunta nas 5 consultas do SQL context."""
+    keywords = sql_context._extract_keywords(
+        "Sim, o que mais parlamentares falaram sobre a APAE, no geral?"
+    )
+    assert keywords == ["apae"]

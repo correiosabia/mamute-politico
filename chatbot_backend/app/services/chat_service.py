@@ -159,6 +159,32 @@ class ChatbotService:
         return vector_filter or None
 
     @staticmethod
+    def _dedupe_documents(
+        documents: List[Document], max_per_speech: int = 2
+    ) -> List[Document]:
+        """Limita chunks por discurso (e remove repetidos exatos).
+
+        Caso real: a busca global devolveu o MESMO chunk duas vezes e três
+        trechos do mesmo discurso — o contexto inteiro virava um orador só.
+        """
+
+        seen_chunks: set[str] = set()
+        per_speech: Dict[str, int] = {}
+        result: List[Document] = []
+        for doc in documents:
+            metadata = doc.metadata or {}
+            chunk_id = str(metadata.get("chunk_id") or id(doc))
+            source = str(metadata.get("source") or chunk_id)
+            if chunk_id in seen_chunks:
+                continue
+            if per_speech.get(source, 0) >= max_per_speech:
+                continue
+            seen_chunks.add(chunk_id)
+            per_speech[source] = per_speech.get(source, 0) + 1
+            result.append(doc)
+        return result
+
+    @staticmethod
     def _prioritize_topic_documents(
         documents: List[Document], topic: str
     ) -> List[Document]:
@@ -193,16 +219,20 @@ class ChatbotService:
             # Com tema conhecido, busca mais candidatos para dar chance aos
             # chunks que citam o termo literal antes do corte do rerank.
             search_kwargs["k"] = max(settings.retriever_k, settings.retriever_topic_k)
+        # Sem filtro de parlamentar a pergunta é panorâmica: diversidade de
+        # oradores importa mais que os k trechos mais similares entre si.
+        diverse = not filter_payload
         logger.info(
-            "🔍 Retrieval started | request_id=%s | has_vector_filter=%s | has_topic=%s",
+            "🔍 Retrieval started | request_id=%s | has_vector_filter=%s | has_topic=%s | diverse=%s",
             request_id,
             bool(filter_payload),
             bool(topic),
+            diverse,
         )
-        retriever = get_retriever(search_kwargs=search_kwargs or None)
-        documents = await retriever.ainvoke(question)
+        retriever = get_retriever(search_kwargs=search_kwargs or None, diverse=diverse)
+        documents = self._dedupe_documents(list(await retriever.ainvoke(question)))
         if topic:
-            documents = self._prioritize_topic_documents(list(documents), topic)
+            documents = self._prioritize_topic_documents(documents, topic)
         logger.info(
             "📄 Retrieval finished | request_id=%s | documents=%s | elapsed_ms=%.2f",
             request_id,
@@ -222,6 +252,22 @@ class ChatbotService:
             len(documents),
             len(reranked),
             (perf_counter() - rerank_started) * 1000,
+        )
+        # Trace do que efetivamente entrou no contexto do LLM: é a resposta
+        # para "por que a resposta citou X e não Y?" sem precisar reproduzir
+        # a consulta. Persistido no chatbot.log, correlacionável por request_id
+        # com chatbot_usage.
+        logger.info(
+            "📚 Context sources | request_id=%s | sources=%s",
+            request_id,
+            [
+                {
+                    "speech_id": (doc.metadata or {}).get("speech_id"),
+                    "parliamentarian": (doc.metadata or {}).get("parliamentarian"),
+                    "date": (doc.metadata or {}).get("date"),
+                }
+                for doc in reranked
+            ],
         )
         formatted = self._format_documents(reranked)
         if topic:

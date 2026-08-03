@@ -373,7 +373,7 @@ def fetch_sql_context(
     logger.info(
         "🧮 SQL context started | request_id=%s | keywords=%s | has_topic=%s | has_filters=%s",
         request_id,
-        len(keywords),
+        keywords,
         bool(topic),
         bool(filter_clause),
     )

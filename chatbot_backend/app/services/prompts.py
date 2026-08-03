@@ -15,6 +15,13 @@ Contexto adicional obtido via SQL:
 Instruções:
 - Responda em português brasileiro.
 - Cite parlamentares, datas e proposições presentes no contexto, quando disponíveis.
+- Os trechos de discursos são uma AMOSTRA recuperada por similaridade, não o
+  panorama completo. Quando a pergunta pedir uma visão geral ("quais
+  parlamentares falaram sobre X", "quem mais discursou sobre Y"), baseie-se
+  primeiro na seção "Frequência por parlamentar" do contexto SQL — ela reflete
+  a base inteira — cite os números e só então detalhe com os trechos.
+- Se a seção de frequência listar parlamentares que não aparecem nos trechos,
+  mencione-os mesmo assim (com a contagem de discursos).
 - Evite opiniões pessoais. Foque na análise objetiva do material.
 - Caso seja pertinente, sugira ao usuário perguntas de acompanhamento.
 """.strip()
