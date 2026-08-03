@@ -35,7 +35,11 @@ function renderCloud() {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <WordCloud parliamentarianId={544} parlamentarNome="Flávio Bolsonaro" />
+        <WordCloud
+          parliamentarianCode={581}
+          parliamentarianId={544}
+          parlamentarNome="Flávio Bolsonaro"
+        />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -55,7 +59,9 @@ describe('WordCloud — navegação para a Pesquisa IA', () => {
     ] as never);
   });
 
-  it('leva o id do parlamentar na URL da pergunta', async () => {
+  it('leva o id INTERNO do parlamentar na URL da pergunta, não o código', async () => {
+    // Bug real: o código externo (581) era enviado como filtro do chat e não
+    // casava com nenhum discurso — "diz que não tem a palavra".
     renderCloud();
 
     const termo = await screen.findByText(/banco/i);
@@ -67,6 +73,13 @@ describe('WordCloud — navegação para a Pesquisa IA', () => {
 
     expect(destino.pathname).toBe('/pesquisa');
     expect(params.get('parlamentarId')).toBe('544');
+    expect(params.get('parlamentarId')).not.toBe('581');
+  });
+
+  it('busca as análises pelo código externo do parlamentar', async () => {
+    renderCloud();
+    await screen.findByText(/banco/i);
+    expect(mockedList).toHaveBeenCalledWith(581, expect.anything());
   });
 
   it('aplica as listas vindas da API', async () => {

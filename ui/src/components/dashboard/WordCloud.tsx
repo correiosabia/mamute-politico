@@ -72,20 +72,35 @@ function buildPesquisaPrompt(parlamentarNome: string, tema: string): string {
 }
 
 interface WordCloudProps {
+  /**
+   * Código externo (Câmara/Senado) — é a chave do endpoint de análises que
+   * alimenta a nuvem.
+   */
+  parliamentarianCode?: number;
+  /**
+   * Id INTERNO do banco — é ele que vira filtro do chat na Pesquisa IA.
+   * Confundir os dois foi o bug do "fui na palavra da nuvem e diz que não tem
+   * a palavra": o código externo era enviado como filtro e não casava com
+   * discurso nenhum.
+   */
   parliamentarianId?: number;
   parlamentarNome?: string;
 }
 
-export function WordCloud({ parliamentarianId, parlamentarNome }: WordCloudProps) {
+export function WordCloud({
+  parliamentarianCode,
+  parliamentarianId,
+  parlamentarNome,
+}: WordCloudProps) {
   const navigate = useNavigate();
   const { data: analysisSummaries, isLoading, isError } = useQuery({
-    queryKey: ['analysis-parliamentarian', parliamentarianId],
+    queryKey: ['analysis-parliamentarian', parliamentarianCode],
     queryFn: () =>
-      listParliamentarianSpeechAnalysis(parliamentarianId!, {
+      listParliamentarianSpeechAnalysis(parliamentarianCode!, {
         page: 1,
         page_size: 100,
       }),
-    enabled: parliamentarianId != null && parliamentarianId > 0,
+    enabled: parliamentarianCode != null && parliamentarianCode > 0,
   });
 
   // Listas geridas em Configurações gerais. Globais e de mudança rara, por isso
@@ -108,7 +123,7 @@ export function WordCloud({ parliamentarianId, parlamentarNome }: WordCloudProps
     return extractWordsFromAnalysis(analysisSummaries, termLists);
   }, [analysisSummaries, termLists]);
 
-  if (parliamentarianId == null || parliamentarianId <= 0) {
+  if (parliamentarianCode == null || parliamentarianCode <= 0) {
     return (
       <div className="flex flex-wrap items-center justify-center gap-3 p-4 text-muted-foreground text-sm">
         Selecione um parlamentar para ver os temas dos discursos.
