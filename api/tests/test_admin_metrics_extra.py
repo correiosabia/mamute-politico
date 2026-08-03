@@ -5,7 +5,7 @@ import json
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -122,6 +122,35 @@ def test_ia(session: Session) -> None:
     assert ia["custo_mes_brl"] == 0.75  # 0.15 * 5
     assert len(ia["por_dia"]) == 2
     assert ia["top_usuarios"][0]["email"] == "ana@x.com"
+
+
+def test_ia_saude(session: Session) -> None:
+    """Resposta entregue, resposta vazia (bug de streaming), falha e cancelada."""
+    session.execute(
+        text(
+            "insert into chatbot_usage (projeto_id, email, request_id, period_start, status, "
+            "answer_chars, created_at, updated_at) values "
+            # entregue em 20s
+            "(1,'ana@x.com','s1','2026-07-01','completed',500,"
+            "'2026-07-03 10:00:00','2026-07-03 10:00:20'),"
+            # completed mas sem nenhum token entregue (sintoma do streaming quebrado)
+            "(1,'ana@x.com','s2','2026-07-01','completed',0,"
+            "'2026-07-03 11:00:00','2026-07-03 11:00:05'),"
+            "(2,'bruno@x.com','s3','2026-07-01','failed',0,"
+            "'2026-07-03 12:00:00','2026-07-03 12:00:01'),"
+            "(2,'bruno@x.com','s4','2026-07-01','cancelled',0,"
+            "'2026-07-03 13:00:00','2026-07-03 13:00:01')"
+        )
+    )
+    saude = metrics_ia(session, PERIOD, RATE)["saude"]
+    # r1/r2 do fixture têm answer_chars NULL → contam como vazias também
+    assert saude["respostas_ok"] == 1
+    assert saude["respostas_vazias"] == 3
+    assert saude["falhas"] == 1
+    assert saude["canceladas"] == 1
+    # somente as linhas novas têm created_at+updated_at completos: 20s e 5s
+    assert saude["tempo_medio_s"] == 12.5
+    assert saude["tempo_p95_s"] == 20.0
 
 
 def test_sections(session: Session) -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from contextlib import suppress
 import logging
+from logging.handlers import RotatingFileHandler
+import os
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -18,10 +20,52 @@ from .schemas import HealthcheckResponse
 
 logger = logging.getLogger(__name__)
 
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s | %(message)s"
+_HANDLER_MARK = "_mamute_chatbot_handler"
+
+
+def _configure_logging() -> None:
+    """Expõe os logs INFO do pipeline (uvicorn só configura os dele).
+
+    Sem isto, os logs de estágio do chat (retrieval, rerank, SQL, stream) nunca
+    apareciam em produção — o streaming ficou semanas quebrado sem nenhum
+    sinal no `docker logs`. Além do stdout, escreve em arquivo rotacionado num
+    volume (CHATBOT_LOG_DIR) para o histórico sobreviver ao recreate do
+    container a cada deploy.
+    """
+
+    root = logging.getLogger()
+    if any(getattr(h, _HANDLER_MARK, False) for h in root.handlers):
+        return
+
+    formatter = logging.Formatter(_LOG_FORMAT)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    setattr(stream_handler, _HANDLER_MARK, True)
+    root.addHandler(stream_handler)
+    root.setLevel(logging.INFO)
+
+    log_dir = os.environ.get("CHATBOT_LOG_DIR", "/app/logs")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, "chatbot.log"),
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        setattr(file_handler, _HANDLER_MARK, True)
+        root.addHandler(file_handler)
+    except OSError as exc:  # sem volume montado (ex.: testes locais): só stdout
+        logger.warning("Log em arquivo desabilitado (%s): %s", log_dir, exc)
+
 
 def create_app() -> FastAPI:
     """Inicializa a aplicação FastAPI."""
 
+    _configure_logging()
     settings = get_settings()
 
     app = FastAPI(

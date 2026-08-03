@@ -408,6 +408,59 @@ def metrics_parliamentarians(db: Session, limit: int = 20) -> dict[str, Any]:
     return {"top": top[:limit], "by_house": by_house, "by_state": by_state_list}
 
 
+def _ia_saude(db: Session, period_start: Optional[date]) -> dict[str, Any]:
+    """Saúde do chatbot no período: respostas vazias, falhas e tempo de resposta.
+
+    Uma consulta 'completed' com answer_chars=0 significa que o LLM respondeu
+    mas nenhum token chegou ao cliente (o usuário viu só o indicador de
+    digitação) — foi assim que o streaming ficou quebrado semanas sem ninguém
+    perceber. Este bloco existe para esse tipo de falha aparecer no painel.
+
+    A duração usa updated_at - created_at (início do stream → registro final).
+    Agregado em Python porque o volume mensal é pequeno e a subtração de
+    timestamps não é portável entre Postgres e SQLite (testes).
+    """
+    stmt = select(
+        ChatbotUsage.status,
+        ChatbotUsage.answer_chars,
+        ChatbotUsage.created_at,
+        ChatbotUsage.updated_at,
+    )
+    if period_start is not None:
+        stmt = stmt.where(ChatbotUsage.period_start == period_start)
+
+    ok = vazias = falhas = canceladas = 0
+    durations: list[float] = []
+    for status, answer_chars, created_at, updated_at in db.execute(stmt):
+        if status == "completed":
+            if (answer_chars or 0) > 0:
+                ok += 1
+            else:
+                vazias += 1
+            if created_at and updated_at and updated_at >= created_at:
+                durations.append((updated_at - created_at).total_seconds())
+        elif status == "failed":
+            falhas += 1
+        elif status == "cancelled":
+            canceladas += 1
+
+    durations.sort()
+    tempo_medio = round(sum(durations) / len(durations), 1) if durations else None
+    tempo_p95 = (
+        round(durations[min(int(len(durations) * 0.95), len(durations) - 1)], 1)
+        if durations
+        else None
+    )
+    return {
+        "respostas_ok": ok,
+        "respostas_vazias": vazias,
+        "falhas": falhas,
+        "canceladas": canceladas,
+        "tempo_medio_s": tempo_medio,
+        "tempo_p95_s": tempo_p95,
+    }
+
+
 def metrics_ia(db: Session, period_start: date, usd_brl_rate: float) -> dict[str, Any]:
     """Métricas focadas em IA: volume, tokens, custo, top usuários, série diária."""
     usage = _usage_by_project(db, period_start)
@@ -422,6 +475,7 @@ def metrics_ia(db: Session, period_start: date, usd_brl_rate: float) -> dict[str
         "tokens_mes": tokens,
         "custo_mes_brl": round(custo_usd * usd_brl_rate, 2),
         "usd_brl_rate": round(usd_brl_rate, 4),
+        "saude": _ia_saude(db, period_start),
         "por_dia": _ia_by_day(db, None, usd_brl_rate),
         "top_usuarios": [
             {

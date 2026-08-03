@@ -29,6 +29,8 @@ services:
 
     volumes:
       - ../../chatbot_backend/.env:/app/.env
+      # Logs rotacionados do pipeline: sobrevivem ao recreate a cada deploy.
+      - chatbot_logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -162,6 +164,7 @@ networks:
 volumes:
   caddy_data:
   caddy_config:
+  chatbot_logs:
   ghost_content:
   ghost_db_data:
   pgvector_db_data:

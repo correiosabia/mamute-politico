@@ -47,6 +47,47 @@ export default function AdminIaPage() {
           </div>
 
           <div className="mp-card bg-white p-6">
+            <h2 className="mb-1 text-[18px] font-bold text-[#090909]">Saúde do chatbot (mês)</h2>
+            <p className="mb-4 text-[13px] text-[#383838]/50">
+              Respostas vazias são consultas concluídas em que o usuário não recebeu nenhum texto.
+            </p>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Respostas OK</p>
+                <p className="mt-1 text-[22px] font-bold text-[#090909]">{num(data.saude.respostas_ok)}</p>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Respostas vazias</p>
+                <p className={`mt-1 text-[22px] font-bold ${data.saude.respostas_vazias > 0 ? 'text-[#d92d20]' : 'text-[#090909]'}`}>
+                  {num(data.saude.respostas_vazias)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Falhas</p>
+                <p className={`mt-1 text-[22px] font-bold ${data.saude.falhas > 0 ? 'text-[#d92d20]' : 'text-[#090909]'}`}>
+                  {num(data.saude.falhas)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Canceladas</p>
+                <p className="mt-1 text-[22px] font-bold text-[#090909]">{num(data.saude.canceladas)}</p>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Tempo médio</p>
+                <p className="mt-1 text-[22px] font-bold text-[#090909]">
+                  {data.saude.tempo_medio_s != null ? `${num(data.saude.tempo_medio_s)}s` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#383838]/50">Tempo p95</p>
+                <p className="mt-1 text-[22px] font-bold text-[#090909]">
+                  {data.saude.tempo_p95_s != null ? `${num(data.saude.tempo_p95_s)}s` : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mp-card bg-white p-6">
             <h2 className="mb-4 text-[18px] font-bold text-[#090909]">Consultas por dia</h2>
             {data.por_dia.length > 0 ? (
               <div className="h-[260px]">
