@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from time import perf_counter
-from typing import Dict, List, Mapping, Sequence
+from time import monotonic, perf_counter
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 from sqlalchemy import text
 
@@ -16,6 +16,72 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 _word_pattern = re.compile(r"[A-Za-zÀ-ÿ]{2,}")
+
+# Stoplist gerida no Admin (word_cloud_terms) — a MESMA usada pela nuvem de
+# palavras do front. Cache com TTL: muda raramente e é lida a cada pergunta.
+_DYNAMIC_STOPWORDS_TTL_S = 30 * 60
+_dynamic_stopwords_cache: tuple[float, frozenset[str]] | None = None
+
+
+def _tokenize(value: str) -> set[str]:
+    return {token.lower() for token in _word_pattern.findall(value or "")}
+
+
+def _load_dynamic_stopwords() -> frozenset[str]:
+    """Termos de word_cloud_terms tokenizados, com cache e fail-soft.
+
+    Se a palavra não serve para a nuvem ("exa", "senhor", "bloco"...), ela
+    também não serve como palavra-chave de busca no texto dos discursos.
+    """
+
+    global _dynamic_stopwords_cache
+    now = monotonic()
+    if (
+        _dynamic_stopwords_cache is not None
+        and now - _dynamic_stopwords_cache[0] < _DYNAMIC_STOPWORDS_TTL_S
+    ):
+        return _dynamic_stopwords_cache[1]
+
+    try:
+        rows = _execute_query("SELECT term FROM word_cloud_terms", {})
+    except Exception as exc:  # noqa: BLE001 — stoplist nunca derruba a consulta
+        logger.warning("⚠️ Falha ao carregar word_cloud_terms (stoplist): %s", exc)
+        return _dynamic_stopwords_cache[1] if _dynamic_stopwords_cache else frozenset()
+
+    words: set[str] = set()
+    for row in rows:
+        words |= _tokenize(str(dict(row).get("term") or ""))
+
+    _dynamic_stopwords_cache = (now, frozenset(words))
+    return _dynamic_stopwords_cache[1]
+
+
+def _filtered_parliamentarian_name_tokens(
+    filters: Dict[str, List[object]] | None,
+) -> set[str]:
+    """Tokens dos nomes dos parlamentares já restringidos por filtro.
+
+    Quando o filtro por id existe, o nome na pergunta ("Jaques Wagner") não é
+    tema — e como padrão ILIKE ele casa com qualquer discurso que cite a
+    pessoa, poluindo o contexto e encarecendo a busca.
+    """
+
+    ids = (filters or {}).get("parliamentarian_ids")
+    if not ids:
+        return set()
+    try:
+        rows = _execute_query(
+            "SELECT name FROM parliamentarian WHERE id = ANY(:ids)",
+            {"ids": [int(i) for i in ids]},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("⚠️ Falha ao buscar nomes p/ stoplist: %s", exc)
+        return set()
+
+    tokens: set[str] = set()
+    for row in rows:
+        tokens |= _tokenize(str(dict(row).get("name") or ""))
+    return tokens
 
 _BASE_FROM = """
     FROM speeches_transcripts st
@@ -70,15 +136,15 @@ _PROPOSITIONS_SELECT = """
     JOIN parliamentarian p ON p.id = st.parliamentarian_id
 """
 
-def _extract_keywords(question: str) -> List[str]:
+def _extract_keywords(question: str, extra_stopwords: Iterable[str] = ()) -> List[str]:
     """Gera palavras-chave básicas a partir da pergunta."""
 
-    tokens = {token.lower() for token in _word_pattern.findall(question)}
+    stopwords = set(settings.sql_keyword_stopwords) | set(extra_stopwords)
+    tokens = _tokenize(question)
     filtered = [
         token
         for token in tokens
-        if len(token) >= settings.sql_min_keyword_length
-        and token not in settings.sql_keyword_stopwords
+        if len(token) >= settings.sql_min_keyword_length and token not in stopwords
     ]
     return sorted(filtered)[:5]
 
@@ -245,7 +311,34 @@ def _format_proposition_rows(rows: Sequence[Mapping[str, object]]) -> str:
 
 def _execute_query(query: str, params: Dict[str, object]) -> List[Mapping[str, object]]:
     with get_session() as session:
+        timeout_ms = settings.sql_statement_timeout_ms
+        if timeout_ms > 0:
+            try:
+                # SET LOCAL vale só para a transação corrente; protege o chat de
+                # travar minutos numa consulta cara (degrada para seção vazia).
+                session.execute(
+                    text(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+                )
+            except Exception:  # noqa: BLE001 — ex.: SQLite nos testes
+                pass
         return session.execute(text(query), params).mappings().all()
+
+
+def _execute_query_soft(
+    query: str, params: Dict[str, object], *, section: str, request_id: str
+) -> List[Mapping[str, object]]:
+    """Executa a consulta degradando para lista vazia em erro/timeout."""
+
+    try:
+        return _execute_query(query, params)
+    except Exception as exc:  # noqa: BLE001 — contexto parcial > erro no chat
+        logger.warning(
+            "⚠️ SQL context section skipped | request_id=%s | section=%s | error=%s",
+            request_id,
+            section,
+            exc,
+        )
+        return []
 
 
 def fetch_sql_context(
@@ -256,7 +349,10 @@ def fetch_sql_context(
     """Executa consultas simples para enriquecer o contexto do LLM."""
 
     started_at = perf_counter()
-    keywords = _extract_keywords(question)
+    extra_stopwords = _load_dynamic_stopwords() | _filtered_parliamentarian_name_tokens(
+        filters
+    )
+    keywords = _extract_keywords(question, extra_stopwords)
     keyword_clauses, pattern_params = _build_keyword_clauses(keywords)
     filter_clause, filter_params = _build_filter_clause(filters)
     logger.info(
@@ -284,7 +380,9 @@ def fetch_sql_context(
         + "\nORDER BY st.date DESC NULLS LAST, st.id DESC\nLIMIT :limit"
     )
     context_params = {"limit": settings.sql_context_limit, **base_params}
-    context_rows = _execute_query(context_query, context_params)
+    context_rows = _execute_query_soft(
+        context_query, context_params, section="context", request_id=request_id
+    )
     logger.info(
         "🧮 SQL context main query done | request_id=%s | rows=%s",
         request_id,
@@ -297,9 +395,11 @@ def fetch_sql_context(
             + ("\nWHERE " + filter_clause if filter_clause else "")
             + "\nORDER BY st.date DESC NULLS LAST, st.id DESC\nLIMIT :limit"
         )
-        context_rows = _execute_query(
+        context_rows = _execute_query_soft(
             fallback_query,
             {"limit": settings.sql_context_limit, **filter_params},
+            section="context_fallback",
+            request_id=request_id,
         )
         logger.info(
             "🧮 SQL context fallback query done | request_id=%s | rows=%s",
@@ -320,7 +420,9 @@ def fetch_sql_context(
             **base_params,
             "freq_limit": settings.sql_frequency_limit,
         }
-        frequency_rows = _execute_query(frequency_query, frequency_params)
+        frequency_rows = _execute_query_soft(
+            frequency_query, frequency_params, section="frequency", request_id=request_id
+        )
 
     keyword_rows: List[Mapping[str, object]] = []
     if settings.sql_keywords_limit > 0:
@@ -335,7 +437,9 @@ def fetch_sql_context(
             **base_params,
             "keywords_limit": settings.sql_keywords_limit,
         }
-        keyword_rows = _execute_query(keywords_query, keyword_params)
+        keyword_rows = _execute_query_soft(
+            keywords_query, keyword_params, section="keywords", request_id=request_id
+        )
 
     entities_rows: List[Mapping[str, object]] = []
     if settings.sql_entities_limit > 0:
@@ -350,7 +454,9 @@ def fetch_sql_context(
             **base_params,
             "entities_limit": settings.sql_entities_limit,
         }
-        entities_rows = _execute_query(entities_query, entities_params)
+        entities_rows = _execute_query_soft(
+            entities_query, entities_params, section="entities", request_id=request_id
+        )
 
     propositions_rows: List[Mapping[str, object]] = []
     if settings.sql_propositions_limit > 0:
@@ -365,7 +471,12 @@ def fetch_sql_context(
             **base_params,
             "propositions_limit": settings.sql_propositions_limit,
         }
-        propositions_rows = _execute_query(propositions_query, propositions_params)
+        propositions_rows = _execute_query_soft(
+            propositions_query,
+            propositions_params,
+            section="propositions",
+            request_id=request_id,
+        )
     sections = []
     context_text = _format_rows(context_rows)
     if context_text:

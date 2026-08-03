@@ -50,12 +50,17 @@ class Settings(BaseSettings):
 
     sql_context_limit: int = Field(default=5, alias="SQL_CONTEXT_LIMIT")
     sql_min_keyword_length: int = Field(default=4, alias="SQL_MIN_KEYWORD_LENGTH")
+    # Além dos conectivos, corta o vocabulário de TEMPLATE das perguntas
+    # ("O que diz o(a) parlamentar X sobre Y") e os termos genéricos do domínio:
+    # ILIKE '%parlamentar%' casa com praticamente todos os 120k+ discursos —
+    # era o que fazia o SQL context custar ~15s por consulta e voltar lixo.
     sql_keyword_stopwords: List[str] = Field(
         default_factory=lambda: [
             "que",
             "para",
             "como",
             "qual",
+            "quais",
             "quem",
             "sobre",
             "mais",
@@ -65,8 +70,48 @@ class Settings(BaseSettings):
             "porque",
             "porquê",
             "por que",
+            "você",
+            "voce",
+            "quero",
+            "gostaria",
+            "saber",
+            "dizer",
+            "consegue",
+            "pode",
+            "qualquer",
+            "quaisquer",
+            "parlamentar",
+            "parlamentares",
+            "deputado",
+            "deputada",
+            "deputados",
+            "deputadas",
+            "senador",
+            "senadora",
+            "senadores",
+            "senadoras",
+            "discurso",
+            "discursos",
+            "discursou",
+            "discursaram",
+            "falou",
+            "falaram",
+            "fala",
+            "atuação",
+            "atuacao",
+            "votou",
+            "votaram",
+            "congresso",
+            "câmara",
+            "camara",
+            "senado",
         ],
         alias="SQL_KEYWORD_STOPWORDS",
+    )
+    # Teto por consulta do SQL context (SET LOCAL statement_timeout). Melhor uma
+    # seção vazia no contexto do que o chat travado por minutos. 0 desliga.
+    sql_statement_timeout_ms: int = Field(
+        default=20_000, alias="SQL_STATEMENT_TIMEOUT_MS", ge=0
     )
     sql_frequency_limit: int = Field(default=5, alias="SQL_FREQUENCY_LIMIT")
     sql_keywords_limit: int = Field(default=8, alias="SQL_KEYWORDS_LIMIT")
