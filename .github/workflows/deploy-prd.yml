@@ -88,6 +88,25 @@ jobs:
       - name: Pytest
         run: pytest api/tests/ -v
 
+  scrappers-tests:
+    name: Scrappers — pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: mamute_scrappers/requirements-dev.txt
+
+      - name: Install deps
+        working-directory: mamute_scrappers
+        run: pip install -r requirements-dev.txt
+
+      - name: Pytest
+        run: pytest mamute_scrappers/tests/ -v
+
   contract-check:
     name: Contract UI ↔ API
     runs-on: ubuntu-latest
@@ -206,7 +225,7 @@ jobs:
     timeout-minutes: 15
     # So roda em push em main + se TODOS os validates passaram. PRs nao deployam.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [ui-validate, api-smoke, contract-check, compose-validate, migration-smoke, e2e]
+    needs: [ui-validate, api-smoke, scrappers-tests, contract-check, compose-validate, migration-smoke, e2e]
     steps:
       - name: Checkout arquivos
         uses: actions/checkout@v4

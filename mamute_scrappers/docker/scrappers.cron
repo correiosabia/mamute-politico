@@ -110,3 +110,22 @@ PYTHONPATH=/app
 # O próprio script controla a repetição: piora avisa na hora, mesmo estado só
 # repete a cada 24h, melhora não gera e-mail. Por isso pode rodar de hora em hora.
 25 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh openrouter-credits -- /usr/local/bin/python -m mamute_scrappers.scripts.check_openrouter_credits >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# --- Emendas parlamentares (Portal da Transparencia) — CS-17 ---
+# Exige PORTAL_TRANSPARENCIA_API_KEY no .env. Sem a chave o job sai com erro
+# explicito apontando a URL de cadastro, sem derrubar mais nada.
+# A fonte limita 30 req/min por chave e serve 15 registros por pagina; um ano
+# tem ~400 paginas, ou seja ~15 min de coleta.
+
+# Ano corrente (diario as 06h50 UTC = 03h50 BRT). Continua necessario mesmo
+# depois que o backfill encerra: empenhado/liquidado/pago mudam o ano inteiro.
+50 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh emendas -- /usr/local/bin/python -m mamute_scrappers.portal_crawler.emendas --ano $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Backfill 2022 -> ano corrente (a cada 1h no minuto 35 — livre entre os jobs
+# horarios ja existentes, que ocupam 10, 25, 40 e 55). Sao ~5 chunks de um ano
+# cada; com 2 por execucao a fila fecha em ~3 horas e depois vira no-op.
+35 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-emendas -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_emendas --chunks-per-run 2 >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Burst de inicializacao: esvazia a fila do backfill mais rapido que o ritmo
+# horario. A trava de arquivo garante que burst e cron nao rodam juntos.
+@reboot sleep 45 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_emendas --chunks-per-run 1 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill de emendas completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
