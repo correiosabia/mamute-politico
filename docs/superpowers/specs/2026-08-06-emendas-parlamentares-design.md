@@ -204,8 +204,14 @@ Router novo `api/routers/amendments.py`, registrado em `api/main.py`.
 
 | Rota | Retorno |
 |---|---|
-| `GET /amendments?parliamentarian_id=&year=&sort_by=&order=&limit=&offset=` | Lista paginada, no molde de `/roll-call-votes` |
-| `GET /parliamentarians/{id}/amendments/summary?year=` | `{year, count, committed_total, paid_total}` |
+| `GET /amendments?parliamentarian_id=&year=&sort_by=&sort_order=&limit=&offset=` | Lista paginada, no molde de `/roll-call-votes` |
+| `GET /amendments/summary?parliamentarian_id=&year=` | `{year, count, committed_total, paid_total}` |
+
+O resumo fica sob `/amendments`, e não sob `/parliamentarians/{id}/…`, por dois
+motivos: mantém tudo sobre emenda num arquivo só, e o verificador de contrato do
+CI (`scripts/check_ui_api_contract.py`) casa rota pelo prefixo declarado no
+`APIRouter` — pendurar a rota noutro router exigiria cirurgia em
+`parliamentarians.py`, que já tem 546 linhas.
 
 A rota de auditoria fica em `api/routers/admin.py`, não no router novo:
 `GET /admin/amendments/unmatched`, retornando autores não casados agrupados por
