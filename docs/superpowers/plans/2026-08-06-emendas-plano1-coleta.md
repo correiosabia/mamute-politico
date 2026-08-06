@@ -34,6 +34,23 @@ crawlers existentes da Câmara, que devolvem `{"dados": [...], "links": [...]}`.
 Não há campo de total nem link `next`: a paginação termina quando a página vem
 vazia.
 
+**Medido contra a API real em 2026-08-06** (não suponha outros valores):
+
+- **15 registros por página**, fixo — não há parâmetro de tamanho.
+- Volume por ano: 2022 → 408 páginas; 2024 → 466; 2026 → 355. O backfill
+  inteiro são ~2.100 páginas, ~31.500 linhas.
+- `tipoEmenda` observado assume dois valores:
+  `Emenda Individual - Transferências com Finalidade Definida` e
+  `Emenda de Bancada`. A checagem por substring de `is_individual_amendment`
+  acerta os dois.
+- `autor` e `nomeAutor` vieram **sempre iguais** (0 divergências em 225 itens).
+- `nomeAutor` vem em **caixa alta** e é o **nome parlamentar**, não o civil:
+  `ADRIANO DO BALDY`, `ALAN RICK`, `HEITOR SCHUCH`.
+- `localidadeDoGasto` tem granularidade de **UF ou `Nacional`** — nunca
+  município. Valores reais: `SÃO PAULO (UF)`, `RIO GRANDE DO SUL (UF)`,
+  `Nacional`.
+- **Taxa de casamento medida: 94%**, com zero casos `ambiguous`.
+
 Cada item:
 
 ```json
@@ -694,8 +711,9 @@ A API responde com um array JSON puro, sem envelope e sem contagem total. A
 paginacao termina quando uma pagina volta vazia — nao ha link `next` como nas
 APIs da Camara.
 
-O limite de requisicoes e por chave, na casa de 30/minuto fora da madrugada.
-Por isso o atraso padrao entre paginas e conservador.
+O limite e por chave: 30 requisicoes/minuto fora da madrugada, ou seja 2s por
+requisicao cravados. O atraso padrao e 2.2s para nao raspar o teto. Cada pagina
+traz 15 registros, e um ano tem ~400 paginas (medido), logo ~15 min por ano.
 """
 
 from __future__ import annotations
@@ -711,7 +729,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.portaldatransparencia.gov.br/api-de-dados"
 EMENDAS_ENDPOINT = f"{BASE_URL}/emendas"
 API_KEY_HEADER = "chave-api-dados"
-DEFAULT_REQUEST_DELAY = 2.0
+DEFAULT_REQUEST_DELAY = 2.2
 REQUEST_TIMEOUT = 60
 
 
@@ -988,26 +1006,29 @@ git add mamute_scrappers/portal_crawler/client.py \
 git commit -m "feat(emendas): cliente do Portal da Transparencia e modo diagnostico"
 ```
 
-- [ ] **Step 8: PONTO DE DECISÃO — rode o diagnóstico**
+- [ ] **Step 8: Confirme o diagnóstico contra a base real**
 
-Com a chave em mãos, e o `DATABASE_URL` apontando para uma base com
-parlamentares:
+Este passo já foi **antecipado e respondido** em 2026-08-06, contra a API real,
+usando as APIs da Câmara e do Senado como proxy da tabela `parliamentarian`:
+**94% de casamento, zero ambíguos**, com o Portal publicando nome parlamentar.
+O limiar de 85% que condicionava o resto do plano foi superado — siga em frente
+sem reavaliar o desenho.
+
+O que resta é confirmar contra a base **de verdade**, que tem histórico desde
+2018 e deve casar mais que os 94% medidos contra parlamentares em exercício:
 
 ```bash
-PORTAL_TRANSPARENCIA_API_KEY=<chave> \
+PORTAL_TRANSPARENCIA_API_KEY=<chave> DATABASE_URL=<base_com_parlamentares> \
   python -m mamute_scrappers.portal_crawler.emendas --ano 2026 --dry-run --limit 500
 ```
 
-Registre no PR os três números que saem do log:
+Registre a taxa no corpo do PR. Se vier **abaixo de 90%**, algo divergiu do
+diagnóstico e vale investigar antes de seguir — mas não é o cenário esperado.
 
-1. Os valores literais de `tipoEmenda` — confirma se `is_individual_amendment` acerta o filtro.
-2. A taxa de casamento.
-3. A lista de exemplos não casados.
-
-**Se a taxa for alta (≥ 85%)**, siga o plano como está. **Se for baixa**, pare e
-reavalie com o dono do produto antes da Task 4: o painel de administração deixa
-de ser conveniência e vira pré-requisito, e talvez seja preciso mapeamento
-manual de nomes antes de qualquer interface.
+Nomes que legitimamente não casam são de quem já deixou o mandato
+(`FATIMA PELAES`, `IVAN VALENTE`, `PAULAO`, `VICENTINHO` apareceram assim na
+amostra). Isso é resíduo esperado, não defeito: é exatamente para ele que
+`parliamentarian_id` é anulável.
 
 ---
 
@@ -1593,9 +1614,9 @@ def emendas(
                 else:
                     updated += 1
                 # Commit parcial: `session_scope` so commita ao sair do bloco, e
-                # um ano inteiro numa unica transacao significa perder 50 mil
-                # linhas por causa de uma falha de rede na ultima pagina. Como o
-                # upsert e idempotente, retomar do zero apenas reescreve o que ja
+                # um ano inteiro numa transacao unica (~6 mil linhas, medido)
+                # some inteiro se a rede falhar na ultima das ~400 paginas. Como
+                # o upsert e idempotente, retomar apenas reescreve o que ja
                 # estava la.
                 if (inserted + updated) % 500 == 0:
                     session.commit()

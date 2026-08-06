@@ -71,7 +71,7 @@ def seed_amendments(db_session):
                 author_name_raw="José da Silva",
                 parliamentarian_id=1,
                 match_status="matched",
-                spending_locality="TERESINA - PI",
+                spending_locality="PIAUÍ (UF)",
                 function="Saúde",
                 committed_value=Decimal("2000000.00"),
                 paid_value=Decimal("500000.00"),
@@ -84,7 +84,7 @@ def seed_amendments(db_session):
                 author_name_raw="José da Silva",
                 parliamentarian_id=1,
                 match_status="matched",
-                spending_locality="PARNAÍBA - PI",
+                spending_locality="Nacional",
                 function="Educação",
                 committed_value=Decimal("1500000.00"),
                 paid_value=Decimal("0.00"),
@@ -705,7 +705,7 @@ const EMENDA = {
   author_name_raw: 'José da Silva',
   parliamentarian_id: 1,
   match_status: 'matched',
-  spending_locality: 'TERESINA - PI',
+  spending_locality: 'PIAUÍ (UF)',
   function: 'Saúde',
   subfunction: 'Atenção Básica',
   committed_value: '2000000.00',
@@ -726,7 +726,7 @@ describe('EmendasTable', () => {
     renderWithClient(<EmendasTable parliamentarianId={1} year={2026} />);
 
     await waitFor(() => {
-      expect(screen.getByText('TERESINA - PI')).toBeInTheDocument();
+      expect(screen.getByText('PIAUÍ (UF)')).toBeInTheDocument();
     });
     expect(screen.getByText('Saúde')).toBeInTheDocument();
     expect(screen.getByText('R$ 2.000.000,00')).toBeInTheDocument();

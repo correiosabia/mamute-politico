@@ -60,6 +60,46 @@ Três propriedades desse contrato definem o desenho inteiro:
 3. **Os valores mudam ao longo do ano** (empenhado → liquidado → pago). O
    registro não é imutável: exige upsert periódico, não insert único.
 
+### Dados medidos contra a API real (2026-08-06)
+
+A fatia diagnóstica foi antecipada e rodada com chave válida. O que era
+suposição virou número:
+
+| Medida | Valor |
+|---|---|
+| Registros por página | **15** (fixo; sem parâmetro de tamanho) |
+| Emendas em 2026 | 355 páginas, ~5.300 |
+| Emendas em 2024 | 466 páginas, ~7.000 |
+| Emendas em 2022 | 408 páginas, ~6.100 |
+| Estimativa 2022–2026 | ~2.100 páginas, ~31.500 linhas |
+| Valores de `tipoEmenda` observados | `Emenda Individual - Transferências com Finalidade Definida` e `Emenda de Bancada` |
+| Proporção de individuais na amostra | 223 de 225 |
+| `autor` diferente de `nomeAutor` | 0 de 225 — os dois campos vêm sempre iguais |
+| `localidadeDoGasto` | Granularidade de **UF ou "Nacional"**, nunca município (`SÃO PAULO (UF)`, `Nacional`) |
+| **Taxa de casamento** | **94%** por emenda, 94% por autor distinto |
+| Casos `ambiguous` | **zero** na amostra |
+
+O `nomeAutor` chega em caixa alta e corresponde ao **nome parlamentar** (nome de
+guerra: `ADRIANO DO BALDY`, `ALAN RICK`), não ao nome civil. Era o principal
+risco do desenho e ele não se materializou.
+
+**A taxa de 94% é um piso, não uma estimativa.** O casamento foi medido contra
+os 593 parlamentares *em exercício* (512 deputados + 81 senadores, lidos das
+APIs da Câmara e do Senado como proxy da nossa tabela). Os nove nomes que não
+casaram — `FATIMA PELAES`, `IVAN VALENTE`, `JORGE SEIF`, `PAULAO`,
+`VICENTINHO` e outros quatro — foram verificados um a um: **nenhum é erro de
+algoritmo**, todos estão simplesmente ausentes da lista de exercício. A tabela
+`parliamentarian` do Mamute guarda histórico desde 2018, então casará vários
+deles.
+
+Duas consequências de desenho:
+
+- O recorte de candidatos por ano de mandato continua desnecessário: zero casos
+  `ambiguous` significa que homônimo não apareceu.
+- A coluna `author_raw` é redundante hoje, já que `autor` e `nomeAutor` sempre
+  coincidem. Fica mantida por fidelidade à fonte — custa um `Text` anulável e
+  protege contra a fonte passar a diferenciá-los.
+
 ### Credencial
 
 Nova variável `PORTAL_TRANSPARENCIA_API_KEY`, declarada em
@@ -262,17 +302,21 @@ Nenhum teste de casamento depende de rede.
 
 ## Riscos
 
-**Taxa de casamento desconhecida.** O Portal pode publicar nome civil onde a
-nossa base guarda nome parlamentar. Se a taxa for baixa, o painel de auditoria
-deixa de ser conveniência e vira pré-requisito. Por isso a primeira fatia da
-implementação é diagnóstica.
+~~**Taxa de casamento desconhecida.**~~ **Resolvido em 2026-08-06:** 94% de piso,
+com o Portal publicando nome parlamentar e não nome civil. Ver "Dados medidos".
 
-**Valores literais de `tipoEmenda` desconhecidos.** O OpenAPI declara o campo
-como string livre, sem enumerar valores. O filtro de "individual" só pode ser
-escrito depois de observar uma resposta real, o que exige a chave.
+~~**Valores literais de `tipoEmenda` desconhecidos.**~~ **Resolvido:** dois
+valores observados, ambos tratados corretamente pela checagem por substring.
 
-**Rate limit do Portal.** Mitigado por atraso conservador entre requisições e
-por rodar em cron, fora de horário de pico.
+**Rate limit do Portal.** Continua de pé. São ~2.100 páginas para o backfill
+inteiro; a 2 s por requisição, cerca de 70 minutos somando os cinco anos, e
+12–16 minutos por ano. O limite documentado de 30 requisições por minuto
+equivale a exatamente 2 s, então o atraso padrão fica em 2,2 s para não raspar
+o teto.
+
+**Rotatividade parlamentar.** Emendas de anos anteriores citam quem já saiu. Não
+é defeito: é a razão de `parliamentarian_id` ser anulável. O painel de auditoria
+é o lugar onde esse resíduo fica visível.
 
 ## Ordem de entrega
 
