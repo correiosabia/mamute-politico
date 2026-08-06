@@ -9,6 +9,7 @@ from .committee import Committee
 from .committee_attendance import CommitteeAttendance
 from .model_pricing import ModelPricing
 from .parliamentarian import Parliamentarian
+from .parliamentary_amendment import ParliamentaryAmendment
 from .plenary_attendance import PlenaryAttendance
 from .proposition import Proposition
 from .proposition_status import PropositionStatus
@@ -35,6 +36,7 @@ __all__ = [
     "ModelPricing",
     "Parliamentarian",
     "ParliamentarianSocialNetwork",
+    "ParliamentaryAmendment",
     "PlenaryAttendance",
     "Projetos",
     "ProjetosParliamentarian",

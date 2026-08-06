@@ -85,6 +85,11 @@ class Parliamentarian(Base):
         cascade="all, delete-orphan",
     )
 
+    amendments = relationship(
+        "ParliamentaryAmendment",
+        back_populates="parliamentarian",
+    )
+
 
 __all__ = ["Parliamentarian"]
 
