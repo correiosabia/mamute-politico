@@ -141,6 +141,41 @@ export interface DashboardStatsOut {
   speeches_count: number;
 }
 
+export interface AmendmentOut {
+  id: number;
+  amendment_code: string;
+  year?: number | null;
+  amendment_number?: string | null;
+  amendment_type?: string | null;
+  author_name_raw?: string | null;
+  parliamentarian_id?: number | null;
+  match_status: string;
+  /** Granularidade de UF ("SÃO PAULO (UF)") ou "Nacional" — nunca município. */
+  spending_locality?: string | null;
+  function?: string | null;
+  subfunction?: string | null;
+  /** Valores vêm como string para não perder centavo em ponto flutuante. */
+  committed_value?: string | null;
+  settled_value?: string | null;
+  paid_value?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AmendmentSummaryOut {
+  year?: number | null;
+  count: number;
+  committed_total: string;
+  paid_total: string;
+}
+
+export interface UnmatchedAuthorOut {
+  author_name_raw?: string | null;
+  amendment_count: number;
+  committed_total: string;
+  match_status: string;
+}
+
 export interface DashboardActivityAuthorOut {
   id: number;
   name?: string | null;

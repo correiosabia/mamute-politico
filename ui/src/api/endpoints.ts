@@ -14,6 +14,8 @@ import type {
   SpeechAnalysisOut,
   DashboardStatsOut,
   DashboardActivityOut,
+  AmendmentOut,
+  AmendmentSummaryOut,
 } from './types';
 
 export interface ListParliamentariansParams {
@@ -216,6 +218,42 @@ export function listRollCallVotes(
 
 export function getRollCallVote(id: number): Promise<RollCallVoteOut> {
   return request<RollCallVoteOut>(`/roll-call-votes/${id}`);
+}
+
+export type AmendmentSortBy = 'year' | 'committed_value' | 'paid_value' | 'id';
+
+export interface ListAmendmentsParams {
+  parliamentarian_id?: number;
+  year?: number;
+  limit?: number;
+  offset?: number;
+  sort_by?: AmendmentSortBy;
+  sort_order?: SortOrder;
+}
+
+/** Emendas parlamentares orçamentárias (não emendas a proposição). */
+export function listAmendments(
+  params: ListAmendmentsParams = {}
+): Promise<AmendmentOut[]> {
+  const sp = new URLSearchParams();
+  if (params.parliamentarian_id != null)
+    sp.set('parliamentarian_id', String(params.parliamentarian_id));
+  if (params.year != null) sp.set('year', String(params.year));
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  if (params.offset != null) sp.set('offset', String(params.offset));
+  if (params.sort_by) sp.set('sort_by', params.sort_by);
+  if (params.sort_order) sp.set('sort_order', params.sort_order);
+  const q = sp.toString();
+  return request<AmendmentOut[]>(`/amendments/${q ? `?${q}` : ''}`);
+}
+
+export function getAmendmentsSummary(
+  parliamentarianId: number,
+  year?: number
+): Promise<AmendmentSummaryOut> {
+  const sp = new URLSearchParams({ parliamentarian_id: String(parliamentarianId) });
+  if (year != null) sp.set('year', String(year));
+  return request<AmendmentSummaryOut>(`/amendments/summary?${sp.toString()}`);
 }
 
 export type SpeechesTranscriptSortBy =

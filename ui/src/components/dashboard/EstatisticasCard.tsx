@@ -1,11 +1,32 @@
-import type { DashboardStatsOut } from '@/api/types';
+import type { AmendmentSummaryOut, DashboardStatsOut } from '@/api/types';
 
 interface EstatisticasCardProps {
   stats?: DashboardStatsOut;
   isLoading?: boolean;
+  amendmentsSummary?: AmendmentSummaryOut;
+  amendmentsYear?: number;
 }
 
-export function EstatisticasCard({ stats, isLoading = false }: EstatisticasCardProps) {
+const BRL_COMPACT = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+/** Valores chegam como string para não perder centavo; só viram número aqui. */
+function formatCompactBRL(value?: string | null): string {
+  if (value == null || value === '') return '—';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? BRL_COMPACT.format(parsed) : '—';
+}
+
+export function EstatisticasCard({
+  stats,
+  isLoading = false,
+  amendmentsSummary,
+  amendmentsYear,
+}: EstatisticasCardProps) {
   const statsItems = [
     {
       value: !isLoading && stats != null ? String(stats.propositions_this_week) : '--',
@@ -43,6 +64,28 @@ export function EstatisticasCard({ stats, isLoading = false }: EstatisticasCardP
           </div>
         ))}
       </div>
+
+      {amendmentsSummary != null && (
+        <div className="mt-6 border-t border-black/[0.08] pt-4">
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-[#383838]">
+            Emendas {amendmentsYear ?? amendmentsSummary.year ?? ''}
+          </p>
+          <div className="mt-2 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[18px] font-bold text-[#468fff]">
+                {formatCompactBRL(amendmentsSummary.committed_total)}
+              </p>
+              <p className="text-[13px] text-[#383838]">Destinado</p>
+            </div>
+            <div>
+              <p className="text-[18px] font-bold text-[#468fff]">
+                {formatCompactBRL(amendmentsSummary.paid_total)}
+              </p>
+              <p className="text-[13px] text-[#383838]">Pago</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

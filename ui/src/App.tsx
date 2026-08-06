@@ -20,6 +20,7 @@ import AdminIaPage from "./pages/AdminIaPage";
 import AdminEmailsPage from "./pages/AdminEmailsPage";
 import AdminUserDetailPage from "./pages/AdminUserDetailPage";
 import AdminCoveragePage from "./pages/AdminCoveragePage";
+import AdminEmendasPage from "./pages/AdminEmendasPage";
 import NotFound from "./pages/NotFound";
 import { useGhostAuth } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -200,6 +201,14 @@ const App = () => (
                 element={
                   <RequireAdmin>
                     <AdminCoveragePage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/emendas-nao-casadas"
+                element={
+                  <RequireAdmin>
+                    <AdminEmendasPage />
                   </RequireAdmin>
                 }
               />
