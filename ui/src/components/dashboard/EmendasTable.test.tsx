@@ -107,4 +107,35 @@ describe('EmendasTable', () => {
     });
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
+
+  it('cada linha aponta para a emenda no Portal da Transparencia', async () => {
+    vi.spyOn(endpoints, 'listAmendments').mockResolvedValue([EMENDA]);
+    const abrir = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    renderWithClient(<EmendasTable parliamentarianId={1} year={2026} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('link')).toBeInTheDocument();
+    });
+    screen.getByRole('link').click();
+
+    expect(abrir).toHaveBeenCalledWith(
+      'https://portaldatransparencia.gov.br/emendas/detalhe?codigoEmenda=202632980010',
+      '_blank',
+      'noopener,noreferrer'
+    );
+  });
+
+  it('linha sem codigo valido nao vira link', async () => {
+    vi.spyOn(endpoints, 'listAmendments').mockResolvedValue([
+      { ...EMENDA, amendment_code: '' },
+    ]);
+
+    renderWithClient(<EmendasTable parliamentarianId={1} year={2026} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Assistência social')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
 });

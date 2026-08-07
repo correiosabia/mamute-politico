@@ -8,7 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2 } from 'lucide-react';
+import { getSafeExternalUrl, openSafeExternalUrl } from '@/lib/safeExternalUrl';
+import { getPortalEmendaUrl } from '@/lib/portalTransparencia';
+import { ExternalLink, Loader2 } from 'lucide-react';
 
 interface EmendasTableProps {
   parliamentarianId: number;
@@ -79,24 +81,63 @@ export function EmendasTable({ parliamentarianId, year }: EmendasTableProps) {
             <TableHead>Função</TableHead>
             <TableHead className="text-right">Empenhado</TableHead>
             <TableHead className="text-right">Pago</TableHead>
+            <TableHead className="w-[44px] text-right" aria-label="Abrir no Portal" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.map((emenda) => (
-            <TableRow key={emenda.id}>
-              <TableCell className="whitespace-nowrap">
-                {textOrDash(emenda.amendment_number)}
-              </TableCell>
-              <TableCell>{textOrDash(emenda.spending_locality)}</TableCell>
-              <TableCell>{textOrDash(emenda.function)}</TableCell>
-              <TableCell className="whitespace-nowrap text-right">
-                {formatBRL(emenda.committed_value)}
-              </TableCell>
-              <TableCell className="whitespace-nowrap text-right">
-                {formatBRL(emenda.paid_value)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {data.map((emenda) => {
+            const safeLink = getSafeExternalUrl(
+              getPortalEmendaUrl(emenda.amendment_code)
+            );
+            return (
+              <TableRow
+                key={emenda.id}
+                role={safeLink ? 'link' : undefined}
+                tabIndex={safeLink ? 0 : -1}
+                title={
+                  safeLink
+                    ? 'Ver esta emenda no Portal da Transparência'
+                    : undefined
+                }
+                onClick={() => {
+                  openSafeExternalUrl(safeLink);
+                }}
+                onKeyDown={(e) => {
+                  if (!safeLink) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openSafeExternalUrl(safeLink);
+                  }
+                }}
+                className={[
+                  'hover:bg-muted/50',
+                  safeLink
+                    ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
+                    : 'cursor-default',
+                ].join(' ')}
+              >
+                <TableCell className="whitespace-nowrap">
+                  {textOrDash(emenda.amendment_number)}
+                </TableCell>
+                <TableCell>{textOrDash(emenda.spending_locality)}</TableCell>
+                <TableCell>{textOrDash(emenda.function)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {formatBRL(emenda.committed_value)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {formatBRL(emenda.paid_value)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {safeLink && (
+                    <ExternalLink
+                      className="ml-auto h-4 w-4 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
