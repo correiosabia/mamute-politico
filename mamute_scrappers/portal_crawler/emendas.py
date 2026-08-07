@@ -44,6 +44,32 @@ logger = logging.getLogger(__name__)
 API_KEY_ENV = "PORTAL_TRANSPARENCIA_API_KEY"
 COMMIT_EVERY = 500
 
+
+def _load_env_file() -> None:
+    """Carrega o .env antes de ler a chave da API.
+
+    Nada no processo carrega o .env sozinho: quem faz isso e `db/engine.py`, no
+    import. Este crawler le a chave ANTES de tocar no banco, entao sem esta
+    chamada a variavel nao existe em producao — onde a chave vive no arquivo, e
+    nao no ambiente do container. Localmente o bug fica invisivel se a variavel
+    for exportada na mao.
+
+    `override=False` preserva variavel ja exportada no ambiente, mesma politica
+    de db/engine.py.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover — dotenv e dependencia declarada
+        return
+
+    for env_file in (
+        PROJECT_ROOT / "mamute_scrappers" / ".env",
+        PROJECT_ROOT / ".env",
+        Path.cwd() / ".env",
+    ):
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
+
 ParliamentaryAmendment: Any = None
 
 # Campos que o robo sempre atualiza, mesmo quando houve correcao manual de
@@ -172,6 +198,7 @@ def emendas(
 ) -> None:
     """Coleta emendas individuais de um ano, casa por nome e persiste."""
     ano = ano or date.today().year
+    _load_env_file()
     api_key = os.getenv(API_KEY_ENV, "")
     client = PortalTransparenciaClient(api_key)
 

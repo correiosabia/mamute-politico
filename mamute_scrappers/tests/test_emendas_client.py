@@ -125,3 +125,48 @@ def test_build_payload_converte_campos():
 
 def test_build_payload_sem_codigo_devolve_none():
     assert emendas_mod.build_payload({"ano": 2026}) is None
+
+
+# --- carregamento do .env -----------------------------------------------------
+
+
+def test_le_a_chave_do_arquivo_env_sem_variavel_exportada(tmp_path, monkeypatch):
+    """Regressao: em producao a chave vive no .env, nao no ambiente.
+
+    O crawler le a chave ANTES de tocar no banco, e e o import de db/engine.py
+    que carrega o .env — entao sem carregamento proprio a variavel nao existe.
+    Localmente o bug ficava invisivel porque a variavel era exportada na mao.
+    """
+    monkeypatch.delenv(emendas_mod.API_KEY_ENV, raising=False)
+    # Isola de um .env real do repositorio, que venceria por vir antes na lista
+    # de candidatos e tornaria o teste dependente da maquina.
+    monkeypatch.setattr(emendas_mod, "PROJECT_ROOT", tmp_path)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"{emendas_mod.API_KEY_ENV}=chave-vinda-do-arquivo\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    emendas_mod._load_env_file()
+
+    import os
+
+    assert os.getenv(emendas_mod.API_KEY_ENV) == "chave-vinda-do-arquivo"
+
+
+def test_variavel_exportada_tem_precedencia_sobre_o_arquivo(tmp_path, monkeypatch):
+    monkeypatch.setenv(emendas_mod.API_KEY_ENV, "chave-do-ambiente")
+    monkeypatch.setattr(emendas_mod, "PROJECT_ROOT", tmp_path)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"{emendas_mod.API_KEY_ENV}=chave-do-arquivo\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    emendas_mod._load_env_file()
+
+    import os
+
+    assert os.getenv(emendas_mod.API_KEY_ENV) == "chave-do-ambiente"
