@@ -59,25 +59,70 @@ def test_envia_a_chave_no_header_esperado(monkeypatch):
     assert capturado[client_mod.API_KEY_HEADER] == "chave-secreta"
 
 
-def test_erro_http_encerra_a_paginacao_sem_propagar(monkeypatch):
+def test_erro_http_persistente_levanta_em_vez_de_truncar(monkeypatch):
+    """Um 504 nao pode virar "acabaram os dados".
+
+    Em producao um 504 na pagina 299 de 408 cortou ~27% das emendas de 2022, e o
+    chunk foi marcado como concluido. Falhar alto e o comportamento correto: o
+    orquestrador tenta o ano de novo.
+    """
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _s: None)
+
     def fake_get(url, params=None, headers=None, timeout=None):
-        return FakeResponse({}, status_code=500)
+        return FakeResponse({}, status_code=504)
 
     monkeypatch.setattr(client_mod.requests, "get", fake_get)
 
     api = client_mod.PortalTransparenciaClient("chave", request_delay=0)
-    assert list(api.iter_amendments(2026)) == []
+    with pytest.raises(client_mod.IncompletePaginationError):
+        list(api.iter_amendments(2026))
 
 
-def test_resposta_que_nao_e_lista_encerra_a_paginacao(monkeypatch):
-    # A fonte devolve array puro; um dict e sinal de erro disfarcado de 200.
+def test_erro_transitorio_e_superado_por_retentativa(monkeypatch):
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _s: None)
+    tentativas = {"n": 0}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if params["pagina"] == 1:
+            tentativas["n"] += 1
+            if tentativas["n"] < 3:  # falha duas vezes, acerta na terceira
+                return FakeResponse({}, status_code=504)
+            return FakeResponse([{"codigoEmenda": "a"}])
+        return FakeResponse([])
+
+    monkeypatch.setattr(client_mod.requests, "get", fake_get)
+
+    api = client_mod.PortalTransparenciaClient("chave", request_delay=0)
+    itens = list(api.iter_amendments(2026))
+
+    assert [i["codigoEmenda"] for i in itens] == ["a"]
+    assert tentativas["n"] == 3
+
+
+def test_pagina_vazia_encerra_normalmente_sem_erro(monkeypatch):
+    # Pagina vazia e fim legitimo — nao pode virar excecao.
+    def fake_get(url, params=None, headers=None, timeout=None):
+        return FakeResponse([]) if params["pagina"] > 1 else FakeResponse(
+            [{"codigoEmenda": "a"}]
+        )
+
+    monkeypatch.setattr(client_mod.requests, "get", fake_get)
+    api = client_mod.PortalTransparenciaClient("chave", request_delay=0)
+    assert len(list(api.iter_amendments(2026))) == 1
+
+
+def test_resposta_que_nao_e_lista_levanta(monkeypatch):
+    # A fonte devolve array puro; um dict e erro disfarcado de 200.
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _s: None)
+
     def fake_get(url, params=None, headers=None, timeout=None):
         return FakeResponse({"Erro na API": "..."})
 
     monkeypatch.setattr(client_mod.requests, "get", fake_get)
 
     api = client_mod.PortalTransparenciaClient("chave", request_delay=0)
-    assert list(api.iter_amendments(2026)) == []
+    with pytest.raises(client_mod.IncompletePaginationError):
+        list(api.iter_amendments(2026))
 
 
 def test_a_chave_nunca_aparece_em_repr():

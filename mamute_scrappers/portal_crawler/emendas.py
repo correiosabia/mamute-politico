@@ -173,6 +173,15 @@ def upsert_amendment(session: Any, payload: Dict[str, Any]) -> Tuple[Any, bool]:
         record.parliamentarian_id = payload.get("parliamentarian_id")
         record.match_status = payload.get("match_status")
 
+    if created:
+        # Flush apos preencher os campos (match_status e NOT NULL). A sessao do
+        # projeto usa autoflush=False e o commit so ocorre a cada COMMIT_EVERY;
+        # sem este flush, um mesmo codigo repetido dentro do lote — e o Portal
+        # repete registro entre paginas — nao seria encontrado pela consulta
+        # acima, viraria duplicata e o commit morreria com UniqueViolation,
+        # derrubando o ano inteiro.
+        session.flush()
+
     return record, created
 
 
