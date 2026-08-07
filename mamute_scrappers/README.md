@@ -75,6 +75,35 @@ python -m mamute_scrappers.camara_crawler.speeches_transcripts --deputado-id 123
 python -m mamute_scrappers.camara_crawler.speeches_transcripts --dry-run
 ```
 
+### Coleta de emendas parlamentares (Portal da Transparência)
+
+Emenda **orçamentária** (destinação de verba), não emenda a proposição.
+
+Exige `PORTAL_TRANSPARENCIA_API_KEY` no `.env` — cadastro gratuito em
+portaldatransparencia.gov.br/api-de-dados/cadastrar-email. A fonte limita 30
+requisições por minuto por chave e serve 15 registros por página; um ano tem
+~400 páginas, ou seja ~15 min de coleta.
+
+A fonte não devolve identificador de parlamentar, só o nome do autor em texto
+livre, então cada emenda passa por um casamento por nome. O que não casa é
+gravado mesmo assim, com `parliamentarian_id` nulo, e aparece em
+`/admin/emendas-nao-casadas`.
+
+```bash
+# ano corrente, persistindo no banco
+python -m mamute_scrappers.portal_crawler.emendas
+
+# ano específico
+python -m mamute_scrappers.portal_crawler.emendas --ano 2025
+
+# diagnóstico: não persiste, reporta a taxa de casamento por nome
+python -m mamute_scrappers.portal_crawler.emendas --ano 2026 --dry-run --limit 500
+
+# backfill 2022 -> ano corrente (auto-encerra quando a fila zera)
+python -m mamute_scrappers.scripts.backfill_emendas --chunks-per-run 2
+python -m mamute_scrappers.scripts.backfill_emendas --status
+```
+
 ### Reprocessar análise de texto de pronunciamentos
 
 ```bash

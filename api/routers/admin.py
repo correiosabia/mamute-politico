@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from decimal import Decimal
 from datetime import datetime
 from typing import Any, Optional
 
@@ -18,6 +19,7 @@ try:
     from ..dependencies import get_db
     from ..db.models.project import Projetos, Tiers
     from ..db.models.admin_audit_log import AdminAuditLog
+    from ..db.models.parliamentary_amendment import ParliamentaryAmendment
     from ..services.ghost_admin import (
         generate_admin_token,
         get_ghost_admin_settings,
@@ -50,6 +52,7 @@ except ImportError:  # execução dentro de api/
     from dependencies import get_db
     from db.models.project import Projetos, Tiers
     from db.models.admin_audit_log import AdminAuditLog
+    from db.models.parliamentary_amendment import ParliamentaryAmendment
     from services.ghost_admin import (
         generate_admin_token,
         get_ghost_admin_settings,
@@ -467,3 +470,67 @@ def metrics_credits_route(
     """Saldo do OpenRouter e repartição do gasto entre chatbot e embeddings."""
 
     return credits_overview(db)
+
+
+_MONEY_CENTS = Decimal("0.01")
+
+
+def _to_money(value: Any) -> Decimal:
+    """Normaliza soma monetaria para Decimal com 2 casas.
+
+    O SQLite devolve float em SUM(); o Postgres devolve Decimal. Passar por str
+    evita a expansao binaria de Decimal(float).
+    """
+    if value is None:
+        return Decimal("0.00")
+    if isinstance(value, Decimal):
+        return value.quantize(_MONEY_CENTS)
+    return Decimal(str(value)).quantize(_MONEY_CENTS)
+
+
+class UnmatchedAuthorOut(BaseModel):
+    """Autor de emenda que o casamento automatico nao resolveu."""
+
+    author_name_raw: Optional[str] = None
+    amendment_count: int
+    committed_total: str
+    match_status: str
+
+
+@router.get("/amendments/unmatched", response_model=list[UnmatchedAuthorOut])
+def list_unmatched_amendment_authors(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> list[UnmatchedAuthorOut]:
+    """Autores nao casados, agrupados e ordenados por valor.
+
+    O Portal da Transparencia so devolve o nome do autor em texto livre, entao
+    parte das emendas nunca casa automaticamente — em geral quem ja deixou o
+    mandato. Esta rota existe para que esse residuo seja visivel e auditavel,
+    em vez de sumir silenciosamente.
+    """
+    total = func.coalesce(func.sum(ParliamentaryAmendment.committed_value), 0)
+    stmt = (
+        select(
+            ParliamentaryAmendment.author_name_raw,
+            ParliamentaryAmendment.match_status,
+            func.count(ParliamentaryAmendment.id).label("amendment_count"),
+            total.label("committed_total"),
+        )
+        .where(ParliamentaryAmendment.match_status.in_(("unmatched", "ambiguous")))
+        .group_by(
+            ParliamentaryAmendment.author_name_raw,
+            ParliamentaryAmendment.match_status,
+        )
+        .order_by(total.desc())
+    )
+
+    return [
+        UnmatchedAuthorOut(
+            author_name_raw=row.author_name_raw,
+            match_status=row.match_status,
+            amendment_count=row.amendment_count,
+            committed_total=str(_to_money(row.committed_total)),
+        )
+        for row in db.execute(stmt)
+    ]

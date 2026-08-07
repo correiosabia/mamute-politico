@@ -42,6 +42,17 @@ A parliamentarian attendance record for plenary activity, stored in `plenary_att
 
 A parliamentarian attendance record for committee activity, stored in `committee_attendance`.
 
+### Parliamentary Amendment
+
+A budget amendment (*emenda parlamentar orçamentária*) through which a
+parliamentarian directs federal funds, stored in `parliamentary_amendment`.
+Collected from the Portal da Transparência, which identifies the author only by
+free-text name — so `parliamentarian_id` is nullable and `match_status` records
+whether the name resolved to a parliamentarian, resolved ambiguously, or not at
+all. Amendments that resolve to nobody are kept, not discarded, and surface in
+the admin audit panel. Not to be confused with an amendment to a proposition,
+which alters the text of a bill.
+
 ### Dashboard Stats
 
 Aggregated activity counts shown in the authenticated project dashboard. These counts must make their source period and data freshness clear enough that a zero can be distinguished from missing data.

@@ -11,10 +11,12 @@ import { ProposicoesList } from '@/components/dashboard/ProposicoesList';
 import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
+import { EmendasTable } from '@/components/dashboard/EmendasTable';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
 import { TrackSection } from '@/components/TrackSection';
 import { sendSectionView } from '@/api/events';
 import {
+  getAmendmentsSummary,
   getMyParliamentarianDashboardStats,
   getParliamentarian,
   listMyProjectFavorites,
@@ -78,6 +80,14 @@ const ParlamentarDashboard = () => {
   const dashboardStatsQuery = useQuery({
     queryKey: ['dashboard-stats', 'parliamentarian', numericId],
     queryFn: () => getMyParliamentarianDashboardStats(numericId),
+    enabled: isIdValid,
+  });
+  // Emendas sao grandeza de ano civil, diferente do dashboardStats (3 meses),
+  // por isso query e endpoint proprios.
+  const emendasYear = new Date().getFullYear();
+  const amendmentsSummaryQuery = useQuery({
+    queryKey: ['amendments-summary', numericId, emendasYear],
+    queryFn: () => getAmendmentsSummary(numericId, emendasYear),
     enabled: isIdValid,
   });
   const monitoradosCount = favoritesQuery.data?.length ?? 0;
@@ -176,7 +186,12 @@ const ParlamentarDashboard = () => {
               <ParlamentarInfo parlamentar={parlamentar} />
             </div>
 
-            <EstatisticasCard stats={dashboardStatsQuery.data} isLoading={dashboardStatsQuery.isLoading} />
+            <EstatisticasCard
+              stats={dashboardStatsQuery.data}
+              isLoading={dashboardStatsQuery.isLoading}
+              amendmentsSummary={amendmentsSummaryQuery.data}
+              amendmentsYear={emendasYear}
+            />
           </div>
 
           {/* Temas do discurso */}
@@ -215,6 +230,9 @@ const ParlamentarDashboard = () => {
                   <TabsTrigger value="taquigraficas" className={parlamentarSectionTabTriggerClass}>
                     TAQUIGRÁFICAS
                   </TabsTrigger>
+                  <TabsTrigger value="emendas" className={parlamentarSectionTabTriggerClass}>
+                    EMENDAS
+                  </TabsTrigger>
                 </TabsList>
               </div>
               <h2 className="text-[32px] leading-none font-bold text-[#090909]">Atividades do Parlamentar</h2>
@@ -227,6 +245,9 @@ const ParlamentarDashboard = () => {
             </TabsContent>
             <TabsContent value="taquigraficas" className="mt-0 p-6 pt-4 h-[500px]">
               <TaquigraficasTable parliamentarianId={numericId} />
+            </TabsContent>
+            <TabsContent value="emendas" className="mt-0 p-6 pt-4 h-[500px]">
+              <EmendasTable parliamentarianId={numericId} year={emendasYear} />
             </TabsContent>
           </Tabs>
         </TrackSection>

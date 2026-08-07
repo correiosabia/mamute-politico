@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BarChart3, Database, Settings2, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+import { BarChart3, Database, FileSearch, Settings2, SlidersHorizontal, type LucideIcon } from 'lucide-react';
 import { AdminShell } from '@/components/layout/AdminShell';
 
 interface PanelCard {
@@ -30,6 +30,13 @@ const PANELS: PanelCard[] = [
     title: 'Cobertura do banco',
     desc: 'Quanto temos preenchido, por ano, casa e tipo (vs API aberta em breve).',
     icon: Database,
+    available: true,
+  },
+  {
+    to: '/admin/emendas-nao-casadas',
+    title: 'Emendas não casadas',
+    desc: 'Autores de emenda que não corresponderam a nenhum parlamentar da base.',
+    icon: FileSearch,
     available: true,
   },
   {

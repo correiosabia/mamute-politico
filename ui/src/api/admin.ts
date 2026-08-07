@@ -1,4 +1,5 @@
 import { request } from './client';
+import type { UnmatchedAuthorOut } from './types';
 
 export interface WhoamiResponse {
   email: string;
@@ -350,4 +351,10 @@ export interface CreditsMetrics {
 
 export function fetchCredits(): Promise<CreditsMetrics> {
   return request<CreditsMetrics>('/admin/metrics/credits');
+}
+
+
+/** Autores de emenda que o casamento automático por nome não resolveu. */
+export function listUnmatchedAmendmentAuthors(): Promise<UnmatchedAuthorOut[]> {
+  return request<UnmatchedAuthorOut[]>('/admin/amendments/unmatched');
 }
