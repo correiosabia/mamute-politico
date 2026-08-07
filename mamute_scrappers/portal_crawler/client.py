@@ -28,9 +28,23 @@ API_KEY_HEADER = "chave-api-dados"
 DEFAULT_REQUEST_DELAY = 2.2
 REQUEST_TIMEOUT = 60
 
+# O Portal devolve 504 esporadico sob carga. Sem retentativa, uma unica falha
+# truncava o ano inteiro em silencio.
+MAX_PAGE_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 10
+
 
 class MissingApiKeyError(RuntimeError):
     """Chave do Portal da Transparencia ausente ou vazia."""
+
+
+class IncompletePaginationError(RuntimeError):
+    """Uma pagina nao pode ser lida; o ano ficaria incompleto.
+
+    Existe para que a falha seja ruidosa. O crawler sai com codigo != 0, o
+    orquestrador de backfill NAO marca o chunk como concluido e tenta o ano de
+    novo na proxima execucao.
+    """
 
 
 class PortalTransparenciaClient:
@@ -87,13 +101,52 @@ class PortalTransparenciaClient:
 
         return [item for item in data if isinstance(item, dict)]
 
+    def _get_page_with_retry(
+        self,
+        year: int,
+        page: int,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Busca uma pagina, insistindo em falha transitoria.
+
+        Devolve None so quando todas as tentativas falharam — ou seja, None
+        significa "nao consegui ler", nunca "acabaram os dados".
+        """
+        for attempt in range(1, MAX_PAGE_ATTEMPTS + 1):
+            items = self._get_page(year, page)
+            if items is not None:
+                return items
+            if attempt < MAX_PAGE_ATTEMPTS:
+                espera = RETRY_BACKOFF_SECONDS * attempt
+                logger.warning(
+                    "Repetindo ano=%s pagina=%s em %ss (tentativa %s/%s)",
+                    year,
+                    page,
+                    espera,
+                    attempt,
+                    MAX_PAGE_ATTEMPTS,
+                )
+                time.sleep(espera)
+        return None
+
     def iter_amendments(self, year: int) -> Iterator[Dict[str, Any]]:
-        """Itera todas as emendas de um ano, pagina a pagina."""
+        """Itera todas as emendas de um ano, pagina a pagina.
+
+        Levanta IncompletePaginationError se uma pagina nao puder ser lida apos
+        as retentativas. Encerrar em silencio seria pior: o ano ficaria truncado
+        com cara de sucesso, o orquestrador marcaria o chunk como concluido e
+        ninguem voltaria la. Foi o que aconteceu com 2022 em producao — um 504
+        na pagina 299 de 408 cortou ~27% das emendas do ano.
+        """
         page = 1
         while True:
-            items = self._get_page(year, page)
+            items = self._get_page_with_retry(year, page)
+            if items is None:
+                raise IncompletePaginationError(
+                    f"Nao foi possivel ler a pagina {page} do ano {year} apos "
+                    f"{MAX_PAGE_ATTEMPTS} tentativas; ano incompleto."
+                )
             if not items:
-                return
+                return  # pagina vazia = fim legitimo dos dados
             yield from items
             page += 1
             if self._request_delay:
@@ -102,6 +155,8 @@ class PortalTransparenciaClient:
 
 __all__ = [
     "API_KEY_HEADER",
+    "IncompletePaginationError",
+    "MAX_PAGE_ATTEMPTS",
     "DEFAULT_REQUEST_DELAY",
     "EMENDAS_ENDPOINT",
     "MissingApiKeyError",

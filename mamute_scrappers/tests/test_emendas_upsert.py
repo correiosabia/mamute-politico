@@ -58,7 +58,9 @@ class ParliamentaryAmendment(Base):
 def session(monkeypatch) -> Iterator[Session]:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
-    maker = sessionmaker(bind=engine)
+    # autoflush=False espelha a sessao de producao (db/engine.py). Com
+    # autoflush=True o bug de duplicata dentro do lote nao reproduz.
+    maker = sessionmaker(bind=engine, autoflush=False)
     monkeypatch.setattr(emendas_mod, "ParliamentaryAmendment", ParliamentaryAmendment)
     with maker() as s:
         s.add(
@@ -181,3 +183,24 @@ def test_emenda_nao_casada_e_persistida_e_nao_descartada(session):
     assert record.parliamentarian_id is None
     assert record.match_status == "unmatched"
     assert record.author_name_raw == "FATIMA PELAES"
+
+
+def test_codigo_repetido_no_mesmo_lote_nao_gera_duplicata(session):
+    """Regressao: o Portal repete o mesmo codigoEmenda entre paginas.
+
+    Como a sessao usa autoflush=False e o commit so ocorre a cada 500 registros,
+    sem flush no insert a segunda ocorrencia nao enxergava o INSERT pendente,
+    criava duplicata e o commit morria com UniqueViolation — derrubando o ano
+    inteiro. Aconteceu em producao com o ano 2023 (codigo 202339950016).
+    """
+    emendas_mod.upsert_amendment(session, payload(amendment_code="202339950016"))
+    # Sem commit no meio, exatamente como dentro do lote de 500.
+    _, created = emendas_mod.upsert_amendment(
+        session,
+        payload(amendment_code="202339950016", paid_value=Decimal("123.45")),
+    )
+    session.commit()
+
+    assert created is False
+    assert session.query(ParliamentaryAmendment).count() == 1
+    assert session.query(ParliamentaryAmendment).one().paid_value == Decimal("123.45")
