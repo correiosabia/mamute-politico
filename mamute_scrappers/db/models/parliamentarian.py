@@ -95,6 +95,11 @@ class Parliamentarian(Base):
         back_populates="parliamentarian",
     )
 
+    electoral_history = relationship(
+        "ElectoralHistory",
+        back_populates="parliamentarian",
+    )
+
 
 __all__ = ["Parliamentarian"]
 

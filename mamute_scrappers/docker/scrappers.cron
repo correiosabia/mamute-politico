@@ -85,6 +85,11 @@ PYTHONPATH=/app
 # (deferido/indeferido) muda por semanas após o registro de 15/08.
 20 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh tse-candidacies -- /usr/local/bin/python -m mamute_scrappers.tse_crawler.candidacy >> /proc/1/fd/1 2>> /proc/1/fd/2
 
+# Timeline eleitoral (histórico + patrimônio) — semeia do JSONB local (barato,
+# mantém o resultado atualizado na apuração) e drena até 5000 detalhes de bens
+# por dia (retomável; parlamentares primeiro, depois anos mais recentes).
+50 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh tse-electoral-history -- /usr/local/bin/python -m mamute_scrappers.tse_crawler.electoral_history --max-details 5000 >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # --- Relatórios por e-mail (provedor definido por MAIL_PROVIDER; hoje: Mailgun) ---
 # Uma linha por periodicidade: CADA job roda no seu horário e só envia aos projetos
 # cujo tier tem aquela periodicidade em `tiers.detalhes.periodicidade_email`. Assim

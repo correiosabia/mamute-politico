@@ -5,6 +5,7 @@ from .authors_proposition import AuthorsProposition
 from .candidacy import Candidacy
 from .chatbot_usage import ChatbotUsage
 from .committee import Committee
+from .electoral_history import ElectoralHistory
 from .committee_attendance import CommitteeAttendance
 from .parliamentarian import Parliamentarian
 from .parliamentary_amendment import ParliamentaryAmendment
@@ -28,6 +29,7 @@ __all__ = [
     "ChatbotUsage",
     "Committee",
     "CommitteeAttendance",
+    "ElectoralHistory",
     "Parliamentarian",
     "ParliamentarianSocialNetwork",
     "ParliamentaryAmendment",
