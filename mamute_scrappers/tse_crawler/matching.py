@@ -57,15 +57,23 @@ def build_index(records: Sequence[ParliamentarianRecord]) -> MatchIndex:
 def _resolve_by_state(
     hits: List[ParliamentarianRecord], state: Optional[str]
 ) -> MatchResult:
+    """Nome so casa quando a UF da candidatura bate com a UF de eleicao.
+
+    Hit unico nacional nao basta: na carga inicial de 2026-08-08, 4 homonimos
+    em UF errada casaram por nome (ex.: senador por TO com candidato a dep.
+    estadual no AC). A excecao e a candidatura nacional (state='BR'), onde nao
+    ha UF para bater e o hit unico vale.
+    """
+    state_key = normalize_text(state)
+    if state_key and state_key != "br":
+        hits = [
+            hit for hit in hits if normalize_text(hit.state_elected) == state_key
+        ]
     if len(hits) == 1:
         return MatchResult(hits[0].id, MATCH_STATUS_NAME)
-    state_key = normalize_text(state)
-    filtered = [
-        hit for hit in hits if normalize_text(hit.state_elected) == state_key
-    ]
-    if len(filtered) == 1:
-        return MatchResult(filtered[0].id, MATCH_STATUS_NAME)
-    return MatchResult(None, MATCH_STATUS_AMBIGUOUS)
+    if len(hits) > 1:
+        return MatchResult(None, MATCH_STATUS_AMBIGUOUS)
+    return MatchResult(None, MATCH_STATUS_UNMATCHED)
 
 
 def match_candidacy(
@@ -89,8 +97,13 @@ def match_candidacy(
         if not key:
             continue
         hits = index.by_name.get(key, [])
-        if hits:
-            return _resolve_by_state(hits, state)
+        if not hits:
+            continue
+        resolved = _resolve_by_state(hits, state)
+        # Homonimo descartado pela UF nao encerra a cascata: o proximo nome
+        # (urna) ainda pode casar com a UF certa.
+        if resolved.status != MATCH_STATUS_UNMATCHED:
+            return resolved
 
     return MatchResult(None, MATCH_STATUS_UNMATCHED)
 
