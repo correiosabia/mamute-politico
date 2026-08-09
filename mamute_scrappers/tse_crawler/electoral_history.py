@@ -39,6 +39,12 @@ from mamute_scrappers.tse_crawler.parsing import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 COMMIT_EVERY = 200
+# Paginacao por keyset na fase 1. NAO trocar por yield_per: o commit
+# intermediario do upsert fecha a transacao e invalida o named cursor do
+# Postgres ("named cursor isn't valid anymore") — derrubou a carga inicial de
+# 2026-08-09 aos ~1.6k de ~25k registros. Cada pagina e materializada com
+# .all() antes de qualquer commit.
+SEED_BATCH_SIZE = 500
 SEED_ELECTION_YEARS = (2022, 2018)
 # presidente, governador, senador, dep. federal — todo parlamentar em
 # exercicio disputou um destes cargos numa geral; estaduais nao sao
@@ -188,29 +194,36 @@ def seed_from_candidacies(session: Any) -> Dict[str, int]:
     _ensure_models()
     counters = {"created": 0, "updated": 0, "malformed": 0, "candidacies": 0}
 
-    rows = (
-        session.query(
-            Candidacy.id,
-            Candidacy.parliamentarian_id,
-            Candidacy.election_year,
-            Candidacy.details,
+    last_id = 0
+    while True:
+        batch = (
+            session.query(
+                Candidacy.id,
+                Candidacy.parliamentarian_id,
+                Candidacy.election_year,
+                Candidacy.details,
+            )
+            .filter(Candidacy.details.isnot(None), Candidacy.id > last_id)
+            .order_by(Candidacy.id)
+            .limit(SEED_BATCH_SIZE)
+            .all()
         )
-        .filter(Candidacy.details.isnot(None))
-        .yield_per(500)
-    )
-    for cand_id, parliamentarian_id, election_year, details in rows:
-        if not isinstance(details, dict):
-            continue
-        counters["candidacies"] += 1
-        _seed_entries(
-            session,
-            details.get("eleicoesAnteriores"),
-            candidacy_id=cand_id,
-            parliamentarian_id=parliamentarian_id,
-            assets_source=details,
-            assets_year=election_year,
-            counters=counters,
-        )
+        if not batch:
+            break
+        for cand_id, parliamentarian_id, election_year, details in batch:
+            last_id = cand_id
+            if not isinstance(details, dict):
+                continue
+            counters["candidacies"] += 1
+            _seed_entries(
+                session,
+                details.get("eleicoesAnteriores"),
+                candidacy_id=cand_id,
+                parliamentarian_id=parliamentarian_id,
+                assets_source=details,
+                assets_year=election_year,
+                counters=counters,
+            )
     session.commit()
     return counters
 
