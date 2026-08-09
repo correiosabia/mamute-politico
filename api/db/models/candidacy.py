@@ -1,10 +1,7 @@
-"""Modelo de candidatura eleitoral (TSE/DivulgaCandContas).
+"""Modelo de candidatura eleitoral (TSE/DivulgaCandContas) — espelho da API.
 
-Uma linha por candidatura por eleicao, chaveada pelo id do candidato na
-DivulgaCandContas. `parliamentarian_id` e anulavel: a maioria dos ~29 mil
-candidatos de 2026 nao e parlamentar em exercicio, e o vinculo existe para
-mostrar "este parlamentar e candidato a X". ON DELETE SET NULL, como nas
-emendas: candidatura e fato publico e nao some com o parlamentar.
+Tabela populada pelo tse_crawler (CS-16); a API apenas le. Sem relationships
+para nao acoplar o mapeamento da API ao dos scrappers.
 """
 
 from __future__ import annotations
@@ -19,7 +16,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from ..base import Base
@@ -54,8 +50,6 @@ class Candidacy(Base):
     photo_url = Column(Text)
     tse_last_update = Column(DateTime)
 
-    # So e gravado apos upsert completo com detalhe; ausencia forca nova
-    # tentativa de detalhe na proxima execucao.
     listing_fingerprint = Column(Text)
 
     parliamentarian_id = Column(
@@ -76,13 +70,6 @@ class Candidacy(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
-    )
-
-    parliamentarian = relationship("Parliamentarian", back_populates="candidacies")
-
-    electoral_history = relationship(
-        "ElectoralHistory",
-        back_populates="candidacy",
     )
 
 
