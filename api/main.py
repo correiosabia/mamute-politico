@@ -16,6 +16,7 @@ try:
         amendments,
         analysis,
         authors_proposition,
+        electoral_history,
         events,
         ghost_webhooks,
         projects,
@@ -36,6 +37,7 @@ except ImportError:
         amendments,
         analysis,
         authors_proposition,
+        electoral_history,
         events,
         ghost_webhooks,
         projects,
@@ -122,6 +124,7 @@ def create_app() -> FastAPI:
     api_router.include_router(projects.router, dependencies=auth_dependencies)
     api_router.include_router(authors_proposition.router, dependencies=auth_dependencies)
     api_router.include_router(amendments.router, dependencies=auth_dependencies)
+    api_router.include_router(electoral_history.router, dependencies=auth_dependencies)
     api_router.include_router(roll_call_votes.router, dependencies=auth_dependencies)
     api_router.include_router(speeches_transcripts.router, dependencies=auth_dependencies)
     api_router.include_router(
