@@ -12,7 +12,9 @@ import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EmendasTable } from '@/components/dashboard/EmendasTable';
+import { TrajetoriaTab } from '@/components/dashboard/TrajetoriaTab';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { TrackSection } from '@/components/TrackSection';
 import { sendSectionView } from '@/api/events';
 import {
@@ -61,6 +63,9 @@ const ParlamentarDashboard = () => {
   const navigate = useNavigate();
   const numericId = id != null ? Number(id) : NaN;
   const isIdValid = Number.isInteger(numericId) && numericId > 0;
+  // Feature flag da aba Trajetória: prévia restrita a admins enquanto a
+  // funcionalidade não é liberada a todos — remover a condição para liberar.
+  const { isAdmin } = useIsAdmin();
 
   const { data: raw, isLoading, isError, error } = useQuery({
     queryKey: ['parliamentarian', id],
@@ -233,6 +238,11 @@ const ParlamentarDashboard = () => {
                   <TabsTrigger value="emendas" className={parlamentarSectionTabTriggerClass}>
                     EMENDAS
                   </TabsTrigger>
+                  {isAdmin && (
+                    <TabsTrigger value="trajetoria" className={parlamentarSectionTabTriggerClass}>
+                      TRAJETÓRIA
+                    </TabsTrigger>
+                  )}
                 </TabsList>
               </div>
               <h2 className="text-[32px] leading-none font-bold text-[#090909]">Atividades do Parlamentar</h2>
@@ -249,6 +259,11 @@ const ParlamentarDashboard = () => {
             <TabsContent value="emendas" className="mt-0 p-6 pt-4 h-[500px]">
               <EmendasTable parliamentarianId={numericId} year={emendasYear} />
             </TabsContent>
+            {isAdmin && (
+              <TabsContent value="trajetoria" className="mt-0 p-6 pt-4 h-[500px]">
+                <TrajetoriaTab parliamentarianId={numericId} />
+              </TabsContent>
+            )}
           </Tabs>
         </TrackSection>
       </main>
