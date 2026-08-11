@@ -432,3 +432,25 @@ export function fetchWordCloudTermsPublic(): Promise<{
     '/settings/word-cloud-terms'
   );
 }
+
+/** Uma disputa eleitoral na linha do tempo do político (CS-54). */
+export interface ElectoralHistoryEntryOut {
+  year: number;
+  office: string | null;
+  state: string | null;
+  locality: string | null;
+  party: string | null;
+  ballot_name: string | null;
+  result: string | null;
+  declared_assets: string | null;
+  assets_count: number | null;
+  source_link: string | null;
+}
+
+export function getElectoralHistory(
+  parliamentarianId: number
+): Promise<{ entries: ElectoralHistoryEntryOut[] }> {
+  return request<{ entries: ElectoralHistoryEntryOut[] }>(
+    `/parliamentarians/${parliamentarianId}/electoral-history`
+  );
+}
