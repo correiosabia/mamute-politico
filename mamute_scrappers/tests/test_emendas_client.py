@@ -215,3 +215,71 @@ def test_variavel_exportada_tem_precedencia_sobre_o_arquivo(tmp_path, monkeypatc
     import os
 
     assert os.getenv(emendas_mod.API_KEY_ENV) == "chave-do-ambiente"
+
+
+# --- conferencia por codigo ----------------------------------------------------
+
+
+def test_fetch_amendment_consulta_por_codigo_e_devolve_o_item(monkeypatch):
+    capturado: Dict[str, Any] = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        capturado.update(params or {})
+        return FakeResponse([ITEM])
+
+    monkeypatch.setattr(client_mod.requests, "get", fake_get)
+    api = client_mod.PortalTransparenciaClient("chave-secreta", request_delay=0)
+
+    item = api.fetch_amendment("202632980010")
+
+    assert capturado == {"codigoEmenda": "202632980010"}
+    assert item is not None
+    assert item["valorLiquidado"] == "1.099.734,20"
+
+
+def test_fetch_amendment_ignora_item_de_outro_codigo(monkeypatch):
+    """A resposta e um array; so aceitamos o codigo que pedimos."""
+    monkeypatch.setattr(
+        client_mod.requests,
+        "get",
+        lambda *a, **k: FakeResponse([{**ITEM, "codigoEmenda": "999"}]),
+    )
+    api = client_mod.PortalTransparenciaClient("chave-secreta", request_delay=0)
+
+    assert api.fetch_amendment("202632980010") is None
+
+
+@pytest.mark.parametrize("resposta", [[], {"erro": "x"}])
+def test_fetch_amendment_devolve_none_sem_levantar(monkeypatch, resposta):
+    """Conferir e melhor-esforco: falha nao pode derrubar a coleta do ano."""
+    monkeypatch.setattr(
+        client_mod.requests, "get", lambda *a, **k: FakeResponse(resposta)
+    )
+    api = client_mod.PortalTransparenciaClient("chave-secreta", request_delay=0)
+
+    assert api.fetch_amendment("202632980010") is None
+
+
+def test_fetch_amendment_devolve_none_quando_a_rede_falha(monkeypatch):
+    def fake_get(*a, **k):
+        raise client_mod.requests.ConnectionError("sem rede")
+
+    monkeypatch.setattr(client_mod.requests, "get", fake_get)
+    api = client_mod.PortalTransparenciaClient("chave-secreta", request_delay=0)
+
+    assert api.fetch_amendment("202632980010") is None
+
+
+def test_fetch_amendment_respeita_o_atraso_entre_requisicoes(monkeypatch):
+    """O teto de 30 req/min do Portal e por chave: as conferencias somam no
+    mesmo balde da paginacao."""
+    dormidas: List[float] = []
+    monkeypatch.setattr(client_mod.time, "sleep", dormidas.append)
+    monkeypatch.setattr(
+        client_mod.requests, "get", lambda *a, **k: FakeResponse([ITEM])
+    )
+    api = client_mod.PortalTransparenciaClient("chave-secreta", request_delay=2.2)
+
+    api.fetch_amendment("202632980010")
+
+    assert dormidas == [2.2]

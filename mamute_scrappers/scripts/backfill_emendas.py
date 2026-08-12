@@ -38,7 +38,12 @@ logger = logging.getLogger("backfill_emendas")
 SINCE_YEAR = 2022
 BACKFILL_END_YEAR = date.today().year
 CHUNKS_PER_RUN = 2
-CHUNK_TIMEOUT_SECONDS = 7200  # rede de seguranca; um ano termina em ~15 min
+# Rede de seguranca. Um ano varre em ~15 min, mas em dia ruim da fonte as
+# conferencias de escala do crawler (valor dividido por 10.000) somam ate ~92 min
+# de releituras — ver MAX_RELEITURAS_POR_RUN em portal_crawler/emendas.py. Com
+# 2h o chunk morreria justamente nos anos mais afetados e seria retentado para
+# sempre.
+CHUNK_TIMEOUT_SECONDS = 14400
 
 STATE_FILE = Path(
     os.getenv("BACKFILL_EMENDAS_STATE_FILE", "/app/state/backfill_emendas.json")

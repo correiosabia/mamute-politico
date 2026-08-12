@@ -65,41 +65,63 @@ class PortalTransparenciaClient:
     def __repr__(self) -> str:  # nunca expor a chave
         return f"<PortalTransparenciaClient delay={self._request_delay}>"
 
-    def _get_page(self, year: int, page: int) -> Optional[List[Dict[str, Any]]]:
+    def _get(self, params: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
         try:
             response = requests.get(
                 EMENDAS_ENDPOINT,
-                params={"ano": year, "pagina": page},
+                params=params,
                 headers={API_KEY_HEADER: self._api_key, "Accept": "application/json"},
                 timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
         except requests.RequestException as exc:
-            logger.error(
-                "Falha ao consultar emendas (ano=%s, pagina=%s): %s", year, page, exc
-            )
+            logger.error("Falha ao consultar emendas (%s): %s", params, exc)
             return None
 
         try:
             data = response.json()
         except ValueError as exc:
-            logger.error(
-                "JSON invalido do Portal (ano=%s, pagina=%s): %s", year, page, exc
-            )
+            logger.error("JSON invalido do Portal (%s): %s", params, exc)
             return None
 
         if not isinstance(data, list):
             # A fonte devolve array puro; um dict e erro disfarcado de 200.
             logger.error(
-                "Resposta inesperada do Portal (ano=%s, pagina=%s): "
-                "esperava lista, veio %s",
-                year,
-                page,
+                "Resposta inesperada do Portal (%s): esperava lista, veio %s",
+                params,
                 type(data).__name__,
             )
             return None
 
         return [item for item in data if isinstance(item, dict)]
+
+    def _get_page(self, year: int, page: int) -> Optional[List[Dict[str, Any]]]:
+        return self._get({"ano": year, "pagina": page})
+
+    def fetch_amendment(self, amendment_code: str) -> Optional[Dict[str, Any]]:
+        """Le uma emenda pelo codigo, para conferir valor suspeito da listagem.
+
+        Consulta caminho diferente da listagem paginada e mede-se muito mais
+        confiavel: 1 erro em 30 leituras contra 46,5% na listagem (2026-08-12).
+        Nao e imune, entao quem chama tem de continuar exigindo prova de
+        integridade — ver `valores.veio_intacto`.
+
+        Respeita o mesmo atraso entre requisicoes da paginacao: o teto de 30
+        req/min do Portal e por chave e as conferencias somam no mesmo balde.
+
+        Devolve None quando a leitura falha ou o codigo nao volta na resposta —
+        nunca levanta, porque conferir e melhor-esforco: quem chama decide o que
+        fazer sem o desempate.
+        """
+        items = self._get({"codigoEmenda": amendment_code})
+        if self._request_delay:
+            time.sleep(self._request_delay)
+        if not items:
+            return None
+        for item in items:
+            if str(item.get("codigoEmenda") or "").strip() == amendment_code:
+                return item
+        return None
 
     def _get_page_with_retry(
         self,
