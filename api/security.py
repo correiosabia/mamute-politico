@@ -141,31 +141,43 @@ def get_admin_settings() -> Dict[str, Any]:
     return {"enabled": _env_flag("MAMUTE_ADMIN_PANELS_ENABLED"), "emails": emails}
 
 
-def require_ghost_admin(
-    request: Request, authorization: str | None = Header(default=None)
-) -> str:
-    """Gate único de admin. Qualquer falha vira 404 (esconde a superfície)."""
+def resolve_ghost_admin(
+    request: Request, authorization: str | None
+) -> str | None:
+    """Identifica o admin sem levantar exceção. `None` = não é admin.
+
+    Existe porque `require_ghost_admin` transforma "não é admin" em 404 para
+    esconder a superfície do painel — comportamento certo para as rotas de
+    admin e errado para quem só precisa saber se deve exibir uma feature.
+    """
     cfg = get_admin_settings()
-    not_found = HTTPException(status_code=404, detail="Not Found")
 
     if not cfg["enabled"] or not authorization:
-        raise not_found
+        return None
 
     try:
         token = _extract_token(authorization)
         decoded = _decode_ghost_jwt(token)
-    except HTTPException:
-        raise not_found
-    except Exception:  # noqa: BLE001 — qualquer erro de token vira 404
-        raise not_found
+    except Exception:  # noqa: BLE001 — qualquer erro de token vira "não admin"
+        return None
 
     email = (decoded.get("sub") or "").strip().lower()
     if not email or email not in cfg["emails"]:
-        raise not_found
+        return None
 
     request.state.token_payload = decoded
     request.state.token_email = email
     request.state.is_admin = True
+    return email
+
+
+def require_ghost_admin(
+    request: Request, authorization: str | None = Header(default=None)
+) -> str:
+    """Gate único de admin. Qualquer falha vira 404 (esconde a superfície)."""
+    email = resolve_ghost_admin(request, authorization)
+    if email is None:
+        raise HTTPException(status_code=404, detail="Not Found")
     return email
 
 
@@ -175,4 +187,5 @@ __all__ = [
     "get_public_key",
     "get_admin_settings",
     "require_ghost_admin",
+    "resolve_ghost_admin",
 ]
