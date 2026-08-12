@@ -12,7 +12,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.security import resolve_ghost_admin
+from fastapi.testclient import TestClient
+
+from api import main
+from api.dependencies import get_db
+from api.security import require_ghost_admin, resolve_ghost_admin, verify_token
 from api.services.feature_flags import get_states, resolve_for, set_state
 
 
@@ -29,6 +33,21 @@ def _session_com_flags(linhas: list[tuple[str, str]]) -> Session:
                 key text primary key,
                 state text not null default 'off',
                 updated_at datetime not null default current_timestamp
+            )
+            """
+        )
+        # A escrita de flag e auditada, como toda acao de admin.
+        conn.exec_driver_sql(
+            """
+            create table admin_audit_log (
+                id integer primary key,
+                admin_email text not null,
+                action text not null,
+                entity text not null,
+                entity_id text,
+                "before" text,
+                "after" text,
+                created_at datetime not null default current_timestamp
             )
             """
         )
@@ -93,3 +112,70 @@ def test_set_state_recusa_estado_invalido():
     db = _session_com_flags([])
     with pytest.raises(ValueError):
         set_state(db, "a", "talvez")
+
+
+# --- rotas ------------------------------------------------------------------
+
+
+def _client(linhas: list[tuple[str, str]], admin: bool = False) -> TestClient:
+    db = _session_com_flags(linhas)
+    app = main.app
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[verify_token] = lambda: {"sub": "u@x.com"}
+    if admin:
+        app.dependency_overrides[require_ghost_admin] = lambda: "admin@x.com"
+    return TestClient(app)
+
+
+def test_rota_publica_devolve_booleano_resolvido_para_nao_admin():
+    try:
+        client = _client([("a", "all"), ("b", "admins")])
+        r = client.get("/api/settings/feature-flags")
+        assert r.status_code == 200
+        assert r.json() == {"a": True, "b": False}
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_admin_get_devolve_tri_estado_cru():
+    try:
+        client = _client([("a", "all"), ("b", "admins")], admin=True)
+        r = client.get("/api/admin/settings/feature-flags")
+        assert r.status_code == 200
+        assert [(x["key"], x["state"]) for x in r.json()] == [
+            ("a", "all"),
+            ("b", "admins"),
+        ]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_admin_put_cria_e_atualiza():
+    try:
+        client = _client([], admin=True)
+        r = client.put(
+            "/api/admin/settings/feature-flags/nova", json={"state": "all"}
+        )
+        assert r.status_code == 200
+        assert r.json()["state"] == "all"
+
+        r = client.get("/api/admin/settings/feature-flags")
+        assert [x["key"] for x in r.json()] == ["nova"]
+
+        r = client.put(
+            "/api/admin/settings/feature-flags/nova", json={"state": "off"}
+        )
+        assert r.json()["state"] == "off"
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_admin_put_recusa_estado_invalido():
+    try:
+        client = _client([], admin=True)
+        r = client.put(
+            "/api/admin/settings/feature-flags/x", json={"state": "talvez"}
+        )
+        assert r.status_code == 422
+    finally:
+        main.app.dependency_overrides.clear()

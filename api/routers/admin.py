@@ -6,7 +6,7 @@ import json
 import logging
 from decimal import Decimal
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,7 @@ try:
     from ..dependencies import get_db
     from ..db.models.project import Projetos, Tiers
     from ..db.models.admin_audit_log import AdminAuditLog
+    from ..db.models.feature_flag import FeatureFlag
     from ..db.models.parliamentary_amendment import ParliamentaryAmendment
     from ..services.ghost_admin import (
         generate_admin_token,
@@ -31,6 +32,10 @@ try:
     )
     from ..services.admin_coverage import db_coverage
     from ..services.openrouter_credits import credits_overview
+    from ..services.feature_flags import (
+        get_states as get_feature_flag_states,
+        set_state as set_feature_flag_state,
+    )
     from ..services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -52,6 +57,7 @@ except ImportError:  # execução dentro de api/
     from dependencies import get_db
     from db.models.project import Projetos, Tiers
     from db.models.admin_audit_log import AdminAuditLog
+    from db.models.feature_flag import FeatureFlag
     from db.models.parliamentary_amendment import ParliamentaryAmendment
     from services.ghost_admin import (
         generate_admin_token,
@@ -64,6 +70,10 @@ except ImportError:  # execução dentro de api/
     )
     from services.admin_coverage import db_coverage
     from services.openrouter_credits import credits_overview
+    from services.feature_flags import (
+        get_states as get_feature_flag_states,
+        set_state as set_feature_flag_state,
+    )
     from services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -460,6 +470,60 @@ def update_word_cloud_terms_route(
     )
     db.commit()
     return after
+
+
+class FeatureFlagUpdate(BaseModel):
+    state: Literal["off", "admins", "all"]
+
+
+class FeatureFlagOut(BaseModel):
+    key: str
+    state: str
+    updated_at: Optional[datetime] = None
+
+
+@router.get("/settings/feature-flags", response_model=list[FeatureFlagOut])
+def read_feature_flags_admin(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> list[dict]:
+    """Tri-estado cru de cada flag gravada.
+
+    Devolve só o que está no banco. Quem decide o que aparece na tela é o
+    registro do front: chave sem linha vale `off`, e linha sem chave no
+    registro (flag já removida do código) simplesmente não é exibida.
+    """
+    quando = {
+        linha.key: linha.updated_at
+        for linha in db.execute(select(FeatureFlag)).scalars()
+    }
+    return [
+        {"key": key, "state": state, "updated_at": quando.get(key)}
+        for key, state in sorted(get_feature_flag_states(db).items())
+    ]
+
+
+@router.put("/settings/feature-flags/{key}", response_model=FeatureFlagOut)
+def update_feature_flag_route(
+    key: str,
+    payload: FeatureFlagUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict:
+    antes = get_feature_flag_states(db).get(key, "off")
+    depois = set_feature_flag_state(db, key, payload.state)
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_feature_flag",
+        entity="feature_flag",
+        entity_id=key,
+        before={"state": antes},
+        after={"state": payload.state},
+    )
+    db.commit()
+    return depois
 
 
 @router.get("/metrics/credits")
