@@ -33,6 +33,7 @@ try:
     from ..services.admin_coverage import db_coverage
     from ..services.openrouter_credits import credits_overview
     from ..services.feature_flags import (
+        count_tiers_enabled as count_feature_flag_tiers,
         get_states as get_feature_flag_states,
         set_state as set_feature_flag_state,
     )
@@ -71,6 +72,7 @@ except ImportError:  # execução dentro de api/
     from services.admin_coverage import db_coverage
     from services.openrouter_credits import credits_overview
     from services.feature_flags import (
+        count_tiers_enabled as count_feature_flag_tiers,
         get_states as get_feature_flag_states,
         set_state as set_feature_flag_state,
     )
@@ -140,6 +142,11 @@ class TierDetailsUpdate(BaseModel):
     qtd_consultas_ia_semana: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
+    # Recorte por plano das feature flags. Chave ausente vale desligado, e e
+    # por isso que plano novo, vindo do sync do Ghost, nasce sem a feature.
+    # O tri-estado global continua em /admin/configuracoes: aqui so se decide
+    # quem recebe depois que a feature saiu da previa.
+    features: Optional[dict[str, bool]] = None
 
 
 def _log_admin_action(
@@ -480,6 +487,10 @@ class FeatureFlagOut(BaseModel):
     key: str
     state: str
     updated_at: Optional[datetime] = None
+    # Quantos planos ativos tem a feature ligada. Denuncia o caso silencioso:
+    # flag em `all` com zero planos nao aparece para ninguem.
+    tiers_ligados: int = 0
+    tiers_total: int = 0
 
 
 @router.get("/settings/feature-flags", response_model=list[FeatureFlagOut])
@@ -497,8 +508,18 @@ def read_feature_flags_admin(
         linha.key: linha.updated_at
         for linha in db.execute(select(FeatureFlag)).scalars()
     }
+    ligados = count_feature_flag_tiers(db)
+    total = db.execute(
+        select(func.count(Tiers.id)).where(Tiers.deleted_at.is_(None))
+    ).scalar_one()
     return [
-        {"key": key, "state": state, "updated_at": quando.get(key)}
+        {
+            "key": key,
+            "state": state,
+            "updated_at": quando.get(key),
+            "tiers_ligados": ligados.get(key, 0),
+            "tiers_total": total,
+        }
         for key, state in sorted(get_feature_flag_states(db).items())
     ]
 

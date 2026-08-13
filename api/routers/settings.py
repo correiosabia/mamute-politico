@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 try:
     from ..dependencies import get_db
     from ..security import resolve_ghost_admin
-    from ..services.feature_flags import resolve_for
+    from ..services.feature_flags import resolve_for, tier_features_for_email
     from ..services.word_cloud_terms import get_terms
 except ImportError:  # execução dentro de api/
     from dependencies import get_db
     from security import resolve_ghost_admin
-    from services.feature_flags import resolve_for
+    from services.feature_flags import resolve_for, tier_features_for_email
     from services.word_cloud_terms import get_terms
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -48,4 +48,9 @@ def read_feature_flags(
     abertos — não é fronteira de segurança.
     """
     is_admin = resolve_ghost_admin(request, authorization) is not None
-    return resolve_for(db, is_admin=is_admin)
+    email = getattr(request.state, "token_email", None)
+    return resolve_for(
+        db,
+        is_admin=is_admin,
+        tier_features=tier_features_for_email(db, email),
+    )
