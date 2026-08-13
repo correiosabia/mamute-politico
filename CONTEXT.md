@@ -64,3 +64,43 @@ The recency of collected legislative data per source table. Freshness is part of
 ### Scraper
 
 A command under `mamute_scrappers` that collects source data and persists it into the PostgreSQL legislative database. Scrapers must be idempotent.
+
+### Personal Mark
+
+Anything a subscriber records about a parliamentarian for their own use: the
+personal order of monitored parliamentarians, free tags, and the mamutômetro.
+Personal marks are layers on top of monitoring, never a second kind of favorite,
+and none of them consumes the plan's `qtd_termos`.
+
+### Mamutômetro
+
+A scale of 1 to N mammoth icons that a subscriber assigns to a parliamentarian,
+stored in `project_mamutometro`. **The meaning of each level is chosen privately
+by each subscriber and never recorded** — one person may use 3 for "I voted for
+them" and another for "I follow them closely". The product never asks, never
+suggests and never aggregates, which is what keeps it from holding a declared
+vote. The column is called `level` and nothing else, on purpose. See
+`docs/adr/0002-privacidade-do-mamutometro.md`.
+
+### Project Tag
+
+A free-text label a project creates and applies to parliamentarians, stored in
+`project_tag` and `parliamentarian_tag`. Tags are private to the project: there
+is no shared, suggested or public tag.
+
+### Personal Order
+
+The subscriber-defined ordering of monitored parliamentarians, stored in
+`projetos_parliamentarian.position`. `NULL` means never ordered, and the reading
+order is `position NULLS LAST, created_at DESC` — so before anyone reorders, the
+result is identical to the previous behaviour.
+
+### Marks Configuration
+
+Admin-owned settings for personal marks, in `marcacoes_config` (a single row):
+mamutômetro scale size, the neutral first-use notice, and whether the
+mamutômetro and tags apply to monitored parliamentarians only or to the whole
+visible catalog. Which plans get the mamutômetro lives in `feature_flag_tier`;
+how many parliamentarians a plan may mark lives in `tiers.detalhes`
+(`qtd_mamutometro`). **Changing configuration never deletes a subscriber's
+marks** — they go dormant and return if the configuration returns.

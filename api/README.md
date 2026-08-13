@@ -68,3 +68,42 @@ Projeto pai: [README raiz](../README.md)
   `current_and_licensed` ou `all_ingested`. A API aplica essa política a toda
   consulta e a expõe, para clientes autenticados, em
   `GET /api/parliamentarians/catalog-config`.
+
+## Marcações pessoais do assinante (CS-18)
+
+Três camadas sobre o vínculo de monitoramento, todas escopadas pelo e-mail do
+JWT e nenhuma delas consumindo `qtd_termos`:
+
+- **Ordem pessoal** — `PATCH /api/projects/me/favorites/order` reescreve as
+  posições numa transação. Exige a lista completa de monitorados; lista
+  desatualizada devolve 422 para o cliente recarregar em vez de aplicar pela
+  metade.
+- **Tags livres** — CRUD em `/api/projects/me/tags` e
+  `PUT /api/projects/me/parliamentarians/{id}/tags`.
+  `GET /api/projects/me/parliamentarian-tags` devolve todas as aplicações do
+  projeto numa chamada só.
+- **Mamutômetro** — escala de 1 a N cujo significado é definido por cada
+  assinante e **nunca informado ao sistema**. `GET /api/projects/me/mamutometro`,
+  `PUT`/`DELETE` em `/api/projects/me/parliamentarians/{id}/mamutometro`, e
+  `DELETE /api/projects/me/mamutometro` para apagar tudo.
+
+`GET /api/settings/marcacoes` devolve a configuração **já resolvida** para quem
+chamou: se o plano tem mamutômetro, o tamanho da régua, o teto e o uso atual.
+A interface não repete essas regras.
+
+Onde cada configuração vive — cada uma no mecanismo que já existia para ela:
+
+| Decisão | Onde | Padrão |
+|---|---|---|
+| Quais planos têm mamutômetro | `feature_flag_tier` da flag `mamutometro` | só planos pagos |
+| Quantos parlamentares marcar | `qtd_mamutometro` em `tiers.detalhes` (ver README da raiz) | sem teto |
+| Tamanho da régua, escopos e aviso | `marcacoes_config`, via `PUT /api/admin/settings/marcacoes` | 3 mamutes; mamutômetro só em monitorados; tags em todos |
+
+**Configuração nunca destrói dado.** Reduzir a régua, apertar o escopo ou
+remover a feature de um plano deixa as marcações onde estão: elas somem da tela
+e voltam se a configuração voltar.
+
+O nível **não tem significado no sistema**, e isso é o desenho — ver
+[`docs/adr/0002-privacidade-do-mamutometro.md`](../docs/adr/0002-privacidade-do-mamutometro.md).
+Marcação de mamutômetro não aparece em painel admin, relatório por e-mail,
+resposta do chatbot nem em qualquer agregado por político.
