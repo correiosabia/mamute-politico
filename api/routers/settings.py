@@ -12,12 +12,20 @@ from sqlalchemy.orm import Session
 try:
     from ..dependencies import get_db
     from ..security import resolve_ghost_admin
-    from ..services.feature_flags import resolve_for, tier_features_for_email
+    from ..services.feature_flags import (
+        enabled_flags_for_tier,
+        resolve_for,
+        tier_id_for_email,
+    )
     from ..services.word_cloud_terms import get_terms
 except ImportError:  # execução dentro de api/
     from dependencies import get_db
     from security import resolve_ghost_admin
-    from services.feature_flags import resolve_for, tier_features_for_email
+    from services.feature_flags import (
+        enabled_flags_for_tier,
+        resolve_for,
+        tier_id_for_email,
+    )
     from services.word_cloud_terms import get_terms
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -49,8 +57,9 @@ def read_feature_flags(
     """
     is_admin = resolve_ghost_admin(request, authorization) is not None
     email = getattr(request.state, "token_email", None)
+    tier_id = tier_id_for_email(db, email)
     return resolve_for(
         db,
         is_admin=is_admin,
-        tier_features=tier_features_for_email(db, email),
+        liberadas=enabled_flags_for_tier(db, tier_id),
     )

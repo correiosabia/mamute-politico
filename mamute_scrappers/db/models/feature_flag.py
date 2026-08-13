@@ -15,7 +15,14 @@ lancamento.
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Text,
+)
 from sqlalchemy.sql import func
 
 from ..base import Base
@@ -46,8 +53,40 @@ class FeatureFlag(Base):
     )
 
 
+class FeatureFlagTier(Base):
+    """Liberacao de uma feature para um plano.
+
+    Tabela dedicada, e nao chave dentro de `Tiers.detalhes` (CS-58 pede config
+    de recurso x plano no padrao de `word_cloud_terms`). Linha presente = o
+    plano libera a feature; ausencia = nao libera.
+
+    E dessa ausencia que sai o comportamento pedido: plano novo, vindo do sync
+    do Ghost, nasce sem nenhuma feature, sem ninguem precisar lembrar de
+    desligar nada.
+
+    PONTO DE EXTENSAO — hoje "nao libera" significa "omitir da tela". A CS-58
+    preve um segundo comportamento, "cadeado com previa desfocada", que AINDA
+    NAO EXISTE e nao foi construido aqui. Quando chegar, esta tabela ganha uma
+    coluna de modo ("on" | "locked") e o gate passa a valer no backend tambem
+    — desfoque no front e vitrine, nao seguranca.
+    """
+
+    __tablename__ = "feature_flag_tier"
+
+    flag_key = Column(Text, primary_key=True, index=True)
+    tier_id = Column(
+        BigInteger,
+        ForeignKey("tiers.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 __all__ = [
     "FeatureFlag",
+    "FeatureFlagTier",
     "STATE_ADMINS",
     "STATE_ALL",
     "STATE_OFF",

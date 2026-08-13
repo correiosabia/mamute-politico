@@ -67,6 +67,16 @@ def _session_com_flags(linhas: list[tuple[str, str]]) -> Session:
         )
         conn.exec_driver_sql(
             """
+            create table feature_flag_tier (
+                flag_key text not null,
+                tier_id integer not null,
+                created_at datetime not null default current_timestamp,
+                primary key (flag_key, tier_id)
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
             create table projetos (
                 id integer primary key,
                 nome text not null,
@@ -106,7 +116,7 @@ def test_resolve_ghost_admin_com_token_invalido_devolve_none():
 def test_all_sem_plano_liberado_nao_aparece():
     """`all` nao e "todo mundo ve": e "agora quem decide e o plano"."""
     db = _session_com_flags([("a", "all"), ("b", "admins"), ("c", "off")])
-    assert resolve_for(db, is_admin=False, tier_features={}) == {
+    assert resolve_for(db, is_admin=False, liberadas=set()) == {
         "a": False,
         "b": False,
         "c": False,
@@ -115,7 +125,7 @@ def test_all_sem_plano_liberado_nao_aparece():
 
 def test_all_com_plano_liberado_aparece():
     db = _session_com_flags([("a", "all"), ("b", "admins"), ("c", "off")])
-    assert resolve_for(db, is_admin=False, tier_features={"a": True}) == {
+    assert resolve_for(db, is_admin=False, liberadas={"a"}) == {
         "a": True,
         "b": False,
         "c": False,
@@ -125,17 +135,17 @@ def test_all_com_plano_liberado_aparece():
 def test_plano_nao_libera_flag_que_ainda_esta_em_admins():
     """O tri-estado manda: plano ligado nao adianta antes do lancamento."""
     db = _session_com_flags([("b", "admins")])
-    assert resolve_for(db, is_admin=False, tier_features={"b": True}) == {"b": False}
+    assert resolve_for(db, is_admin=False, liberadas={"b"}) == {"b": False}
 
 
 def test_plano_nao_libera_flag_desligada_no_global():
     db = _session_com_flags([("c", "off")])
-    assert resolve_for(db, is_admin=False, tier_features={"c": True}) == {"c": False}
+    assert resolve_for(db, is_admin=False, liberadas={"c"}) == {"c": False}
 
 
 def test_admin_ve_sem_depender_do_plano():
     db = _session_com_flags([("a", "all"), ("b", "admins"), ("c", "off")])
-    assert resolve_for(db, is_admin=True, tier_features={}) == {
+    assert resolve_for(db, is_admin=True, liberadas=set()) == {
         "a": True,
         "b": True,
         "c": False,
@@ -145,7 +155,7 @@ def test_admin_ve_sem_depender_do_plano():
 def test_sem_plano_nenhum_nao_ve_feature_de_plano():
     """Usuario sem projeto/tier: falha fechado."""
     db = _session_com_flags([("a", "all")])
-    assert resolve_for(db, is_admin=False, tier_features=None) == {"a": False}
+    assert resolve_for(db, is_admin=False, liberadas=None) == {"a": False}
 
 
 def test_get_states_devolve_tri_estado_cru():
@@ -185,18 +195,15 @@ def test_set_state_recusa_estado_invalido():
 def _client(
     linhas: list[tuple[str, str]],
     admin: bool = False,
-    features_do_plano: dict | None = None,
+    features_do_plano: list[str] | None = None,
 ) -> TestClient:
     db = _session_com_flags(linhas)
     if features_do_plano is not None:
-        import json as _json
-
         db.execute(
             text(
                 "insert into tiers (id, tier_name_debug, product_id, detalhes)"
-                " values (1, 'Basico', 'prod_1', :d)"
-            ),
-            {"d": _json.dumps({"features": features_do_plano})},
+                " values (1, 'Basico', 'prod_1', '{}')"
+            )
         )
         db.execute(
             text(
@@ -204,6 +211,14 @@ def _client(
                 " values (1, 'Projeto', 'u@x.com', 1)"
             )
         )
+        for chave in features_do_plano:
+            db.execute(
+                text(
+                    "insert into feature_flag_tier (flag_key, tier_id)"
+                    " values (:k, 1)"
+                ),
+                {"k": chave},
+            )
         db.commit()
     app = main.app
     app.dependency_overrides[get_db] = lambda: db
@@ -224,7 +239,7 @@ def _client(
 def test_rota_publica_resolve_pelo_plano_do_chamador():
     try:
         client = _client(
-            [("a", "all"), ("b", "all")], features_do_plano={"a": True}
+            [("a", "all"), ("b", "all")], features_do_plano=["a"]
         )
         r = client.get("/api/settings/feature-flags")
         assert r.status_code == 200
@@ -294,7 +309,7 @@ def test_admin_get_traz_contagem_de_planos_ligados():
     """Flag em `all` com zero planos nao aparece para ninguem — a tela precisa
     conseguir denunciar isso."""
     try:
-        client = _client([("a", "all")], admin=True, features_do_plano={"a": True})
+        client = _client([("a", "all")], admin=True, features_do_plano=["a"])
         r = client.get("/api/admin/settings/feature-flags")
         assert r.status_code == 200
         linha = r.json()[0]
@@ -306,11 +321,57 @@ def test_admin_get_traz_contagem_de_planos_ligados():
 
 def test_admin_get_denuncia_flag_liberada_sem_nenhum_plano():
     try:
-        client = _client([("a", "all")], admin=True, features_do_plano={})
+        client = _client([("a", "all")], admin=True, features_do_plano=[])
         r = client.get("/api/admin/settings/feature-flags")
         linha = r.json()[0]
         assert linha["state"] == "all"
         assert linha["tiers_ligados"] == 0
         assert linha["tiers_total"] == 1
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+# --- recorte por plano, editado na tela de tiers ----------------------------
+
+
+def test_tier_features_substitui_a_lista_inteira():
+    """A tela edita a lista do plano e salva de uma vez, como word_cloud_terms."""
+    try:
+        client = _client([("a", "all"), ("b", "all")], admin=True, features_do_plano=["a"])
+        r = client.put("/api/admin/tiers/1/features", json={"features": ["b"]})
+        assert r.status_code == 200
+        assert r.json() == {"tier_id": 1, "features": ["b"]}
+
+        r = client.get("/api/admin/tiers/1/features")
+        assert r.json()["features"] == ["b"]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_tier_features_lista_vazia_desliga_tudo():
+    try:
+        client = _client([("a", "all")], admin=True, features_do_plano=["a"])
+        r = client.put("/api/admin/tiers/1/features", json={"features": []})
+        assert r.json()["features"] == []
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_tier_features_404_para_plano_inexistente():
+    try:
+        client = _client([], admin=True, features_do_plano=[])
+        r = client.put("/api/admin/tiers/999/features", json={"features": []})
+        assert r.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_plano_novo_nasce_sem_nenhuma_feature():
+    """Sem linha em feature_flag_tier, o plano nao ve feature nenhuma — e por
+    isso que plano vindo do sync do Ghost nasce desligado."""
+    try:
+        client = _client([("a", "all")], features_do_plano=[])
+        r = client.get("/api/settings/feature-flags")
+        assert r.json() == {"a": False}
     finally:
         main.app.dependency_overrides.clear()

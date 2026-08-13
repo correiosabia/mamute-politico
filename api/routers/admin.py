@@ -34,8 +34,10 @@ try:
     from ..services.openrouter_credits import credits_overview
     from ..services.feature_flags import (
         count_tiers_enabled as count_feature_flag_tiers,
+        enabled_flags_for_tier,
         get_states as get_feature_flag_states,
         set_state as set_feature_flag_state,
+        set_tier_flags,
     )
     from ..services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
@@ -73,8 +75,10 @@ except ImportError:  # execução dentro de api/
     from services.openrouter_credits import credits_overview
     from services.feature_flags import (
         count_tiers_enabled as count_feature_flag_tiers,
+        enabled_flags_for_tier,
         get_states as get_feature_flag_states,
         set_state as set_feature_flag_state,
+        set_tier_flags,
     )
     from services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
@@ -142,11 +146,8 @@ class TierDetailsUpdate(BaseModel):
     qtd_consultas_ia_semana: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
-    # Recorte por plano das feature flags. Chave ausente vale desligado, e e
-    # por isso que plano novo, vindo do sync do Ghost, nasce sem a feature.
-    # O tri-estado global continua em /admin/configuracoes: aqui so se decide
-    # quem recebe depois que a feature saiu da previa.
-    features: Optional[dict[str, bool]] = None
+    # As feature flags do plano NAO entram aqui: vivem em `feature_flag_tier`,
+    # tabela dedicada, e sao editadas por /admin/tiers/{id}/features.
 
 
 def _log_admin_action(
@@ -545,6 +546,66 @@ def update_feature_flag_route(
     )
     db.commit()
     return depois
+
+
+class TierFeaturesUpdate(BaseModel):
+    """Lista completa de features liberadas para o plano."""
+
+    features: list[str] = Field(default_factory=list)
+
+
+class TierFeaturesOut(BaseModel):
+    tier_id: int
+    features: list[str]
+
+
+@router.get("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
+def read_tier_features(
+    tier_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict:
+    """Features liberadas para um plano.
+
+    O tri-estado global (`off`/`admins`/`all`) fica em /admin/configuracoes e
+    e o ciclo de vida do lancamento. Aqui se decide quem recebe depois que a
+    feature saiu da previa.
+    """
+    tier = db.get(Tiers, tier_id)
+    if tier is None or tier.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
+        )
+    return {"tier_id": tier_id, "features": sorted(enabled_flags_for_tier(db, tier_id))}
+
+
+@router.put("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
+def update_tier_features(
+    tier_id: int,
+    payload: TierFeaturesUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict:
+    tier = db.get(Tiers, tier_id)
+    if tier is None or tier.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
+        )
+
+    before = sorted(enabled_flags_for_tier(db, tier_id))
+    after = set_tier_flags(db, tier_id, payload.features)
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_tier_features",
+        entity="feature_flag_tier",
+        entity_id=str(tier_id),
+        before={"features": before},
+        after={"features": after},
+    )
+    db.commit()
+    return {"tier_id": tier_id, "features": after}
 
 
 @router.get("/metrics/credits")
