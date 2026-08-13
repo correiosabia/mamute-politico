@@ -11,6 +11,7 @@ import {
 } from '@/api/endpoints';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { sortByNome } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2, Pencil, Users } from 'lucide-react';
@@ -64,6 +65,8 @@ const DashboardPage = () => {
     );
   };
 
+  const marcacoesPessoaisOn = useFeatureFlag('marcacoes_pessoais');
+
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
     queryFn: () => listMyProjectFavorites(),
@@ -77,11 +80,12 @@ const DashboardPage = () => {
     })),
   });
 
-  const monitorados = sortByNome(
-    parliamentarianQueries
-      .filter((q) => q.data != null)
-      .map((q) => mapParliamentarianOutToParlamentar(q.data!)),
-  );
+  const monitoradosResolvidos = parliamentarianQueries
+    .filter((q) => q.data != null)
+    .map((q) => mapParliamentarianOutToParlamentar(q.data!));
+  const monitorados = marcacoesPessoaisOn
+    ? monitoradosResolvidos
+    : sortByNome(monitoradosResolvidos);
 
   const isLoadingMonitorados =
     favoritesQuery.isLoading ||

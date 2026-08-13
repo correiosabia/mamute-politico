@@ -33,7 +33,8 @@ def _make_session(with_log_table: bool = True) -> Session:
         )
         conn.exec_driver_sql(
             "create table projetos_parliamentarian (id integer primary key, projeto_id integer, "
-            "parliamentarian_id integer, created_at datetime, updated_at datetime, deleted_at datetime)"
+            "parliamentarian_id integer, position integer, created_at datetime, "
+            "updated_at datetime, deleted_at datetime)"
         )
         if with_log_table:
             conn.exec_driver_sql(

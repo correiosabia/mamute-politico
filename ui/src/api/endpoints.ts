@@ -346,6 +346,15 @@ export function removeMyProjectFavorite(parliamentarianId: number): Promise<void
   });
 }
 
+export function reorderMyProjectFavorites(
+  orderedParliamentarianIds: number[]
+): Promise<ProjectFavoriteOut[]> {
+  return request<ProjectFavoriteOut[]>('/projects/me/favorites/order', {
+    method: 'PATCH',
+    body: JSON.stringify({ ordered_parliamentarian_ids: orderedParliamentarianIds }),
+  });
+}
+
 /** Estatísticas dos últimos 3 meses para parlamentares favoritados no projeto autenticado. */
 export function getMyDashboardStats(): Promise<DashboardStatsOut> {
   return request<DashboardStatsOut>('/projects/me/dashboard-stats');

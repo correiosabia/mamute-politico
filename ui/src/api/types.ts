@@ -108,6 +108,7 @@ export interface ProjectFavoriteOut {
   id: number;
   projeto_id: number;
   parliamentarian_id: number;
+  position: number | null;
   created_at: string;
   updated_at: string;
 }

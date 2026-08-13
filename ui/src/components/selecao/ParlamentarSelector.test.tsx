@@ -270,3 +270,117 @@ describe('ParlamentarSelector', () => {
     );
   });
 });
+
+const outroSelecionado: Parlamentar = {
+  ...selectedParliamentarian,
+  id: '43',
+  nome: 'Beatriz Souza',
+  nomeCompleto: 'Beatriz Souza',
+};
+
+const terceiroSelecionado: Parlamentar = {
+  ...selectedParliamentarian,
+  id: '44',
+  nome: 'Carlos Lima',
+  nomeCompleto: 'Carlos Lima',
+};
+
+describe('ParlamentarSelector — ordem pessoal (SPEC-001)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+    mockGetParliamentarianCatalogConfig.mockResolvedValue({
+      allowed_situations: ['exercicio'],
+      default_situacao: 'exercicio',
+    });
+    mockListParliamentarians.mockResolvedValue([]);
+  });
+
+  it('mantém a ordem recebida da API em vez de ordenar por nome', async () => {
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [terceiroSelecionado, selectedParliamentarian, outroSelecionado],
+        onReorderParlamentares: vi.fn(),
+      },
+    });
+
+    const nomes = await screen.findAllByText(/Carlos Lima|Alan Rick|Beatriz Souza/);
+    expect(nomes.map((n) => n.textContent)).toEqual([
+      'Carlos Lima',
+      'Alan Rick',
+      'Beatriz Souza',
+    ]);
+  });
+
+  it('envia a lista completa já reordenada ao mover para cima', async () => {
+    const onReorderParlamentares = vi.fn();
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [terceiroSelecionado, selectedParliamentarian, outroSelecionado],
+        onReorderParlamentares,
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Mover Alan Rick para cima/i }));
+
+    expect(onReorderParlamentares).toHaveBeenCalledWith(['42', '44', '43']);
+  });
+
+  it('move para o topo em um clique', async () => {
+    const onReorderParlamentares = vi.fn();
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [terceiroSelecionado, selectedParliamentarian, outroSelecionado],
+        onReorderParlamentares,
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Mover Beatriz Souza para o topo/i })
+    );
+
+    expect(onReorderParlamentares).toHaveBeenCalledWith(['43', '44', '42']);
+  });
+
+  it('desabilita subir no primeiro e descer no último', async () => {
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [terceiroSelecionado, selectedParliamentarian, outroSelecionado],
+        onReorderParlamentares: vi.fn(),
+      },
+    });
+
+    expect(await screen.findByRole('button', { name: /Mover Carlos Lima para cima/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Mover Beatriz Souza para baixo/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Mover Alan Rick para cima/i })).toBeEnabled();
+  });
+
+  it('sem handler (flag off): nenhum controle e ordem alfabética como antes', async () => {
+    // Contrato do time: com a flag desligada a tela é idêntica à de antes da
+    // feature. Aqui isso significa voltar a ordenar por nome.
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [terceiroSelecionado, selectedParliamentarian, outroSelecionado],
+      },
+    });
+
+    const nomes = await screen.findAllByText(/Carlos Lima|Alan Rick|Beatriz Souza/);
+    expect(nomes.map((n) => n.textContent)).toEqual([
+      'Alan Rick',
+      'Beatriz Souza',
+      'Carlos Lima',
+    ]);
+    expect(screen.queryByRole('button', { name: /Mover .* para cima/i })).not.toBeInTheDocument();
+  });
+
+  it('não mostra controles de ordem com um só monitorado', async () => {
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [selectedParliamentarian],
+        onReorderParlamentares: vi.fn(),
+      },
+    });
+
+    await screen.findByText('Alan Rick');
+    expect(screen.queryByRole('button', { name: /Mover .* para cima/i })).not.toBeInTheDocument();
+  });
+});

@@ -37,7 +37,8 @@ def _make_session() -> Session:
         )
         conn.exec_driver_sql(
             "create table projetos_parliamentarian (id integer primary key, projeto_id integer, "
-            "parliamentarian_id integer, created_at datetime, updated_at datetime, deleted_at datetime)"
+            "parliamentarian_id integer, position integer, created_at datetime, "
+            "updated_at datetime, deleted_at datetime)"
         )
         conn.exec_driver_sql(
             "create table chatbot_usage (id integer primary key, projeto_id integer, email text, "

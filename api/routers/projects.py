@@ -12,7 +12,7 @@ import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import asc, desc, func, nullslast, select
 from sqlalchemy.orm import Session, selectinload
 
 try:
@@ -68,6 +68,8 @@ class ProjectFavoriteOut(BaseModel):
     id: int
     projeto_id: int
     parliamentarian_id: int
+    # Ordem pessoal definida pelo assinante; None = nunca ordenado (SPEC-001).
+    position: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -78,6 +80,12 @@ class ProjectFavoriteCreate(BaseModel):
     """Dados necessários para criar um novo favorito de projeto."""
 
     parliamentarian_id: int
+
+
+class ProjectFavoriteOrderUpdate(BaseModel):
+    """Nova ordem pessoal: a lista completa de monitorados, já ordenada."""
+
+    ordered_parliamentarian_ids: List[int]
 
 
 class HouseFavoriteQuotaOut(BaseModel):
@@ -181,6 +189,29 @@ def _last_three_months_range_sao_paulo() -> tuple[date, date, datetime, datetime
         tzinfo=tz,
     )
     return range_start_date, range_end_date, range_start_dt, range_end_dt_exclusive
+
+
+def _apply_favorite_ordering(stmt, sort_by: str, sort_order: str):
+    """Aplica a ordenação da listagem de parlamentares monitorados.
+
+    ``position`` é a ordem pessoal do assinante (SPEC-001): sempre crescente,
+    com quem nunca foi ordenado (NULL) no fim e desempate pelo mais recente.
+    Enquanto ninguém ordenou nada, o resultado é idêntico ao antigo default
+    (``created_at`` desc) — por isso virar default é retrocompatível.
+    """
+    if sort_by == "position":
+        return stmt.order_by(
+            nullslast(asc(ProjetosParliamentarian.position)),
+            desc(ProjetosParliamentarian.created_at),
+        )
+    sortable_columns = {
+        "created_at": ProjetosParliamentarian.created_at,
+        "updated_at": ProjetosParliamentarian.updated_at,
+        "id": ProjetosParliamentarian.id,
+        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
+    }
+    sort_column = sortable_columns[sort_by]
+    return stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
 
 
 def _get_project_favorite_ids(db: Session, project_id: int) -> List[int]:
@@ -736,13 +767,18 @@ def list_my_project_favorites(
         None,
         description="Filtra por favoritos atualizados até este instante (inclusive).",
     ),
-    sort_by: Literal["created_at", "updated_at", "id", "parliamentarian_id"] = Query(
-        default="created_at",
-        description="Campo usado para ordenação.",
+    sort_by: Literal[
+        "position", "created_at", "updated_at", "id", "parliamentarian_id"
+    ] = Query(
+        default="position",
+        description=(
+            "Campo usado para ordenação. 'position' é a ordem pessoal do assinante: "
+            "sempre crescente, com quem nunca foi ordenado no fim."
+        ),
     ),
     sort_order: Literal["asc", "desc"] = Query(
         default="desc",
-        description="Direção da ordenação.",
+        description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
 ) -> List[ProjetosParliamentarian]:
     """Retorna os favoritos do projeto identificado pelo e-mail do token JWT."""
@@ -756,14 +792,7 @@ def list_my_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    sortable_columns = {
-        "created_at": ProjetosParliamentarian.created_at,
-        "updated_at": ProjetosParliamentarian.updated_at,
-        "id": ProjetosParliamentarian.id,
-        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
-    }
-    sort_column = sortable_columns[sort_by]
-    stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
+    stmt = _apply_favorite_ordering(stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
     favorites = db.execute(stmt)
     return favorites.scalars().all()
@@ -781,6 +810,62 @@ def get_my_project_favorites_quota(
     """Retorna limite, uso e saldo de parlamentares monitorados do projeto."""
     project = _get_project_from_token_email(request, db)
     return _build_project_favorite_quota(db, project)
+
+
+@router.patch(
+    "/me/favorites/order",
+    response_model=List[ProjectFavoriteOut],
+    summary="Define a ordem pessoal dos parlamentares monitorados",
+)
+def reorder_my_project_favorites(
+    request: Request,
+    payload: ProjectFavoriteOrderUpdate,
+    db: Session = Depends(get_db),
+) -> List[ProjetosParliamentarian]:
+    """Reescreve as posições 0..n-1 do projeto do token, numa transação só.
+
+    Exige a lista COMPLETA de monitorados. Se ela não bater exatamente com o que
+    está no banco, a ordem do cliente está velha (favorito adicionado ou removido
+    em outra aba/dispositivo) e aplicá-la parcialmente deixaria posições órfãs —
+    por isso 422, e o cliente recarrega antes de tentar de novo.
+    """
+    project = _get_project_from_token_email(request, db)
+
+    favorites = (
+        db.execute(
+            select(ProjetosParliamentarian).where(
+                ProjetosParliamentarian.projeto_id == project.id
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    requested = payload.ordered_parliamentarian_ids
+    current_ids = {int(item.parliamentarian_id) for item in favorites}
+    if len(requested) != len(set(requested)) or set(requested) != current_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Sua lista de parlamentares monitorados mudou. "
+                "Atualize a página e ordene novamente."
+            ),
+        )
+
+    by_parliamentarian = {int(item.parliamentarian_id): item for item in favorites}
+    for index, parliamentarian_id in enumerate(requested):
+        by_parliamentarian[parliamentarian_id].position = index
+
+    db.commit()
+
+    stmt = _apply_favorite_ordering(
+        select(ProjetosParliamentarian).where(
+            ProjetosParliamentarian.projeto_id == project.id
+        ),
+        "position",
+        "asc",
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 @router.post(
@@ -872,13 +957,18 @@ def list_project_favorites(
         None,
         description="Filtra por favoritos atualizados até este instante (inclusive).",
     ),
-    sort_by: Literal["created_at", "updated_at", "id", "parliamentarian_id"] = Query(
-        default="created_at",
-        description="Campo usado para ordenação.",
+    sort_by: Literal[
+        "position", "created_at", "updated_at", "id", "parliamentarian_id"
+    ] = Query(
+        default="position",
+        description=(
+            "Campo usado para ordenação. 'position' é a ordem pessoal do assinante: "
+            "sempre crescente, com quem nunca foi ordenado no fim."
+        ),
     ),
     sort_order: Literal["asc", "desc"] = Query(
         default="desc",
-        description="Direção da ordenação.",
+        description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
 ) -> List[ProjetosParliamentarian]:
     """Retorna os parlamentares marcados como favoritos por um projeto específico."""
@@ -893,14 +983,7 @@ def list_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    sortable_columns = {
-        "created_at": ProjetosParliamentarian.created_at,
-        "updated_at": ProjetosParliamentarian.updated_at,
-        "id": ProjetosParliamentarian.id,
-        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
-    }
-    sort_column = sortable_columns[sort_by]
-    stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
+    stmt = _apply_favorite_ordering(stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
     favorites = db.execute(stmt)
     return favorites.scalars().all()

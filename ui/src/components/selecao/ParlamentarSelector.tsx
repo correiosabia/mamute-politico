@@ -30,7 +30,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  PlusCircle,
+  X,
+  ExternalLink,
+  Loader2,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUp,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 import { PLANS_URL } from '@/components/auth/config';
@@ -99,6 +109,9 @@ interface ParlamentarSelectorProps {
     camara: { used: number; limit: number; limit_reached: boolean };
     senado: { used: number; limit: number; limit_reached: boolean };
   } | null;
+
+  onReorderParlamentares?: (orderedIds: string[]) => void;
+  reorderPending?: boolean;
 }
 
 export function ParlamentarSelector({
@@ -114,6 +127,8 @@ export function ParlamentarSelector({
   monitoradosQuotaLoading = false,
   recentlyAdded = null,
   monitoradosQuota = null,
+  onReorderParlamentares,
+  reorderPending = false,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const monitoradosCardRef = useRef<HTMLDivElement>(null);
@@ -222,9 +237,25 @@ export function ParlamentarSelector({
   }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, selectedSituacao, parlamentaresSelecionados]);
 
   const parlamentaresSelecionadosOrdenados = useMemo(
-    () => sortByNome(parlamentaresSelecionados),
-    [parlamentaresSelecionados],
+    () =>
+      onReorderParlamentares != null
+        ? parlamentaresSelecionados
+        : sortByNome(parlamentaresSelecionados),
+    [parlamentaresSelecionados, onReorderParlamentares],
   );
+
+  const podeOrdenar =
+    onReorderParlamentares != null && parlamentaresSelecionadosOrdenados.length > 1;
+  const ultimoIndiceMonitorado = parlamentaresSelecionadosOrdenados.length - 1;
+
+  const moverMonitorado = (deIndice: number, paraIndice: number) => {
+    if (!onReorderParlamentares) return;
+    if (paraIndice < 0 || paraIndice > ultimoIndiceMonitorado) return;
+    const proxima = [...parlamentaresSelecionadosOrdenados];
+    const [movido] = proxima.splice(deIndice, 1);
+    proxima.splice(paraIndice, 0, movido);
+    onReorderParlamentares(proxima.map((p) => p.id));
+  };
   const quotaUsed =
     typeof monitoradosUsed === 'number' ? monitoradosUsed : parlamentaresSelecionados.length;
   const monitoradosLimitReached =
@@ -599,7 +630,7 @@ export function ParlamentarSelector({
               </div>
             ) : (
             <div className="flex flex-col gap-2 pr-4">
-              {parlamentaresSelecionadosOrdenados.map((parlamentar) => (
+              {parlamentaresSelecionadosOrdenados.map((parlamentar, indice) => (
                 <div
                   key={parlamentar.id}
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors group cursor-pointer"
@@ -623,6 +654,52 @@ export function ParlamentarSelector({
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {podeOrdenar && (
+                      // Setas em vez de arrastar: funciona no toque, funciona no
+                      // teclado e não exige biblioteca de drag-and-drop nova.
+                      // Sempre visíveis (não só no hover) pelo mesmo motivo.
+                      <div className="flex items-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === 0 || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, 0);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para o topo`}
+                        >
+                          <ChevronsUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === 0 || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, indice - 1);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para cima`}
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === ultimoIndiceMonitorado || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, indice + 1);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para baixo`}
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"

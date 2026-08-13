@@ -12,10 +12,13 @@ import {
   getMyProjectFavoritesQuota,
   addMyProjectFavorite,
   removeMyProjectFavorite,
+  reorderMyProjectFavorites,
   getParliamentarian,
 } from '@/api/endpoints';
+import type { ProjectFavoriteOut } from '@/api/types';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 const CASA_HASH: Record<CasaLegislativa, string> = {
@@ -33,6 +36,7 @@ const SelecaoPage = () => {
   const location = useLocation();
   const casaSelecionada = getCasaFromHash(location.hash);
   const [recentlyAdded, setRecentlyAdded] = useState<Parlamentar | null>(null);
+  const marcacoesPessoaisOn = useFeatureFlag('marcacoes_pessoais');
 
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
@@ -112,6 +116,45 @@ const SelecaoPage = () => {
     },
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: (orderedIds: number[]) => reorderMyProjectFavorites(orderedIds),
+    onMutate: async (orderedIds) => {
+      await queryClient.cancelQueries({ queryKey: ['project-favorites', 'me'] });
+      const anterior = queryClient.getQueryData<ProjectFavoriteOut[]>([
+        'project-favorites',
+        'me',
+      ]);
+      if (anterior) {
+        const porParlamentar = new Map(anterior.map((f) => [f.parliamentarian_id, f]));
+        const otimista = orderedIds
+          .map((id) => porParlamentar.get(id))
+          .filter((f): f is ProjectFavoriteOut => f != null);
+        queryClient.setQueryData(['project-favorites', 'me'], otimista);
+      }
+      return { anterior };
+    },
+    onSuccess: (favoritos) => {
+      queryClient.setQueryData(['project-favorites', 'me'], favoritos);
+    },
+    onError: (error, _orderedIds, context) => {
+      if (context?.anterior) {
+        queryClient.setQueryData(['project-favorites', 'me'], context.anterior);
+      }
+      if (error instanceof ApiError && error.status === 422) {
+        toast.info('Sua lista de monitorados mudou. Atualizamos aqui — ordene de novo.');
+        void queryClient.invalidateQueries({ queryKey: ['project-favorites', 'me'] });
+        return;
+      }
+      const msg =
+        error instanceof Error ? error.message : 'Não foi possível salvar a ordem.';
+      toast.error(msg);
+    },
+  });
+
+  const handleReorderParlamentares = (orderedIds: string[]) => {
+    reorderMutation.mutate(orderedIds.map(Number));
+  };
+
   const handleSelectCasa = (casa: CasaLegislativa) => {
     navigate({ pathname: '/selecao', hash: CASA_HASH[casa] });
   };
@@ -190,6 +233,10 @@ const SelecaoPage = () => {
                 monitoradosUsed={favoritesQuotaQuery.data?.used ?? favoriteIds.length}
                 monitoradosQuotaLoading={favoritesQuotaQuery.isLoading}
                 recentlyAdded={recentlyAdded}
+                onReorderParlamentares={
+                  marcacoesPessoaisOn ? handleReorderParlamentares : undefined
+                }
+                reorderPending={reorderMutation.isPending}
                 monitoradosQuota={
                   favoritesQuotaQuery.data
                     ? {
