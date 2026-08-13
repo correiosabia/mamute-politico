@@ -1,6 +1,7 @@
 """Exposição dos modelos declarativos do projeto."""
 
 from .admin_audit_log import AdminAuditLog
+from .amendment_action_plan import AmendmentActionPlan
 from .agency import Agency
 from .api_coverage import ApiCoverage
 from .authors_proposition import AuthorsProposition
@@ -30,6 +31,7 @@ from .word_cloud_term import WordCloudTerm
 
 __all__ = [
     "AdminAuditLog",
+    "AmendmentActionPlan",
     "Agency",
     "ApiCoverage",
     "AuthorsProposition",
