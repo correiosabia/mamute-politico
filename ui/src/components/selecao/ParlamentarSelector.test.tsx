@@ -384,3 +384,114 @@ describe('ParlamentarSelector — ordem pessoal (SPEC-001)', () => {
     expect(screen.queryByRole('button', { name: /Mover .* para cima/i })).not.toBeInTheDocument();
   });
 });
+
+const TAGS = [
+  { id: 7, name: 'Meio Ambiente', slug: 'meio ambiente', parliamentarian_count: 1 },
+  { id: 8, name: 'Transparência', slug: 'transparencia', parliamentarian_count: 0 },
+];
+
+function renderComTags(overrides: Record<string, unknown> = {}) {
+  const onAlterarTags = vi.fn();
+  const onCriarTag = vi.fn();
+  const onFiltrarPorTag = vi.fn();
+  renderSelector({
+    selectorProps: {
+      parlamentaresSelecionados: [selectedParliamentarian, outroSelecionado],
+      tagsPessoais: {
+        tags: TAGS,
+        tagIdsPorParlamentar: { '42': [7] },
+        filtroTagId: null,
+        maxTagsPorParlamentar: 10,
+        salvando: false,
+        onFiltrarPorTag,
+        onAlterarTags,
+        onCriarTag,
+        ...overrides,
+      },
+    },
+  });
+  return { onAlterarTags, onCriarTag, onFiltrarPorTag };
+}
+
+describe('ParlamentarSelector — tags livres (SPEC-001)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+    mockGetParliamentarianCatalogConfig.mockResolvedValue({
+      allowed_situations: ['exercicio'],
+      default_situacao: 'exercicio',
+    });
+    mockListParliamentarians.mockResolvedValue([]);
+  });
+
+  it('sem a prop (flag off), nao mostra nada de tags', async () => {
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [selectedParliamentarian, outroSelecionado],
+      },
+    });
+
+    await screen.findByText('Alan Rick');
+    expect(
+      screen.queryByRole('button', { name: /Editar tags de/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Meio Ambiente')).not.toBeInTheDocument();
+  });
+
+  it('mostra as tags aplicadas como chip no card', async () => {
+    renderComTags();
+
+    await screen.findByText('Alan Rick');
+    // Alan Rick (id 42) tem a tag 7; Beatriz (43) nao tem nenhuma.
+    expect(screen.getAllByText('Meio Ambiente').length).toBeGreaterThan(0);
+  });
+
+  it('filtra a lista pela tag selecionada', async () => {
+    renderComTags({ filtroTagId: 7 });
+
+    await screen.findByText('Alan Rick');
+    expect(screen.queryByText('Beatriz Souza')).not.toBeInTheDocument();
+  });
+
+  it('some com os controles de ordem enquanto filtra', async () => {
+    // Ordenar com filtro enviaria lista parcial e a API responderia 422.
+    renderSelector({
+      selectorProps: {
+        parlamentaresSelecionados: [selectedParliamentarian, outroSelecionado],
+        onReorderParlamentares: vi.fn(),
+        tagsPessoais: {
+          tags: TAGS,
+          tagIdsPorParlamentar: { '42': [7] },
+          filtroTagId: 7,
+          maxTagsPorParlamentar: 10,
+          salvando: false,
+          onFiltrarPorTag: vi.fn(),
+          onAlterarTags: vi.fn(),
+          onCriarTag: vi.fn(),
+        },
+      },
+    });
+
+    await screen.findByText('Alan Rick');
+    expect(
+      screen.queryByRole('button', { name: /Mover .* para cima/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('avisa quando o filtro nao casa com ninguem', async () => {
+    renderComTags({ filtroTagId: 8 });
+
+    expect(await screen.findByText('Nenhum monitorado com essa tag.')).toBeVisible();
+  });
+
+  it('marcar uma tag envia o conjunto completo', async () => {
+    const { onAlterarTags } = renderComTags();
+
+    await screen.findByText('Alan Rick');
+    fireEvent.click(screen.getByRole('button', { name: /Editar tags de Alan Rick/i }));
+    // O nome da tag aparece tambem nos chips de filtro; escopa ao popover.
+    const popover = await screen.findByRole('dialog');
+    fireEvent.click(within(popover).getByRole('button', { name: /Transparência/i }));
+
+    expect(onAlterarTags).toHaveBeenCalledWith('42', [7, 8]);
+  });
+});

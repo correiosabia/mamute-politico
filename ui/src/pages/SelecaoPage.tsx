@@ -14,12 +14,18 @@ import {
   removeMyProjectFavorite,
   reorderMyProjectFavorites,
   getParliamentarian,
+  listMyProjectTags,
+  createMyProjectTag,
+  listMyParliamentarianTags,
+  setMyParliamentarianTags,
 } from '@/api/endpoints';
 import type { ProjectFavoriteOut } from '@/api/types';
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
+
+const MAX_TAGS_POR_PARLAMENTAR = 10;
 
 const CASA_HASH: Record<CasaLegislativa, string> = {
   senado: '#senado-federal',
@@ -37,6 +43,7 @@ const SelecaoPage = () => {
   const casaSelecionada = getCasaFromHash(location.hash);
   const [recentlyAdded, setRecentlyAdded] = useState<Parlamentar | null>(null);
   const marcacoesPessoaisOn = useFeatureFlag('marcacoes_pessoais');
+  const [filtroTagId, setFiltroTagId] = useState<number | null>(null);
 
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
@@ -155,6 +162,53 @@ const SelecaoPage = () => {
     reorderMutation.mutate(orderedIds.map(Number));
   };
 
+  const tagsQuery = useQuery({
+    queryKey: ['project-tags', 'me'],
+    queryFn: () => listMyProjectTags(),
+    enabled: marcacoesPessoaisOn && casaSelecionada != null,
+  });
+  const parlamentarTagsQuery = useQuery({
+    queryKey: ['parliamentarian-tags', 'me'],
+    queryFn: () => listMyParliamentarianTags(),
+    enabled: marcacoesPessoaisOn && casaSelecionada != null,
+  });
+
+  const tagIdsPorParlamentar: Record<string, number[]> = {};
+  for (const linha of parlamentarTagsQuery.data ?? []) {
+    tagIdsPorParlamentar[String(linha.parliamentarian_id)] = linha.tag_ids;
+  }
+
+  const avisarErroDeTag = (error: unknown, fallback: string) => {
+    // 409 (tag repetida) e 422 (teto) são situações previstas, com texto pronto
+    // vindo da API — informam, não alarmam.
+    if (error instanceof ApiError && (error.status === 409 || error.status === 422)) {
+      toast.info(error.message);
+      return;
+    }
+    toast.error(error instanceof Error ? error.message : fallback);
+  };
+
+  const alterarTagsMutation = useMutation({
+    mutationFn: ({ parlamentarId, tagIds }: { parlamentarId: string; tagIds: number[] }) =>
+      setMyParliamentarianTags(Number(parlamentarId), tagIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['parliamentarian-tags', 'me'] });
+      void queryClient.invalidateQueries({ queryKey: ['project-tags', 'me'] });
+    },
+    onError: (error) => avisarErroDeTag(error, 'Não foi possível salvar as tags.'),
+  });
+
+  const criarTagMutation = useMutation({
+    mutationFn: ({ nome }: { nome: string; parlamentarId: string }) =>
+      createMyProjectTag(nome),
+    onSuccess: (tag, { parlamentarId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['project-tags', 'me'] });
+      const atuais = tagIdsPorParlamentar[parlamentarId] ?? [];
+      alterarTagsMutation.mutate({ parlamentarId, tagIds: [...atuais, tag.id] });
+    },
+    onError: (error) => avisarErroDeTag(error, 'Não foi possível criar a tag.'),
+  });
+
   const handleSelectCasa = (casa: CasaLegislativa) => {
     navigate({ pathname: '/selecao', hash: CASA_HASH[casa] });
   };
@@ -235,6 +289,23 @@ const SelecaoPage = () => {
                 recentlyAdded={recentlyAdded}
                 onReorderParlamentares={
                   marcacoesPessoaisOn ? handleReorderParlamentares : undefined
+                }
+                tagsPessoais={
+                  marcacoesPessoaisOn
+                    ? {
+                        tags: tagsQuery.data ?? [],
+                        tagIdsPorParlamentar,
+                        filtroTagId,
+                        maxTagsPorParlamentar: MAX_TAGS_POR_PARLAMENTAR,
+                        salvando:
+                          alterarTagsMutation.isPending || criarTagMutation.isPending,
+                        onFiltrarPorTag: setFiltroTagId,
+                        onAlterarTags: (parlamentarId, tagIds) =>
+                          alterarTagsMutation.mutate({ parlamentarId, tagIds }),
+                        onCriarTag: (nome, parlamentarId) =>
+                          criarTagMutation.mutate({ nome, parlamentarId }),
+                      }
+                    : null
                 }
                 reorderPending={reorderMutation.isPending}
                 monitoradosQuota={

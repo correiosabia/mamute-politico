@@ -9,6 +9,8 @@ import type {
   SpeechesTranscriptOut,
   ProjectFavoriteOut,
   ProjectFavoriteQuotaOut,
+  ProjectTagOut,
+  ParliamentarianTagsOut,
   AuthorsPropositionOut,
   SpeechAnalysisSummaryOut,
   SpeechAnalysisOut,
@@ -344,6 +346,44 @@ export function removeMyProjectFavorite(parliamentarianId: number): Promise<void
   return request<void>(`/projects/me/favorites/${parliamentarianId}`, {
     method: 'DELETE',
   });
+}
+
+/** Tags livres do assinante (SPEC-001). Não consomem cota de plano. */
+export function listMyProjectTags(): Promise<ProjectTagOut[]> {
+  return request<ProjectTagOut[]>('/projects/me/tags');
+}
+
+export function createMyProjectTag(name: string): Promise<ProjectTagOut> {
+  return request<ProjectTagOut>('/projects/me/tags', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function renameMyProjectTag(tagId: number, name: string): Promise<ProjectTagOut> {
+  return request<ProjectTagOut>(`/projects/me/tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteMyProjectTag(tagId: number): Promise<void> {
+  return request<void>(`/projects/me/tags/${tagId}`, { method: 'DELETE' });
+}
+
+export function listMyParliamentarianTags(): Promise<ParliamentarianTagsOut[]> {
+  return request<ParliamentarianTagsOut[]>('/projects/me/parliamentarian-tags');
+}
+
+/** Substitui o conjunto inteiro de tags de um parlamentar. Idempotente. */
+export function setMyParliamentarianTags(
+  parliamentarianId: number,
+  tagIds: number[]
+): Promise<ParliamentarianTagsOut> {
+  return request<ParliamentarianTagsOut>(
+    `/projects/me/parliamentarians/${parliamentarianId}/tags`,
+    { method: 'PUT', body: JSON.stringify({ tag_ids: tagIds }) }
+  );
 }
 
 export function reorderMyProjectFavorites(

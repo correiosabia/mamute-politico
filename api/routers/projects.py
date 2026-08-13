@@ -23,11 +23,13 @@ try:
     from ..db.models.plenary_attendance import PlenaryAttendance
     from ..db.models.proposition import Proposition
     from ..db.models.project import Projetos, ProjetosParliamentarian
+    from ..db.models.personal_marks import ParliamentarianTag, ProjectTag
     from ..db.models.usage_event import UsageEvent
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
     from ..security import get_admin_settings
+    from .parliamentarians import is_parliamentarian_visible
     from .propositions import PropositionOut, _serialize_proposition
     from .roll_call_votes import (
         RollCallVoteOut,
@@ -43,11 +45,13 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.plenary_attendance import PlenaryAttendance
     from db.models.proposition import Proposition
     from db.models.project import Projetos, ProjetosParliamentarian
+    from db.models.personal_marks import ParliamentarianTag, ProjectTag
     from db.models.usage_event import UsageEvent
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
     from security import get_admin_settings
+    from routers.parliamentarians import is_parliamentarian_visible
     from routers.propositions import PropositionOut, _serialize_proposition
     from routers.roll_call_votes import (
         RollCallVoteOut,
@@ -115,6 +119,36 @@ class ProjectFavoriteQuotaOut(BaseModel):
     unlimited: bool = False
     camara: HouseFavoriteQuotaOut
     senado: HouseFavoriteQuotaOut
+
+
+class ProjectTagOut(BaseModel):
+    """Tag livre do assinante, com quantos parlamentares ela marca."""
+
+    id: int
+    name: str
+    slug: str
+    parliamentarian_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectTagCreate(BaseModel):
+    """Nome da tag, como a pessoa digitou."""
+
+    name: str
+
+
+class ParliamentarianTagsUpdate(BaseModel):
+    """Conjunto completo de tags de um parlamentar."""
+
+    tag_ids: List[int]
+
+
+class ParliamentarianTagsOut(BaseModel):
+    """Tags aplicadas a um parlamentar no projeto autenticado."""
+
+    parliamentarian_id: int
+    tag_ids: List[int]
 
 
 class ProjectDashboardStatsOut(BaseModel):
@@ -927,6 +961,308 @@ def get_my_dashboard_activity(
             parliamentarian_ids,
             limit,
         ),
+    )
+
+
+# --- Tags livres do assinante (SPEC-001, fatia 2) -------------------------
+#
+# Tags NAO consomem cota de plano: o que o plano vende e monitoramento —
+# coleta, dashboard, e-mail e IA —, nao organizacao pessoal. Os tetos abaixo
+# sao higiene (evitar lista impraticavel e texto abusivo), nao regra comercial.
+MAX_TAGS_POR_PROJETO = 50
+MAX_TAGS_POR_PARLAMENTAR = 10
+MAX_CARACTERES_TAG = 30
+
+
+def _tag_slug(nome: str) -> str:
+    """Slug de comparacao: sem acento, minusculo, espacos colapsados.
+
+    "Meio Ambiente", "meio  ambiente" e "MEIO AMBIENTE" viram a mesma tag —
+    o que a pessoa digitou fica em `name`, para exibir de volta como ela quis.
+    """
+    return " ".join(_normalize_text(nome).split())
+
+
+def _validar_nome_de_tag(nome: str) -> str:
+    limpo = (nome or "").strip()
+    if not limpo:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Dê um nome para a tag.",
+        )
+    if len(limpo) > MAX_CARACTERES_TAG:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"A tag pode ter no máximo {MAX_CARACTERES_TAG} caracteres.",
+        )
+    return limpo
+
+
+def _contagem_por_tag(db: Session, project_id: int) -> dict[int, int]:
+    linhas = db.execute(
+        select(ParliamentarianTag.tag_id, func.count())
+        .where(ParliamentarianTag.projeto_id == project_id)
+        .group_by(ParliamentarianTag.tag_id)
+    ).all()
+    return {int(tag_id): int(total) for tag_id, total in linhas}
+
+
+def _serializar_tag(tag: ProjectTag, contagem: dict[int, int]) -> ProjectTagOut:
+    return ProjectTagOut(
+        id=int(tag.id),
+        name=tag.name,
+        slug=tag.slug,
+        parliamentarian_count=contagem.get(int(tag.id), 0),
+    )
+
+
+def _tag_do_projeto(db: Session, project_id: int, tag_id: int) -> ProjectTag:
+    """Busca a tag JA escopada pelo projeto do token (cláusula 0e).
+
+    404 e nao 403: dizer "existe, mas nao e sua" ja entrega a existencia da tag
+    de outra conta.
+    """
+    tag = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.id == tag_id,
+            ProjectTag.projeto_id == project_id,
+        )
+    ).scalar_one_or_none()
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag não encontrada.")
+    return tag
+
+
+@router.get(
+    "/me/tags",
+    response_model=List[ProjectTagOut],
+    summary="Lista as tags do projeto autenticado",
+)
+def list_my_project_tags(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[ProjectTagOut]:
+    """Tags do projeto do token, com quantos parlamentares cada uma marca."""
+    project = _get_project_from_token_email(request, db)
+    tags = (
+        db.execute(
+            select(ProjectTag)
+            .where(ProjectTag.projeto_id == project.id)
+            .order_by(asc(ProjectTag.slug))
+        )
+        .scalars()
+        .all()
+    )
+    contagem = _contagem_por_tag(db, int(project.id))
+    return [_serializar_tag(tag, contagem) for tag in tags]
+
+
+@router.post(
+    "/me/tags",
+    response_model=ProjectTagOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria uma tag no projeto autenticado",
+)
+def create_my_project_tag(
+    request: Request,
+    payload: ProjectTagCreate,
+    db: Session = Depends(get_db),
+) -> ProjectTagOut:
+    project = _get_project_from_token_email(request, db)
+    nome = _validar_nome_de_tag(payload.name)
+    slug = _tag_slug(nome)
+
+    existente = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.projeto_id == project.id,
+            ProjectTag.slug == slug,
+        )
+    ).scalar_one_or_none()
+    if existente is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Você já tem a tag "{existente.name}".',
+        )
+
+    total = db.execute(
+        select(func.count()).select_from(ProjectTag).where(
+            ProjectTag.projeto_id == project.id
+        )
+    ).scalar_one()
+    if int(total) >= MAX_TAGS_POR_PROJETO:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Você já tem {MAX_TAGS_POR_PROJETO} tags. "
+                "Renomeie ou apague uma para criar outra."
+            ),
+        )
+
+    tag = ProjectTag(projeto_id=project.id, name=nome, slug=slug)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return _serializar_tag(tag, {})
+
+
+@router.patch(
+    "/me/tags/{tag_id}",
+    response_model=ProjectTagOut,
+    summary="Renomeia uma tag do projeto autenticado",
+)
+def rename_my_project_tag(
+    request: Request,
+    tag_id: int,
+    payload: ProjectTagCreate,
+    db: Session = Depends(get_db),
+) -> ProjectTagOut:
+    project = _get_project_from_token_email(request, db)
+    tag = _tag_do_projeto(db, int(project.id), tag_id)
+
+    nome = _validar_nome_de_tag(payload.name)
+    slug = _tag_slug(nome)
+
+    colisao = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.projeto_id == project.id,
+            ProjectTag.slug == slug,
+            ProjectTag.id != tag.id,
+        )
+    ).scalar_one_or_none()
+    if colisao is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Você já tem a tag "{colisao.name}".',
+        )
+
+    tag.name = nome
+    tag.slug = slug
+    db.commit()
+    db.refresh(tag)
+    return _serializar_tag(tag, _contagem_por_tag(db, int(project.id)))
+
+
+@router.delete(
+    "/me/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Apaga uma tag do projeto autenticado",
+)
+def delete_my_project_tag(
+    request: Request,
+    tag_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Apagar a tag tira a etiqueta de todos os parlamentares (cascade), e
+    nunca mexe no monitoramento."""
+    project = _get_project_from_token_email(request, db)
+    tag = _tag_do_projeto(db, int(project.id), tag_id)
+    db.delete(tag)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/me/parliamentarian-tags",
+    response_model=List[ParliamentarianTagsOut],
+    summary="Tags aplicadas a cada parlamentar, no projeto autenticado",
+)
+def list_my_parliamentarian_tags(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[ParliamentarianTagsOut]:
+    """Todas as aplicacoes do projeto de uma vez.
+
+    Uma chamada so em vez de uma por parlamentar: a tela lista dezenas de
+    cards, e N requests para montar chips seria desperdicio obvio. O volume e
+    pequeno por construcao (teto de 50 tags x 10 por parlamentar).
+    """
+    project = _get_project_from_token_email(request, db)
+    linhas = db.execute(
+        select(ParliamentarianTag.parliamentarian_id, ParliamentarianTag.tag_id)
+        .where(ParliamentarianTag.projeto_id == project.id)
+        .order_by(asc(ParliamentarianTag.parliamentarian_id))
+    ).all()
+
+    por_parlamentar: dict[int, List[int]] = {}
+    for parliamentarian_id, tag_id in linhas:
+        por_parlamentar.setdefault(int(parliamentarian_id), []).append(int(tag_id))
+    return [
+        ParliamentarianTagsOut(parliamentarian_id=pid, tag_ids=tag_ids)
+        for pid, tag_ids in por_parlamentar.items()
+    ]
+
+
+@router.put(
+    "/me/parliamentarians/{parliamentarian_id}/tags",
+    response_model=ParliamentarianTagsOut,
+    summary="Define as tags de um parlamentar, no projeto autenticado",
+)
+def set_my_parliamentarian_tags(
+    request: Request,
+    parliamentarian_id: int,
+    payload: ParliamentarianTagsUpdate,
+    db: Session = Depends(get_db),
+) -> ParliamentarianTagsOut:
+    """Substitui o conjunto inteiro de tags do parlamentar. Idempotente.
+
+    Substituir (e nao adicionar/remover uma a uma) espelha a tela, que edita a
+    lista toda e salva de uma vez — mesma politica de `word_cloud_terms`.
+    """
+    project = _get_project_from_token_email(request, db)
+
+    if not is_parliamentarian_visible(db, parliamentarian_id):
+        # 404, e nao 403: responder "existe mas voce nao ve" transformaria a
+        # rota num oraculo de existencia para quem o catalogo esconde.
+        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+
+    desejadas = list(dict.fromkeys(payload.tag_ids))
+    if len(desejadas) > MAX_TAGS_POR_PARLAMENTAR:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Um parlamentar pode ter no máximo {MAX_TAGS_POR_PARLAMENTAR} tags."
+            ),
+        )
+
+    if desejadas:
+        validas = set(
+            db.execute(
+                select(ProjectTag.id).where(
+                    ProjectTag.projeto_id == project.id,
+                    ProjectTag.id.in_(desejadas),
+                )
+            ).scalars()
+        )
+        if len(validas) != len(desejadas):
+            raise HTTPException(status_code=404, detail="Tag não encontrada.")
+
+    atuais = {
+        int(linha.tag_id): linha
+        for linha in db.execute(
+            select(ParliamentarianTag).where(
+                ParliamentarianTag.projeto_id == project.id,
+                ParliamentarianTag.parliamentarian_id == parliamentarian_id,
+            )
+        ).scalars()
+    }
+
+    for tag_id, linha in atuais.items():
+        if tag_id not in desejadas:
+            db.delete(linha)
+    for tag_id in desejadas:
+        if tag_id not in atuais:
+            db.add(
+                ParliamentarianTag(
+                    projeto_id=project.id,
+                    tag_id=tag_id,
+                    parliamentarian_id=parliamentarian_id,
+                )
+            )
+    db.commit()
+
+    return ParliamentarianTagsOut(
+        parliamentarian_id=parliamentarian_id,
+        tag_ids=desejadas,
     )
 
 

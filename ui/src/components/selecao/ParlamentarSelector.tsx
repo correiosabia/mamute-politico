@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Parlamentar, CasaLegislativa } from '@/types/parlamentar';
 import { getParliamentarianCatalogConfig, listParliamentarians } from '@/api/endpoints';
-import type { ParliamentarianSituation } from '@/api/types';
+import type { ParliamentarianSituation, ProjectTagOut } from '@/api/types';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +44,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 import { PLANS_URL } from '@/components/auth/config';
+import { TagChips, TagEditor, TagFilter } from './TagEditor';
 
 type SituacaoFilter = ParliamentarianSituation;
 
@@ -112,6 +113,21 @@ interface ParlamentarSelectorProps {
 
   onReorderParlamentares?: (orderedIds: string[]) => void;
   reorderPending?: boolean;
+  /**
+   * Tags livres do assinante (SPEC-001). A PRESENCA desta prop e o portao da
+   * feature — a pagina so a passa com a flag ligada, do mesmo jeito que faz com
+   * onReorderParlamentares. Ausente = nada de tags na tela.
+   */
+  tagsPessoais?: {
+    tags: ProjectTagOut[];
+    tagIdsPorParlamentar: Record<string, number[]>;
+    filtroTagId: number | null;
+    maxTagsPorParlamentar: number;
+    salvando: boolean;
+    onFiltrarPorTag: (tagId: number | null) => void;
+    onAlterarTags: (parlamentarId: string, tagIds: number[]) => void;
+    onCriarTag: (nome: string, parlamentarId: string) => void;
+  } | null;
 }
 
 export function ParlamentarSelector({
@@ -129,6 +145,7 @@ export function ParlamentarSelector({
   monitoradosQuota = null,
   onReorderParlamentares,
   reorderPending = false,
+  tagsPessoais = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const monitoradosCardRef = useRef<HTMLDivElement>(null);
@@ -244,8 +261,22 @@ export function ParlamentarSelector({
     [parlamentaresSelecionados, onReorderParlamentares],
   );
 
+  const filtroTagAtivo = tagsPessoais?.filtroTagId ?? null;
+  const parlamentaresVisiveis = useMemo(() => {
+    if (tagsPessoais == null || filtroTagAtivo == null) {
+      return parlamentaresSelecionadosOrdenados;
+    }
+    return parlamentaresSelecionadosOrdenados.filter((p) =>
+      (tagsPessoais.tagIdsPorParlamentar[p.id] ?? []).includes(filtroTagAtivo),
+    );
+  }, [parlamentaresSelecionadosOrdenados, tagsPessoais, filtroTagAtivo]);
+
+  // Ordenar com filtro ligado enviaria a lista PARCIAL ao endpoint, que exige a
+  // completa e responderia 422. Some os controles enquanto filtra.
   const podeOrdenar =
-    onReorderParlamentares != null && parlamentaresSelecionadosOrdenados.length > 1;
+    onReorderParlamentares != null &&
+    filtroTagAtivo == null &&
+    parlamentaresSelecionadosOrdenados.length > 1;
   const ultimoIndiceMonitorado = parlamentaresSelecionadosOrdenados.length - 1;
 
   const moverMonitorado = (deIndice: number, paraIndice: number) => {
@@ -630,7 +661,16 @@ export function ParlamentarSelector({
               </div>
             ) : (
             <div className="flex flex-col gap-2 pr-4">
-              {parlamentaresSelecionadosOrdenados.map((parlamentar, indice) => (
+              {tagsPessoais && tagsPessoais.tags.length > 0 && (
+                <div className="mb-1">
+                  <TagFilter
+                    tags={tagsPessoais.tags}
+                    selectedTagId={tagsPessoais.filtroTagId}
+                    onSelect={tagsPessoais.onFiltrarPorTag}
+                  />
+                </div>
+              )}
+              {parlamentaresVisiveis.map((parlamentar, indice) => (
                 <div
                   key={parlamentar.id}
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors group cursor-pointer"
@@ -651,9 +691,37 @@ export function ParlamentarSelector({
                           {parlamentar.partido.sigla} - {parlamentar.uf}
                         </span>
                       </div>
+                      {tagsPessoais && (
+                        <div className="mt-1">
+                          <TagChips
+                            tags={tagsPessoais.tags.filter((tag) =>
+                              (tagsPessoais.tagIdsPorParlamentar[parlamentar.id] ?? []).includes(
+                                tag.id,
+                              ),
+                            )}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {tagsPessoais && (
+                      <TagEditor
+                        tags={tagsPessoais.tags}
+                        selectedTagIds={
+                          tagsPessoais.tagIdsPorParlamentar[parlamentar.id] ?? []
+                        }
+                        onChange={(tagIds) =>
+                          tagsPessoais.onAlterarTags(parlamentar.id, tagIds)
+                        }
+                        onCreateTag={(nome) =>
+                          tagsPessoais.onCriarTag(nome, parlamentar.id)
+                        }
+                        disabled={tagsPessoais.salvando}
+                        maxTagsPerParliamentarian={tagsPessoais.maxTagsPorParlamentar}
+                        parlamentarNome={parlamentar.nome}
+                      />
+                    )}
                     {podeOrdenar && (
                       // Setas em vez de arrastar: funciona no toque, funciona no
                       // teclado e não exige biblioteca de drag-and-drop nova.
@@ -735,6 +803,15 @@ export function ParlamentarSelector({
                   <p className="text-sm mt-1">Adicione parlamentares da lista ao lado.</p>
                 </div>
               )}
+              {parlamentaresSelecionados.length > 0 &&
+                parlamentaresVisiveis.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>Nenhum monitorado com essa tag.</p>
+                    <p className="text-sm mt-1">
+                      Clique na tag de novo para ver todos.
+                    </p>
+                  </div>
+                )}
             </div>
             )}
           </ScrollArea>

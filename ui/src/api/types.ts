@@ -113,6 +113,19 @@ export interface ProjectFavoriteOut {
   updated_at: string;
 }
 
+export interface ProjectTagOut {
+  id: number;
+  name: string;
+  slug: string;
+  /** Quantos parlamentares esta tag marca, no projeto autenticado. */
+  parliamentarian_count: number;
+}
+
+export interface ParliamentarianTagsOut {
+  parliamentarian_id: number;
+  tag_ids: number[];
+}
+
 export interface HouseFavoriteQuotaOut {
   limit: number;
   used: number;
