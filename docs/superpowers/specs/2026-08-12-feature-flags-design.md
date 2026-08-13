@@ -17,6 +17,9 @@ cobaia real que prova o desenho antes de qualquer feature nova depender dele.
 | Decisão | Escolha |
 |---|---|
 | Estados | `off`, `admins`, `all` — exatamente três |
+| Recorte por plano | Na tela de **Planos**, não na de flags. `all` significa "o lançamento acabou, agora quem decide é o plano" |
+| Plano novo (sync do Ghost) | Nasce **sem nenhuma** feature liberada |
+| Onde mora o recorte | Tabela dedicada `feature_flag_tier` (CS-58), não `Tiers.detalhes` |
 | Onde se gerencia | `/admin/configuracoes` (`AdminSettingsPage`), nunca por env var |
 | O que a flag controla | **Só a UI.** A API continua aberta |
 | Estratégia de saída | **Remover a flag do código.** Não existe "deixar no código e esconder o controle" |
@@ -43,12 +46,54 @@ A objeção legítima é que "lembrar de remover" não é estratégia. Por isso 
 remoção não depende de disciplina: ela é **mecânica e verificada pelo
 compilador** (ver "Procedimento de remoção").
 
+## Duas dimensões, dois lugares
+
+O tri-estado e o recorte por plano respondem perguntas diferentes e por isso
+ficam em telas diferentes:
+
+| Dimensão | Pergunta | Onde se mexe |
+|---|---|---|
+| Tri-estado | "a feature já saiu do forno?" | `/admin/configuracoes` |
+| Por plano | "quem paga para ver?" | tela de Planos, junto dos demais limites |
+
+Consequência que precisa estar clara para quem operar: **`all` não significa
+"todo mundo vê"**. Significa que o lançamento terminou e o plano passa a
+decidir. Uma flag em `all` sem nenhum plano marcado não aparece para ninguém —
+por isso o painel mostra "Liberada em N de M planos" e grita quando N é zero.
+
+Admin vê tudo que não está `off`, independente do plano: o papel de admin é
+prévia e conferência, não assinatura.
+
+**Plano novo nasce desligado.** É consequência de a liberação ser presença de
+linha em `feature_flag_tier`: um plano recém-sincronizado do Ghost não tem
+linha nenhuma, então não libera nada, sem ninguém precisar lembrar de desligar.
+
+### Relação com a CS-58 (Recursos pagos)
+
+A CS-58 pede exatamente este recorte e determina duas coisas que **não** foram
+construídas aqui, deliberadamente:
+
+1. **Modo "cadeado com prévia desfocada"** — hoje feature não liberada é
+   *omitida*. O segundo comportamento (mostrar bloqueado, como chamariz de
+   upgrade) é tarefa futura. Quando chegar, `feature_flag_tier` ganha uma
+   coluna de modo (`on` | `locked`) e o front ganha um `useFeatureAccess` ao
+   lado do `useFeatureFlag`. O booleano continua válido: "posso usar?" é uma
+   pergunta que sobrevive aos três modos.
+2. **Gate no backend** — a CS-58 é explícita: *"desfoque no front é vitrine,
+   não segurança — a rota não pode devolver o dado completo para quem não tem
+   plano"*. Este mecanismo, como está, **controla só a UI**. Enquanto a CS-58
+   não chegar, não use estas flags para esconder algo que não pode ser visto.
+
+Foi por causa da CS-58 que o recorte por plano vive em tabela dedicada, e não
+em `Tiers.detalhes`: ela pede config de recurso × plano no padrão de
+`word_cloud_terms`, em vez de config genérica.
+
 ## Arquitetura
 
 O registro de **quais flags existem** mora em TypeScript. O banco guarda apenas
 **em que estado cada uma está**. Essa separação é o que faz o resto funcionar.
 
-### 1. Banco — `feature_flag`
+### 1. Banco — `feature_flag` e `feature_flag_tier`
 
 Migration nova em `mamute_scrappers/migrations/versions/`, encadeada a partir do
 head `e6f7a8b9c0d1` (o mesmo que está em produção).
@@ -66,7 +111,19 @@ updated_at  timestamptz NOT NULL  server_default now(), onupdate now()
 - `CHECK (state IN ('off','admins','all'))`, para o banco recusar estado
   inválido mesmo se alguém editar na mão.
 
-Modelo espelhado em `mamute_scrappers/db/models/feature_flag.py` e
+E o recorte por plano:
+
+```
+feature_flag_tier
+  flag_key    text        PK (composta)
+  tier_id     bigint      PK (composta), FK -> tiers.id ON DELETE CASCADE
+  created_at  timestamptz
+```
+
+**Linha presente = o plano libera a feature.** Ausência = não libera. `CASCADE`
+para plano apagado não deixar liberação órfã.
+
+Modelos espelhados em `mamute_scrappers/db/models/feature_flag.py` e
 `api/db/models/feature_flag.py`, como as demais tabelas do projeto.
 
 ### 2. Backend
@@ -90,8 +147,14 @@ transformar "não é admin" em erro.
 | Rota | Quem acessa | Devolve |
 |---|---|---|
 | `GET /settings/feature-flags` | usuário logado (router `settings`, já sob `auth_dependencies`) | `{"trajetoria": false, ...}` — booleano **já resolvido** para quem chamou |
-| `GET /admin/settings/feature-flags` | admin | `[{key, state, updated_at}]` — tri-estado cru |
-| `PUT /admin/settings/feature-flags/{key}` | admin | `{key, state, updated_at}` após gravar |
+| `GET /admin/settings/feature-flags` | admin | `[{key, state, updated_at, tiers_ligados, tiers_total}]` |
+| `PUT /admin/settings/feature-flags/{key}` | admin | `{key, state, ...}` após gravar |
+| `GET /admin/tiers/{id}/features` | admin | `{tier_id, features: [...]}` |
+| `PUT /admin/tiers/{id}/features` | admin | substitui a lista inteira do plano |
+
+`tiers_ligados`/`tiers_total` existem só para o painel denunciar a flag
+liberada que nenhum plano libera. `PUT` de features substitui a lista completa,
+espelhando a intenção da tela — mesma política de `word_cloud_terms`.
 
 O endpoint público devolver booleano resolvido (e não o tri-estado) é
 deliberado: mantém `useFeatureFlag('x')` devolvendo `boolean` puro, e call site
