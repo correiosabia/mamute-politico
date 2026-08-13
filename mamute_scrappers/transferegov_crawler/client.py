@@ -21,11 +21,22 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.transferegov.gestao.gov.br/transferenciasespeciais"
 TIMEOUT = 90
 
+# A fonte esta atras de Cloudflare, que devolve 403 para User-Agent de
+# ferramenta conhecida — `python-requests/x.y` (o padrao da lib) e `curl/x.y`
+# sao barrados. UA de navegador passa, mas identificar o robo e mais honesto e
+# funciona igual: medido em producao em 2026-08-13.
+#
+# NAO remover nem trocar por UA de navegador: sem isto a coleta morre em
+# producao com 403, e o bug NAO aparece em teste (a sessao e mockada) nem em
+# execucao local (IP residencial nao cai na mesma regra).
+USER_AGENT = "MamutePolitico/1.0 (+https://mamutepolitico.com.br)"
+
 
 class TransferegovClient:
     def __init__(self, base_url: str = BASE_URL) -> None:
         self.base_url = base_url.rstrip("/")
         self._session = requests.Session()
+        self._session.headers.update({"User-Agent": USER_AGENT})
 
     def iter_rows(
         self,
