@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AdminShell } from '@/components/layout/AdminShell';
+import { FeatureFlagsPanel } from '@/components/admin/FeatureFlagsPanel';
 import { TermListEditor } from '@/components/admin/TermListEditor';
 import { fetchWordCloudTerms, saveWordCloudTerms } from '@/api/admin';
 
@@ -58,6 +59,8 @@ export default function AdminSettingsPage() {
           Ajustes globais da plataforma. Valem na hora, sem redeploy.
         </p>
       </div>
+
+      <FeatureFlagsPanel />
 
       {isLoading ? (
         <div className="mp-card flex items-center gap-2 bg-white p-6 text-[#383838]/60">

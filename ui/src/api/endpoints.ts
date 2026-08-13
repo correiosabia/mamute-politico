@@ -454,3 +454,13 @@ export function getElectoralHistory(
     `/parliamentarians/${parliamentarianId}/electoral-history`
   );
 }
+
+/**
+ * Estado das feature flags já resolvido para o usuário atual.
+ *
+ * O backend aplica o tri-estado (off/admins/all) e devolve booleano. Chave
+ * ausente vale `off`. Consumido via `useFeatureFlag`.
+ */
+export function fetchFeatureFlags(): Promise<Record<string, boolean>> {
+  return request<Record<string, boolean>>('/settings/feature-flags');
+}

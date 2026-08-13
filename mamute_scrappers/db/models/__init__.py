@@ -7,6 +7,7 @@ from .chatbot_usage import ChatbotUsage
 from .committee import Committee
 from .electoral_history import ElectoralHistory
 from .committee_attendance import CommitteeAttendance
+from .feature_flag import FeatureFlag, FeatureFlagTier
 from .parliamentarian import Parliamentarian
 from .parliamentary_amendment import ParliamentaryAmendment
 from .plenary_attendance import PlenaryAttendance
@@ -30,6 +31,8 @@ __all__ = [
     "Committee",
     "CommitteeAttendance",
     "ElectoralHistory",
+    "FeatureFlag",
+    "FeatureFlagTier",
     "Parliamentarian",
     "ParliamentarianSocialNetwork",
     "ParliamentaryAmendment",

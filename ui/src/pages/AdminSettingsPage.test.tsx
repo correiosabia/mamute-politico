@@ -13,6 +13,9 @@ vi.mock('@/components/layout/AdminShell', () => ({
 vi.mock('@/api/admin', () => ({
   fetchWordCloudTerms: vi.fn(),
   saveWordCloudTerms: vi.fn(),
+  // A pagina passou a montar o painel de funcionalidades.
+  fetchFeatureFlagsAdmin: vi.fn().mockResolvedValue([]),
+  saveFeatureFlag: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({

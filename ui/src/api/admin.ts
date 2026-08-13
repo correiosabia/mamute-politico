@@ -358,3 +358,50 @@ export function fetchCredits(): Promise<CreditsMetrics> {
 export function listUnmatchedAmendmentAuthors(): Promise<UnmatchedAuthorOut[]> {
   return request<UnmatchedAuthorOut[]>('/admin/amendments/unmatched');
 }
+
+// --- Feature flags ---------------------------------------------------------
+
+export interface FeatureFlagAdminOut {
+  key: string;
+  state: string;
+  updated_at: string | null;
+  /** Planos ativos que liberam a feature. */
+  tiers_ligados: number;
+  tiers_total: number;
+}
+
+/** Tri-estado cru de cada flag gravada. A tela renderiza a partir do registro
+ * do código, não desta lista — flag removida do código some do controle. */
+export function fetchFeatureFlagsAdmin(): Promise<FeatureFlagAdminOut[]> {
+  return request<FeatureFlagAdminOut[]>('/admin/settings/feature-flags');
+}
+
+export function saveFeatureFlag(
+  key: string,
+  state: string
+): Promise<FeatureFlagAdminOut> {
+  return request<FeatureFlagAdminOut>(
+    `/admin/settings/feature-flags/${encodeURIComponent(key)}`,
+    { method: 'PUT', body: JSON.stringify({ state }) }
+  );
+}
+
+export interface TierFeaturesOut {
+  tier_id: number;
+  features: string[];
+}
+
+/** Features que um plano libera. Lista completa: salvar substitui tudo. */
+export function fetchTierFeatures(tierId: number): Promise<TierFeaturesOut> {
+  return request<TierFeaturesOut>(`/admin/tiers/${tierId}/features`);
+}
+
+export function saveTierFeatures(
+  tierId: number,
+  features: string[]
+): Promise<TierFeaturesOut> {
+  return request<TierFeaturesOut>(`/admin/tiers/${tierId}/features`, {
+    method: 'PUT',
+    body: JSON.stringify({ features }),
+  });
+}

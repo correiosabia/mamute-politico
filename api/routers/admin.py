@@ -6,7 +6,7 @@ import json
 import logging
 from decimal import Decimal
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,7 @@ try:
     from ..dependencies import get_db
     from ..db.models.project import Projetos, Tiers
     from ..db.models.admin_audit_log import AdminAuditLog
+    from ..db.models.feature_flag import FeatureFlag
     from ..db.models.parliamentary_amendment import ParliamentaryAmendment
     from ..services.ghost_admin import (
         generate_admin_token,
@@ -31,6 +32,13 @@ try:
     )
     from ..services.admin_coverage import db_coverage
     from ..services.openrouter_credits import credits_overview
+    from ..services.feature_flags import (
+        count_tiers_enabled as count_feature_flag_tiers,
+        enabled_flags_for_tier,
+        get_states as get_feature_flag_states,
+        set_state as set_feature_flag_state,
+        set_tier_flags,
+    )
     from ..services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -52,6 +60,7 @@ except ImportError:  # execução dentro de api/
     from dependencies import get_db
     from db.models.project import Projetos, Tiers
     from db.models.admin_audit_log import AdminAuditLog
+    from db.models.feature_flag import FeatureFlag
     from db.models.parliamentary_amendment import ParliamentaryAmendment
     from services.ghost_admin import (
         generate_admin_token,
@@ -64,6 +73,13 @@ except ImportError:  # execução dentro de api/
     )
     from services.admin_coverage import db_coverage
     from services.openrouter_credits import credits_overview
+    from services.feature_flags import (
+        count_tiers_enabled as count_feature_flag_tiers,
+        enabled_flags_for_tier,
+        get_states as get_feature_flag_states,
+        set_state as set_feature_flag_state,
+        set_tier_flags,
+    )
     from services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -130,6 +146,8 @@ class TierDetailsUpdate(BaseModel):
     qtd_consultas_ia_semana: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None
     orgao: Optional[list[str]] = None
+    # As feature flags do plano NAO entram aqui: vivem em `feature_flag_tier`,
+    # tabela dedicada, e sao editadas por /admin/tiers/{id}/features.
 
 
 def _log_admin_action(
@@ -460,6 +478,134 @@ def update_word_cloud_terms_route(
     )
     db.commit()
     return after
+
+
+class FeatureFlagUpdate(BaseModel):
+    state: Literal["off", "admins", "all"]
+
+
+class FeatureFlagOut(BaseModel):
+    key: str
+    state: str
+    updated_at: Optional[datetime] = None
+    # Quantos planos ativos tem a feature ligada. Denuncia o caso silencioso:
+    # flag em `all` com zero planos nao aparece para ninguem.
+    tiers_ligados: int = 0
+    tiers_total: int = 0
+
+
+@router.get("/settings/feature-flags", response_model=list[FeatureFlagOut])
+def read_feature_flags_admin(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> list[dict]:
+    """Tri-estado cru de cada flag gravada.
+
+    Devolve só o que está no banco. Quem decide o que aparece na tela é o
+    registro do front: chave sem linha vale `off`, e linha sem chave no
+    registro (flag já removida do código) simplesmente não é exibida.
+    """
+    quando = {
+        linha.key: linha.updated_at
+        for linha in db.execute(select(FeatureFlag)).scalars()
+    }
+    ligados = count_feature_flag_tiers(db)
+    total = db.execute(
+        select(func.count(Tiers.id)).where(Tiers.deleted_at.is_(None))
+    ).scalar_one()
+    return [
+        {
+            "key": key,
+            "state": state,
+            "updated_at": quando.get(key),
+            "tiers_ligados": ligados.get(key, 0),
+            "tiers_total": total,
+        }
+        for key, state in sorted(get_feature_flag_states(db).items())
+    ]
+
+
+@router.put("/settings/feature-flags/{key}", response_model=FeatureFlagOut)
+def update_feature_flag_route(
+    key: str,
+    payload: FeatureFlagUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict:
+    antes = get_feature_flag_states(db).get(key, "off")
+    depois = set_feature_flag_state(db, key, payload.state)
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_feature_flag",
+        entity="feature_flag",
+        entity_id=key,
+        before={"state": antes},
+        after={"state": payload.state},
+    )
+    db.commit()
+    return depois
+
+
+class TierFeaturesUpdate(BaseModel):
+    """Lista completa de features liberadas para o plano."""
+
+    features: list[str] = Field(default_factory=list)
+
+
+class TierFeaturesOut(BaseModel):
+    tier_id: int
+    features: list[str]
+
+
+@router.get("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
+def read_tier_features(
+    tier_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict:
+    """Features liberadas para um plano.
+
+    O tri-estado global (`off`/`admins`/`all`) fica em /admin/configuracoes e
+    e o ciclo de vida do lancamento. Aqui se decide quem recebe depois que a
+    feature saiu da previa.
+    """
+    tier = db.get(Tiers, tier_id)
+    if tier is None or tier.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
+        )
+    return {"tier_id": tier_id, "features": sorted(enabled_flags_for_tier(db, tier_id))}
+
+
+@router.put("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
+def update_tier_features(
+    tier_id: int,
+    payload: TierFeaturesUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict:
+    tier = db.get(Tiers, tier_id)
+    if tier is None or tier.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
+        )
+
+    before = sorted(enabled_flags_for_tier(db, tier_id))
+    after = set_tier_flags(db, tier_id, payload.features)
+
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_tier_features",
+        entity="feature_flag_tier",
+        entity_id=str(tier_id),
+        before={"features": before},
+        after={"features": after},
+    )
+    db.commit()
+    return {"tier_id": tier_id, "features": after}
 
 
 @router.get("/metrics/credits")
