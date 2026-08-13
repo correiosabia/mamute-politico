@@ -5,6 +5,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { EmendasTable } from './EmendasTable';
 import * as endpoints from '@/api/endpoints';
 
+const flagState = { emendas_prestacao: false };
+vi.mock('@/hooks/useFeatureFlag', () => ({
+  useFeatureFlag: (key: string) =>
+    (flagState as Record<string, boolean>)[key] === true,
+}));
+
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -30,6 +36,9 @@ const EMENDA = {
   paid_value: '500000.00',
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
+  planos_total: 0,
+  planos_com_prestacao: 0,
+  valor_executado_total: '0.00',
 };
 
 /**
@@ -49,6 +58,7 @@ const byMoney = (n: number) => (content: string) =>
 describe('EmendasTable', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    flagState.emendas_prestacao = false;
   });
 
   it('mostra a emenda com valores formatados em real', async () => {
