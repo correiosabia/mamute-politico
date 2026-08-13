@@ -1,5 +1,6 @@
 """Exposição dos modelos declarativos do projeto."""
 
+from .amendment_action_plan import AmendmentActionPlan
 from .agency import Agency
 from .authors_proposition import AuthorsProposition
 from .candidacy import Candidacy
@@ -24,6 +25,7 @@ from .speeches_transcripts_proposition import SpeechesTranscriptsProposition
 from .videos_audios import VideoAudio
 
 __all__ = [
+    "AmendmentActionPlan",
     "Agency",
     "AuthorsProposition",
     "Candidacy",

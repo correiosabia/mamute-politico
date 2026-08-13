@@ -41,6 +41,10 @@ export const FEATURE_FLAGS = {
     label: 'Aba Trajetória no dashboard do parlamentar',
     since: '2026-08-10',
   },
+  emendas_prestacao: {
+    label: 'Prestação de contas das emendas Pix',
+    since: '2026-08-12',
+  },
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

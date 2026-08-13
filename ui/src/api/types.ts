@@ -160,6 +160,31 @@ export interface AmendmentOut {
   paid_value?: string | null;
   created_at: string;
   updated_at: string;
+  /** Planos de ação no Transferegov. Só emendas Pix têm; 0 nas demais. */
+  planos_total: number;
+  planos_com_prestacao: number;
+  valor_executado_total: string;
+}
+
+/** Plano de ação de uma emenda Pix — um por ente beneficiário. */
+export interface ActionPlanOut {
+  id_plano_acao: number;
+  codigo_plano_acao?: string | null;
+  amendment_code?: string | null;
+  /** Necessário para distinguir "prazo aberto" de "sem prestação registrada". */
+  ano?: number | null;
+  situacao?: string | null;
+  beneficiario_nome?: string | null;
+  beneficiario_cnpj?: string | null;
+  beneficiario_uf?: string | null;
+  valor_custeio?: string | null;
+  valor_investimento?: string | null;
+  prestacao_situacao?: string | null;
+  prestacao_tipo?: string | null;
+  prestacao_valor_executado?: string | null;
+  prestacao_valor_pendente?: string | null;
+  prestacao_data?: string | null;
+  prestacao_origem?: string | null;
 }
 
 export interface AmendmentSummaryOut {
