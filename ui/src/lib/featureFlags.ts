@@ -49,6 +49,10 @@ export const FEATURE_FLAGS = {
     label: 'Ordem pessoal e tags nos parlamentares monitorados',
     since: '2026-08-12',
   },
+  mamutometro: {
+    label: 'Mamutômetro — escala pessoal de 1 a N mamutes',
+    since: '2026-08-13',
+  },
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

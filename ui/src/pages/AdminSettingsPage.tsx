@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { AdminShell } from '@/components/layout/AdminShell';
 import { FeatureFlagsPanel } from '@/components/admin/FeatureFlagsPanel';
 import { TermListEditor } from '@/components/admin/TermListEditor';
+import { MarcacoesConfigPanel } from '@/components/admin/MarcacoesConfigPanel';
 import { fetchWordCloudTerms, saveWordCloudTerms } from '@/api/admin';
 
 const VAZIO = { stopwords: [] as string[], excluded_terms: [] as string[] };
@@ -122,6 +123,10 @@ export default function AdminSettingsPage() {
           </p>
         </>
       )}
+
+      <div className="mt-10 border-t border-black/10 pt-8">
+        <MarcacoesConfigPanel />
+      </div>
     </AdminShell>
   );
 }

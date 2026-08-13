@@ -126,6 +126,23 @@ export interface ParliamentarianTagsOut {
   tag_ids: number[];
 }
 
+export interface MamutometroOut {
+  parliamentarian_id: number;
+  level: number;
+}
+
+export interface MarcacoesSettingsOut {
+  mamutometro: {
+    enabled: boolean;
+    max_level: number;
+    notice_text: string;
+    escopo: 'monitorados' | 'todos';
+    limit: number | null;
+    used: number;
+  };
+  tags: { escopo: 'monitorados' | 'todos' };
+}
+
 export interface HouseFavoriteQuotaOut {
   limit: number;
   used: number;

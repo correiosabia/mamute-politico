@@ -18,6 +18,10 @@ import {
   createMyProjectTag,
   listMyParliamentarianTags,
   setMyParliamentarianTags,
+  getMarcacoesSettings,
+  listMyMamutometro,
+  setMyMamutometro,
+  clearMyMamutometro,
 } from '@/api/endpoints';
 import type { ProjectFavoriteOut } from '@/api/types';
 import { ApiError } from '@/api/client';
@@ -43,6 +47,7 @@ const SelecaoPage = () => {
   const casaSelecionada = getCasaFromHash(location.hash);
   const [recentlyAdded, setRecentlyAdded] = useState<Parlamentar | null>(null);
   const marcacoesPessoaisOn = useFeatureFlag('marcacoes_pessoais');
+  const mamutometroFlagOn = useFeatureFlag('mamutometro');
   const [filtroTagId, setFiltroTagId] = useState<number | null>(null);
 
   const favoritesQuery = useQuery({
@@ -209,6 +214,62 @@ const SelecaoPage = () => {
     onError: (error) => avisarErroDeTag(error, 'Não foi possível criar a tag.'),
   });
 
+  // --- Mamutômetro (SPEC-001, fatia 4) ---
+  // Duas condições para existir: a flag (rollout) e o plano (comercial). O
+  // backend já resolve a segunda em `enabled` — a tela não repete a regra.
+  const marcacoesSettingsQuery = useQuery({
+    queryKey: ['marcacoes-settings'],
+    queryFn: () => getMarcacoesSettings(),
+    enabled: mamutometroFlagOn && casaSelecionada != null,
+    staleTime: 5 * 60 * 1000,
+  });
+  const mamutometroConfig = marcacoesSettingsQuery.data?.mamutometro;
+  const mamutometroAtivo = mamutometroFlagOn && mamutometroConfig?.enabled === true;
+
+  const mamutometroQuery = useQuery({
+    queryKey: ['mamutometro', 'me'],
+    queryFn: () => listMyMamutometro(),
+    enabled: mamutometroAtivo,
+  });
+
+  const niveisPorParlamentar: Record<string, number> = {};
+  for (const marca of mamutometroQuery.data ?? []) {
+    niveisPorParlamentar[String(marca.parliamentarian_id)] = marca.level;
+  }
+
+  const mamutometroMutation = useMutation({
+    mutationFn: async ({
+      parlamentarId,
+      level,
+    }: {
+      parlamentarId: string;
+      level: number | null;
+    }): Promise<void> => {
+      // null = limpar. Duas rotas, um só ponto de entrada, para o componente
+      // não precisar saber que "remover" é um verbo HTTP diferente.
+      if (level == null) {
+        await clearMyMamutometro(Number(parlamentarId));
+        return;
+      }
+      await setMyMamutometro(Number(parlamentarId), level);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mamutometro', 'me'] });
+      // `used` faz parte da config resolvida, então ela recarrega junto.
+      void queryClient.invalidateQueries({ queryKey: ['marcacoes-settings'] });
+    },
+    onError: (error) => {
+      // 403 = teto do plano, com a mensagem de upgrade pronta vinda da API.
+      if (error instanceof ApiError && (error.status === 403 || error.status === 422)) {
+        toast.info(error.message);
+        return;
+      }
+      toast.error(
+        error instanceof Error ? error.message : 'Não foi possível salvar a marcação.',
+      );
+    },
+  });
+
   const handleSelectCasa = (casa: CasaLegislativa) => {
     navigate({ pathname: '/selecao', hash: CASA_HASH[casa] });
   };
@@ -289,6 +350,18 @@ const SelecaoPage = () => {
                 recentlyAdded={recentlyAdded}
                 onReorderParlamentares={
                   marcacoesPessoaisOn ? handleReorderParlamentares : undefined
+                }
+                mamutometro={
+                  mamutometroAtivo && mamutometroConfig
+                    ? {
+                        maxLevel: mamutometroConfig.max_level,
+                        noticeText: mamutometroConfig.notice_text,
+                        niveis: niveisPorParlamentar,
+                        salvando: mamutometroMutation.isPending,
+                        onChange: (parlamentarId, level) =>
+                          mamutometroMutation.mutate({ parlamentarId, level }),
+                      }
+                    : null
                 }
                 tagsPessoais={
                   marcacoesPessoaisOn

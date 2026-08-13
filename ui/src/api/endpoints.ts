@@ -11,6 +11,8 @@ import type {
   ProjectFavoriteQuotaOut,
   ProjectTagOut,
   ParliamentarianTagsOut,
+  MamutometroOut,
+  MarcacoesSettingsOut,
   AuthorsPropositionOut,
   SpeechAnalysisSummaryOut,
   SpeechAnalysisOut,
@@ -383,6 +385,32 @@ export function setMyParliamentarianTags(
   return request<ParliamentarianTagsOut>(
     `/projects/me/parliamentarians/${parliamentarianId}/tags`,
     { method: 'PUT', body: JSON.stringify({ tag_ids: tagIds }) }
+  );
+}
+
+/** Config das marcações já resolvida para o usuário atual (SPEC-001). */
+export function getMarcacoesSettings(): Promise<MarcacoesSettingsOut> {
+  return request<MarcacoesSettingsOut>('/settings/marcacoes');
+}
+
+export function listMyMamutometro(): Promise<MamutometroOut[]> {
+  return request<MamutometroOut[]>('/projects/me/mamutometro');
+}
+
+export function setMyMamutometro(
+  parliamentarianId: number,
+  level: number
+): Promise<MamutometroOut> {
+  return request<MamutometroOut>(
+    `/projects/me/parliamentarians/${parliamentarianId}/mamutometro`,
+    { method: 'PUT', body: JSON.stringify({ level }) }
+  );
+}
+
+export function clearMyMamutometro(parliamentarianId: number): Promise<void> {
+  return request<void>(
+    `/projects/me/parliamentarians/${parliamentarianId}/mamutometro`,
+    { method: 'DELETE' }
   );
 }
 

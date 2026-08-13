@@ -405,3 +405,25 @@ export function saveTierFeatures(
     body: JSON.stringify({ features }),
   });
 }
+
+export interface MarcacoesConfigAdmin {
+  /** número da regua, quantos mamutometros cada plano pode ter */
+  mamutometro_max_level: number;
+  mamutometro_notice_text: string;
+  mamutometro_escopo: 'monitorados' | 'todos';
+  tags_escopo: 'monitorados' | 'todos';
+  updated_at?: string | null;
+}
+
+export function fetchMarcacoesConfig(): Promise<MarcacoesConfigAdmin> {
+  return request<MarcacoesConfigAdmin>('/admin/settings/marcacoes');
+}
+
+export function saveMarcacoesConfig(
+  config: Omit<MarcacoesConfigAdmin, 'updated_at'>
+): Promise<MarcacoesConfigAdmin> {
+  return request<MarcacoesConfigAdmin>('/admin/settings/marcacoes', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}

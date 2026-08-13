@@ -45,6 +45,7 @@ import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 import { PLANS_URL } from '@/components/auth/config';
 import { TagChips, TagEditor, TagFilter } from './TagEditor';
+import { Mamutometro } from './Mamutometro';
 
 type SituacaoFilter = ParliamentarianSituation;
 
@@ -128,6 +129,14 @@ interface ParlamentarSelectorProps {
     onAlterarTags: (parlamentarId: string, tagIds: number[]) => void;
     onCriarTag: (nome: string, parlamentarId: string) => void;
   } | null;
+  mamutometro?: {
+    maxLevel: number;
+    noticeText: string;
+    /** parlamentarId -> nivel gravado */
+    niveis: Record<string, number>;
+    salvando: boolean;
+    onChange: (parlamentarId: string, level: number | null) => void;
+  } | null;
 }
 
 export function ParlamentarSelector({
@@ -146,6 +155,7 @@ export function ParlamentarSelector({
   onReorderParlamentares,
   reorderPending = false,
   tagsPessoais = null,
+  mamutometro = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const monitoradosCardRef = useRef<HTMLDivElement>(null);
@@ -691,6 +701,20 @@ export function ParlamentarSelector({
                           {parlamentar.partido.sigla} - {parlamentar.uf}
                         </span>
                       </div>
+                      {mamutometro && (
+                        <div className="mt-1">
+                          <Mamutometro
+                            maxLevel={mamutometro.maxLevel}
+                            level={mamutometro.niveis[parlamentar.id] ?? null}
+                            onChange={(nivel) =>
+                              mamutometro.onChange(parlamentar.id, nivel)
+                            }
+                            disabled={mamutometro.salvando}
+                            noticeText={mamutometro.noticeText}
+                            parlamentarNome={parlamentar.nome}
+                          />
+                        </div>
+                      )}
                       {tagsPessoais && (
                         <div className="mt-1">
                           <TagChips
