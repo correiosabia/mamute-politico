@@ -65,3 +65,14 @@ def test_fetch_in_com_lista_vazia_nao_chama_a_fonte(monkeypatch):
     client = TransferegovClient()
     monkeypatch.setattr(client._session, "get", fake_get)
     assert client.fetch_in("x", "id", [], chunk=2) == []
+
+
+def test_cliente_manda_user_agent_proprio():
+    """A fonte esta atras de Cloudflare e devolve 403 para o UA padrao do
+    requests. Sem este header a coleta morre em producao — e o bug nao aparece
+    em teste (sessao mockada) nem localmente (IP residencial nao cai na regra).
+    """
+    client = TransferegovClient()
+    ua = client._session.headers.get("User-Agent", "")
+    assert "MamutePolitico" in ua
+    assert "python-requests" not in ua
