@@ -194,3 +194,52 @@ def test_upsert_aceita_plano_de_emenda_desconhecida(session, monkeypatch):
     action_plans.upsert_plan(session, payload)
     session.flush()
     assert session.get(PlanoTeste, 11).amendment_code == "999999999999"
+
+
+# --- schema real ------------------------------------------------------------
+
+
+def test_schema_real_aceita_plano_de_emenda_que_nao_existe():
+    """Regressao: a versao original tinha FK para parliamentary_amendment e a
+    carga inteira morria com ForeignKeyViolation em producao.
+
+    A fonte publica plano de acao desde 2020 e a nossa coleta de emendas
+    comeca em 2022: 6.331 dos 57.827 planos (10,9%, medido em 2026-08-13)
+    apontam para emenda que nunca vai existir aqui.
+
+    O bug passou pelos outros testes porque eles usam `PlanoTeste`, um espelho
+    local sem a FK. Este usa o MODELO REAL, com as FKs do SQLite ligadas — que
+    e a unica forma de o teste enxergar a restricao.
+    """
+    from sqlalchemy import event
+
+    from mamute_scrappers.db.models.amendment_action_plan import (
+        AmendmentActionPlan,
+    )
+
+    engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _liga_fk(dbapi_conn, _):
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+    AmendmentActionPlan.__table__.create(engine)
+    sessao = sessionmaker(bind=engine)()
+
+    sessao.add(
+        AmendmentActionPlan(
+            **build_plan_payload(
+                {
+                    "id_plano_acao": 3221,
+                    "numero_emenda_parlamentar_plano_acao": "202027070006",
+                    "ano_plano_acao": 2020,
+                },
+                None,
+            )
+        )
+    )
+    sessao.commit()
+
+    assert (
+        sessao.get(AmendmentActionPlan, 3221).amendment_code == "202027070006"
+    )

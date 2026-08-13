@@ -15,7 +15,6 @@ from sqlalchemy import (
     BigInteger,
     Column,
     DateTime,
-    ForeignKey,
     Integer,
     Numeric,
     Text,
@@ -32,14 +31,15 @@ class AmendmentActionPlan(Base):
     id_plano_acao = Column(BigInteger, primary_key=True)
     codigo_plano_acao = Column(Text)
 
-    # SET NULL como em parliamentary_amendment.parliamentarian_id: o plano de
-    # acao e fato publico e nao deve sumir se a emenda sair da base.
-    amendment_code = Column(
-        Text,
-        ForeignKey("parliamentary_amendment.amendment_code", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
+    # SEM chave estrangeira, de proposito. A fonte tem plano de acao desde
+    # 2020 e a nossa coleta de emendas comeca em 2022: 6.331 planos (10,9% dos
+    # 57.827, medido em 2026-08-13) nunca terao emenda correspondente. Com FK,
+    # a carga inteira morre por causa deles.
+    #
+    # A ligacao continua valendo pelo indice — o join e por igualdade de
+    # codigo, que a FK nao mudava. O que a FK acrescentava era so a recusa, e
+    # recusar aqui e perder fato publico por um vinculo que a fonte nem promete.
+    amendment_code = Column(Text, nullable=True, index=True)
 
     ano = Column(Integer, index=True)
     situacao = Column(Text)
