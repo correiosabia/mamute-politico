@@ -17,10 +17,12 @@ from sqlalchemy.orm import Session
 
 try:
     # Execução como pacote (api.routers.amendments).
+    from ..db.models.amendment_action_plan import AmendmentActionPlan
     from ..db.models.parliamentary_amendment import ParliamentaryAmendment
     from ..dependencies import get_db
 except (ImportError, ValueError):
     # Execução local dentro de api/ sem reconhecimento de pacote.
+    from db.models.amendment_action_plan import AmendmentActionPlan
     from db.models.parliamentary_amendment import ParliamentaryAmendment
     from dependencies import get_db
 
@@ -66,12 +68,57 @@ class AmendmentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Prestacao de contas agregada dos planos de acao (so emendas Pix tem).
+    # Zero, e nunca null, para emenda sem plano: a tela distingue "nenhum
+    # plano" de "dado ausente" pelo tipo da emenda, nao por null.
+    planos_total: int = 0
+    planos_com_prestacao: int = 0
+    valor_executado_total: Decimal = ZERO
+
     model_config = ConfigDict(from_attributes=True)
 
     @field_serializer("committed_value", "settled_value", "paid_value")
     def _serialize_money(self, value: Optional[Decimal]) -> Optional[str]:
         # String, nunca float: dinheiro publico nao pode perder centavo em
         # ponto flutuante.
+        return None if value is None else str(value)
+
+    @field_serializer("valor_executado_total")
+    def _serialize_total(self, value: Decimal) -> str:
+        return str(value)
+
+
+class ActionPlanOut(BaseModel):
+    """Plano de acao de uma emenda Pix — um por ente beneficiario."""
+
+    id_plano_acao: int
+    codigo_plano_acao: Optional[str] = None
+    amendment_code: Optional[str] = None
+    # O ano do plano e o que permite a tela dizer "prazo aberto" em vez de
+    # "nao prestou contas". Sem ele, ausencia de prestacao vira acusacao.
+    ano: Optional[int] = None
+    situacao: Optional[str] = None
+    beneficiario_nome: Optional[str] = None
+    beneficiario_cnpj: Optional[str] = None
+    beneficiario_uf: Optional[str] = None
+    valor_custeio: Optional[Decimal] = None
+    valor_investimento: Optional[Decimal] = None
+    prestacao_situacao: Optional[str] = None
+    prestacao_tipo: Optional[str] = None
+    prestacao_valor_executado: Optional[Decimal] = None
+    prestacao_valor_pendente: Optional[Decimal] = None
+    prestacao_data: Optional[str] = None
+    prestacao_origem: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer(
+        "valor_custeio",
+        "valor_investimento",
+        "prestacao_valor_executado",
+        "prestacao_valor_pendente",
+    )
+    def _serialize_money(self, value: Optional[Decimal]) -> Optional[str]:
         return None if value is None else str(value)
 
 
@@ -127,7 +174,32 @@ def list_amendments(
     db: Session = Depends(get_db),
 ) -> List[AmendmentOut]:
     """Lista emendas, opcionalmente filtradas por parlamentar e ano."""
-    stmt = select(ParliamentaryAmendment)
+    # Subquery, e nao join direto: uma emenda Pix tem varios planos de acao
+    # (mediana 8), e o join multiplicaria a linha da emenda.
+    agregado = (
+        select(
+            AmendmentActionPlan.amendment_code.label("code"),
+            func.count(AmendmentActionPlan.id_plano_acao).label("planos_total"),
+            # count() de coluna ignora NULL: conta so os planos que prestaram.
+            func.count(AmendmentActionPlan.prestacao_situacao).label(
+                "com_prestacao"
+            ),
+            func.coalesce(
+                func.sum(AmendmentActionPlan.prestacao_valor_executado), 0
+            ).label("executado"),
+        )
+        .group_by(AmendmentActionPlan.amendment_code)
+        .subquery()
+    )
+
+    stmt = select(
+        ParliamentaryAmendment,
+        func.coalesce(agregado.c.planos_total, 0),
+        func.coalesce(agregado.c.com_prestacao, 0),
+        func.coalesce(agregado.c.executado, 0),
+    ).outerjoin(
+        agregado, agregado.c.code == ParliamentaryAmendment.amendment_code
+    )
 
     if parliamentarian_id is not None:
         stmt = stmt.where(
@@ -142,4 +214,38 @@ def list_amendments(
     stmt = stmt.order_by(direction(column), ParliamentaryAmendment.id)
     stmt = stmt.limit(limit).offset(offset)
 
-    return [AmendmentOut.model_validate(row) for row in db.execute(stmt).scalars()]
+    saida: List[AmendmentOut] = []
+    for emenda, total, com_prestacao, executado in db.execute(stmt).all():
+        item = AmendmentOut.model_validate(emenda)
+        item.planos_total = total or 0
+        item.planos_com_prestacao = com_prestacao or 0
+        item.valor_executado_total = _to_decimal(executado)
+        saida.append(item)
+    return saida
+
+
+@router.get(
+    "/{amendment_code}/action-plans", response_model=List[ActionPlanOut]
+)
+def list_action_plans(
+    amendment_code: str,
+    db: Session = Depends(get_db),
+) -> List[ActionPlanOut]:
+    """Planos de acao (entes beneficiarios) de uma emenda Pix.
+
+    Devolve vazio, e nao 404, para emenda sem plano: e o caso normal das
+    emendas de Finalidade Definida, que sao 85% da base e nunca tem plano de
+    acao — o Transferegov so publica API para transferencias especiais.
+    """
+    stmt = (
+        select(AmendmentActionPlan)
+        .where(AmendmentActionPlan.amendment_code == amendment_code)
+        .order_by(
+            AmendmentActionPlan.beneficiario_uf,
+            AmendmentActionPlan.beneficiario_nome,
+            AmendmentActionPlan.id_plano_acao,
+        )
+    )
+    return [
+        ActionPlanOut.model_validate(row) for row in db.execute(stmt).scalars()
+    ]

@@ -49,6 +49,32 @@ def _make_session() -> Session:
             )
             """
         )
+        # A listagem agrega os planos de acao (CS-56); sem a tabela, o join
+        # da rota quebra mesmo em cenario que nao usa plano nenhum.
+        conn.exec_driver_sql(
+            """
+            create table amendment_action_plan (
+                id_plano_acao integer primary key,
+                codigo_plano_acao text,
+                amendment_code text,
+                ano integer,
+                situacao text,
+                beneficiario_nome text,
+                beneficiario_cnpj text,
+                beneficiario_uf text,
+                valor_custeio numeric(18,2),
+                valor_investimento numeric(18,2),
+                prestacao_situacao text,
+                prestacao_tipo text,
+                prestacao_valor_executado numeric(18,2),
+                prestacao_valor_pendente numeric(18,2),
+                prestacao_data text,
+                prestacao_origem text,
+                created_at datetime not null default current_timestamp,
+                updated_at datetime not null default current_timestamp
+            )
+            """
+        )
         # Localidades reais da fonte: granularidade de UF ou "Nacional".
         conn.exec_driver_sql(
             """

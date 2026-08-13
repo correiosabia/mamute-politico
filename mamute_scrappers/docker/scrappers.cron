@@ -131,6 +131,12 @@ PYTHONPATH=/app
 # depois que o backfill encerra: empenhado/liquidado/pago mudam o ano inteiro.
 50 6 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh emendas -- /usr/local/bin/python -m mamute_scrappers.portal_crawler.emendas --ano $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
 
+# Planos de acao das emendas Pix (Transferegov) + prestacao de contas.
+# Roda 1h depois da coleta de emendas: o plano casa por amendment_code, entao
+# a emenda precisa existir primeiro. Refaz os ~58 mil planos a cada execucao;
+# o upsert e idempotente, entao a primeira execucao ja e o backfill.
+50 7 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh transferegov-action-plans -- /usr/local/bin/python -m mamute_scrappers.transferegov_crawler.action_plans >> /proc/1/fd/1 2>> /proc/1/fd/2
+
 # Backfill 2022 -> ano corrente (a cada 1h no minuto 35 — livre entre os jobs
 # horarios ja existentes, que ocupam 10, 25, 40 e 55). Sao ~5 chunks de um ano
 # cada; com 2 por execucao a fila fecha em ~3 horas e depois vira no-op.

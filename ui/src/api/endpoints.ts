@@ -16,6 +16,7 @@ import type {
   DashboardActivityOut,
   AmendmentOut,
   AmendmentSummaryOut,
+  ActionPlanOut,
 } from './types';
 
 export interface ListParliamentariansParams {
@@ -463,4 +464,13 @@ export function getElectoralHistory(
  */
 export function fetchFeatureFlags(): Promise<Record<string, boolean>> {
   return request<Record<string, boolean>>('/settings/feature-flags');
+}
+
+/** Planos de ação (entes beneficiários) de uma emenda Pix. Vazio para as demais. */
+export function listActionPlans(
+  amendmentCode: string
+): Promise<ActionPlanOut[]> {
+  return request<ActionPlanOut[]>(
+    `/amendments/${encodeURIComponent(amendmentCode)}/action-plans`
+  );
 }
