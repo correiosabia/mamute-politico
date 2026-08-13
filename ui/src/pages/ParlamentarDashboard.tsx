@@ -13,8 +13,8 @@ import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EmendasTable } from '@/components/dashboard/EmendasTable';
 import { TrajetoriaTab } from '@/components/dashboard/TrajetoriaTab';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
-import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { TrackSection } from '@/components/TrackSection';
 import { sendSectionView } from '@/api/events';
 import {
@@ -63,9 +63,10 @@ const ParlamentarDashboard = () => {
   const navigate = useNavigate();
   const numericId = id != null ? Number(id) : NaN;
   const isIdValid = Number.isInteger(numericId) && numericId > 0;
-  // Feature flag da aba Trajetória: prévia restrita a admins enquanto a
-  // funcionalidade não é liberada a todos — remover a condição para liberar.
-  const { isAdmin } = useIsAdmin();
+  // Gerenciada em /admin/configuracoes (estado) e na tela de Planos (quais
+  // planos liberam). Para remover a flag, ver o procedimento em
+  // `@/lib/featureFlags`.
+  const trajetoriaOn = useFeatureFlag('trajetoria');
 
   const { data: raw, isLoading, isError, error } = useQuery({
     queryKey: ['parliamentarian', id],
@@ -155,6 +156,46 @@ const ParlamentarDashboard = () => {
     );
   }
 
+  // Abas derivadas de uma lista: o portão da flag fica em UM lugar só. Antes
+  // eram duas condições espalhadas (TabsTrigger e TabsContent), e é esse tipo
+  // de espalhamento que torna caro remover a flag depois.
+  const abas = [
+    {
+      value: 'votacoes',
+      label: 'VOTAÇÕES',
+      className: 'mt-0 p-6 pt-4 h-[500px]',
+      content: <VotacoesTable parliamentarianId={numericId} />,
+    },
+    {
+      value: 'proposicoes',
+      label: 'PROPOSIÇÕES',
+      className: 'mt-0 p-6 pt-4',
+      content: <ProposicoesTable parliamentarianId={id} />,
+    },
+    {
+      value: 'taquigraficas',
+      label: 'TAQUIGRÁFICAS',
+      className: 'mt-0 p-6 pt-4 h-[500px]',
+      content: <TaquigraficasTable parliamentarianId={numericId} />,
+    },
+    {
+      value: 'emendas',
+      label: 'EMENDAS',
+      className: 'mt-0 p-6 pt-4 h-[500px]',
+      content: <EmendasTable parliamentarianId={numericId} year={emendasYear} />,
+    },
+    ...(trajetoriaOn
+      ? [
+          {
+            value: 'trajetoria',
+            label: 'TRAJETÓRIA',
+            className: 'mt-0 p-6 pt-4 h-[500px]',
+            content: <TrajetoriaTab parliamentarianId={numericId} />,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div className="min-h-screen bg-textura-gold">
       <Header />
@@ -226,44 +267,24 @@ const ParlamentarDashboard = () => {
             <div className="flex flex-col gap-4 border-b border-black/[0.06] px-6 pt-6 pb-4">
               <div className="-mx-6 w-[calc(100%+3rem)] max-w-none overflow-x-auto overflow-y-visible px-6 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
                 <TabsList className="inline-flex h-auto w-max min-w-max shrink-0 flex-nowrap items-center gap-2 bg-transparent p-0">
-                  <TabsTrigger value="votacoes" className={parlamentarSectionTabTriggerClass}>
-                    VOTAÇÕES
-                  </TabsTrigger>
-                  <TabsTrigger value="proposicoes" className={parlamentarSectionTabTriggerClass}>
-                    PROPOSIÇÕES
-                  </TabsTrigger>
-                  <TabsTrigger value="taquigraficas" className={parlamentarSectionTabTriggerClass}>
-                    TAQUIGRÁFICAS
-                  </TabsTrigger>
-                  <TabsTrigger value="emendas" className={parlamentarSectionTabTriggerClass}>
-                    EMENDAS
-                  </TabsTrigger>
-                  {isAdmin && (
-                    <TabsTrigger value="trajetoria" className={parlamentarSectionTabTriggerClass}>
-                      TRAJETÓRIA
+                  {abas.map((aba) => (
+                    <TabsTrigger
+                      key={aba.value}
+                      value={aba.value}
+                      className={parlamentarSectionTabTriggerClass}
+                    >
+                      {aba.label}
                     </TabsTrigger>
-                  )}
+                  ))}
                 </TabsList>
               </div>
               <h2 className="text-[32px] leading-none font-bold text-[#090909]">Atividades do Parlamentar</h2>
             </div>
-            <TabsContent value="votacoes" className="mt-0 p-6 pt-4 h-[500px]">
-              <VotacoesTable parliamentarianId={numericId} />
-            </TabsContent>
-            <TabsContent value="proposicoes" className="mt-0 p-6 pt-4">
-              <ProposicoesTable parliamentarianId={id} />
-            </TabsContent>
-            <TabsContent value="taquigraficas" className="mt-0 p-6 pt-4 h-[500px]">
-              <TaquigraficasTable parliamentarianId={numericId} />
-            </TabsContent>
-            <TabsContent value="emendas" className="mt-0 p-6 pt-4 h-[500px]">
-              <EmendasTable parliamentarianId={numericId} year={emendasYear} />
-            </TabsContent>
-            {isAdmin && (
-              <TabsContent value="trajetoria" className="mt-0 p-6 pt-4 h-[500px]">
-                <TrajetoriaTab parliamentarianId={numericId} />
+            {abas.map((aba) => (
+              <TabsContent key={aba.value} value={aba.value} className={aba.className}>
+                {aba.content}
               </TabsContent>
-            )}
+            ))}
           </Tabs>
         </TrackSection>
       </main>

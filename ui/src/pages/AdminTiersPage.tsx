@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { AdminShell } from '@/components/layout/AdminShell';
+import { TierFeaturesFields } from '@/components/admin/TierFeaturesFields';
 import {
   useSyncTiers,
   useTiers,
@@ -267,6 +268,24 @@ function TierCard({ tier }: { tier: Tier }) {
           </div>
         </div>
       ))}
+
+      <TierFeaturesFields
+        tierId={tier.id}
+        disabled={foraDoAr}
+        onSaved={() =>
+          toast({
+            title: 'Funcionalidades do plano atualizadas',
+            description: tier.tier_name_debug,
+          })
+        }
+        onError={(e) =>
+          toast({
+            title: 'Não foi possível salvar as funcionalidades',
+            description: e instanceof Error ? e.message : String(e),
+            variant: 'destructive',
+          })
+        }
+      />
 
       {foraDoAr ? (
         <div className="flex flex-wrap items-center gap-3">

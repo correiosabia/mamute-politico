@@ -5,8 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type * as endpointsModule from '@/api/endpoints';
 
 const isAdminState = { isAdmin: false, isLoading: false };
+const flagState: Record<string, boolean> = { trajetoria: false };
 
 vi.mock('@/hooks/useIsAdmin', () => ({ useIsAdmin: () => isAdminState }));
+vi.mock('@/hooks/useFeatureFlag', () => ({
+  useFeatureFlag: (key: string) => flagState[key] === true,
+}));
 vi.mock('@/components/layout/Header', () => ({ Header: () => <header /> }));
 vi.mock('@/components/selecao/SelecaoFooter', () => ({
   SelecaoFooter: () => <footer />,
@@ -68,18 +72,28 @@ function renderPage() {
 describe('gate da aba Trajetória', () => {
   beforeEach(() => {
     isAdminState.isAdmin = false;
+    flagState.trajetoria = false;
   });
 
-  it('não-admin não vê a aba', async () => {
+  it('flag desligada esconde a aba', async () => {
     renderPage();
     await screen.findAllByText(/VOTAÇÕES/i);
     expect(screen.queryByText(/TRAJETÓRIA/i)).not.toBeInTheDocument();
   });
 
-  it('admin vê a aba', async () => {
-    isAdminState.isAdmin = true;
+  it('flag ligada mostra a aba', async () => {
+    flagState.trajetoria = true;
     renderPage();
     await screen.findAllByText(/VOTAÇÕES/i);
     expect(screen.getByText(/TRAJETÓRIA/i)).toBeInTheDocument();
+  });
+
+  it('ser admin nao basta: quem manda agora e a flag', async () => {
+    // O gate saiu do isAdmin improvisado. Admin continua vendo, mas via
+    // resolucao da flag no backend, nao por checagem espalhada na tela.
+    isAdminState.isAdmin = true;
+    renderPage();
+    await screen.findAllByText(/VOTAÇÕES/i);
+    expect(screen.queryByText(/TRAJETÓRIA/i)).not.toBeInTheDocument();
   });
 });
