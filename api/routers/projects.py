@@ -23,7 +23,17 @@ try:
     from ..db.models.plenary_attendance import PlenaryAttendance
     from ..db.models.proposition import Proposition
     from ..db.models.project import Projetos, ProjetosParliamentarian
-    from ..db.models.personal_marks import ParliamentarianTag, ProjectTag
+    from ..db.models.personal_marks import (
+        ParliamentarianTag,
+        ProjectMamutometro,
+        ProjectTag,
+    )
+    from ..services.marcacoes import (
+        esta_no_escopo,
+        get_config as get_marcacoes_config,
+        mamutometro_habilitado,
+        mamutometro_limite,
+    )
     from ..db.models.usage_event import UsageEvent
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
@@ -45,7 +55,17 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.plenary_attendance import PlenaryAttendance
     from db.models.proposition import Proposition
     from db.models.project import Projetos, ProjetosParliamentarian
-    from db.models.personal_marks import ParliamentarianTag, ProjectTag
+    from db.models.personal_marks import (
+        ParliamentarianTag,
+        ProjectMamutometro,
+        ProjectTag,
+    )
+    from services.marcacoes import (
+        esta_no_escopo,
+        get_config as get_marcacoes_config,
+        mamutometro_habilitado,
+        mamutometro_limite,
+    )
     from db.models.usage_event import UsageEvent
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
@@ -149,6 +169,17 @@ class ParliamentarianTagsOut(BaseModel):
 
     parliamentarian_id: int
     tag_ids: List[int]
+
+
+class MamutometroOut(BaseModel):
+    """Marcação do mamutômetro. `level` e nada mais — o significado é do dono."""
+
+    parliamentarian_id: int
+    level: int
+
+
+class MamutometroUpdate(BaseModel):
+    level: int
 
 
 class ProjectDashboardStatsOut(BaseModel):
@@ -1210,10 +1241,11 @@ def set_my_parliamentarian_tags(
     """
     project = _get_project_from_token_email(request, db)
 
-    if not is_parliamentarian_visible(db, parliamentarian_id):
-        # 404, e nao 403: responder "existe mas voce nao ve" transformaria a
-        # rota num oraculo de existencia para quem o catalogo esconde.
-        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+    # Escopo configurável (SPEC-001): o catálogo é o filtro externo, o painel é
+    # o interno. Tags nascem em "todos" — a config existe para poder apertar.
+    _exigir_politico_marcavel(
+        db, project, parliamentarian_id, get_marcacoes_config(db).tags_escopo
+    )
 
     desejadas = list(dict.fromkeys(payload.tag_ids))
     if len(desejadas) > MAX_TAGS_POR_PARLAMENTAR:
@@ -1264,6 +1296,168 @@ def set_my_parliamentarian_tags(
         parliamentarian_id=parliamentarian_id,
         tag_ids=desejadas,
     )
+
+
+# --- Mamutômetro (SPEC-001, fatia 3) --------------------------------------
+#
+# O SIGNIFICADO de cada nível não existe aqui, e é assim de propósito: cada
+# assinante escolhe a própria regra e nunca a informa. Por isso não há nome de
+# campo, mensagem ou log que sugira o que 1, 2 ou 3 querem dizer.
+MENSAGEM_TETO_MAMUTOMETRO = "Limite atingido. Faça um upgrade do plano em 'Conta'."
+
+
+def _exigir_mamutometro_no_plano(db: Session, project: Projetos) -> None:
+    """404 (não 403) quando o plano não tem a feature.
+
+    403 confirmaria que o recurso existe para quem não o tem — e a resposta
+    ficaria diferente da de um político fora do escopo, dando ao cliente um
+    jeito de distinguir os dois casos.
+    """
+    if not mamutometro_habilitado(db, project):
+        raise HTTPException(status_code=404, detail="Recurso não encontrado.")
+
+
+def _exigir_politico_marcavel(
+    db: Session, project: Projetos, parliamentarian_id: int, escopo: str
+) -> None:
+    if not is_parliamentarian_visible(db, parliamentarian_id):
+        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+    if not esta_no_escopo(db, int(project.id), parliamentarian_id, escopo):
+        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+
+
+@router.get(
+    "/me/mamutometro",
+    response_model=List[MamutometroOut],
+    summary="Marcações do mamutômetro do projeto autenticado",
+)
+def list_my_mamutometro(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[MamutometroOut]:
+    """Devolve o nível gravado, sem recorte pela régua vigente.
+
+    Se o admin reduzir a régua, a marcação continua aqui como está — quem
+    apara para exibição é a tela (`min(level, max_level)`). Configuração nunca
+    destrói dado do assinante.
+    """
+    project = _get_project_from_token_email(request, db)
+    linhas = db.execute(
+        select(ProjectMamutometro)
+        .where(ProjectMamutometro.projeto_id == project.id)
+        .order_by(asc(ProjectMamutometro.parliamentarian_id))
+    ).scalars()
+    return [
+        MamutometroOut(
+            parliamentarian_id=int(linha.parliamentarian_id), level=int(linha.level)
+        )
+        for linha in linhas
+    ]
+
+
+@router.put(
+    "/me/parliamentarians/{parliamentarian_id}/mamutometro",
+    response_model=MamutometroOut,
+    summary="Marca o mamutômetro de um parlamentar",
+)
+def set_my_mamutometro(
+    request: Request,
+    parliamentarian_id: int,
+    payload: MamutometroUpdate,
+    db: Session = Depends(get_db),
+) -> MamutometroOut:
+    project = _get_project_from_token_email(request, db)
+    _exigir_mamutometro_no_plano(db, project)
+
+    config = get_marcacoes_config(db)
+    _exigir_politico_marcavel(
+        db, project, parliamentarian_id, config.mamutometro_escopo
+    )
+
+    max_level = int(config.mamutometro_max_level)
+    if not 1 <= int(payload.level) <= max_level:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Escolha um valor entre 1 e {max_level}.",
+        )
+
+    existente = db.execute(
+        select(ProjectMamutometro).where(
+            ProjectMamutometro.projeto_id == project.id,
+            ProjectMamutometro.parliamentarian_id == parliamentarian_id,
+        )
+    ).scalar_one_or_none()
+
+    if existente is None:
+        # O teto do plano trava CRIAR, nunca ALTERAR: quem já marcou não pode
+        # ficar preso a um nível porque o admin reduziu o limite depois.
+        limite = mamutometro_limite(project)
+        if limite is not None:
+            usados = db.execute(
+                select(func.count())
+                .select_from(ProjectMamutometro)
+                .where(ProjectMamutometro.projeto_id == project.id)
+            ).scalar_one()
+            if int(usados) >= int(limite):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=MENSAGEM_TETO_MAMUTOMETRO,
+                )
+        existente = ProjectMamutometro(
+            projeto_id=project.id,
+            parliamentarian_id=parliamentarian_id,
+            level=int(payload.level),
+        )
+        db.add(existente)
+    else:
+        existente.level = int(payload.level)
+
+    db.commit()
+    return MamutometroOut(parliamentarian_id=parliamentarian_id, level=int(payload.level))
+
+
+@router.delete(
+    "/me/parliamentarians/{parliamentarian_id}/mamutometro",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a marcação do mamutômetro de um parlamentar",
+)
+def delete_my_mamutometro(
+    request: Request,
+    parliamentarian_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Remover não depende de escopo nem de plano: quem marcou pode desmarcar,
+    mesmo que a configuração tenha mudado desde então."""
+    project = _get_project_from_token_email(request, db)
+    linha = db.execute(
+        select(ProjectMamutometro).where(
+            ProjectMamutometro.projeto_id == project.id,
+            ProjectMamutometro.parliamentarian_id == parliamentarian_id,
+        )
+    ).scalar_one_or_none()
+    if linha is not None:
+        db.delete(linha)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/me/mamutometro",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Apaga todas as marcações do mamutômetro",
+)
+def delete_all_my_mamutometro(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Apagar é apagar: `DELETE`, não `deleted_at`."""
+    project = _get_project_from_token_email(request, db)
+    for linha in db.execute(
+        select(ProjectMamutometro).where(ProjectMamutometro.projeto_id == project.id)
+    ).scalars():
+        db.delete(linha)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

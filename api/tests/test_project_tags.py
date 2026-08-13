@@ -85,6 +85,26 @@ def _make_session() -> Session:
         )
         conn.exec_driver_sql(
             """
+            create table marcacoes_config (
+                id integer primary key,
+                mamutometro_max_level integer not null default 3,
+                mamutometro_notice_text text not null,
+                mamutometro_escopo text not null default 'monitorados',
+                tags_escopo text not null default 'todos',
+                updated_at datetime not null default current_timestamp
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            insert into marcacoes_config
+                (id, mamutometro_max_level, mamutometro_notice_text,
+                 mamutometro_escopo, tags_escopo)
+            values (1, 3, 'aviso', 'monitorados', 'todos')
+            """
+        )
+        conn.exec_driver_sql(
+            """
             create table parliamentarian_tag (
                 id integer primary key, projeto_id integer not null,
                 tag_id integer not null, parliamentarian_id integer not null,

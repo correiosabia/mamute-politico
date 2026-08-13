@@ -39,6 +39,10 @@ try:
         set_state as set_feature_flag_state,
         set_tier_flags,
     )
+    from ..services.marcacoes import (
+        get_config as get_marcacoes_config,
+        set_config as set_marcacoes_config,
+    )
     from ..services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
         replace_terms as replace_word_cloud_terms,
@@ -79,6 +83,10 @@ except ImportError:  # execução dentro de api/
         get_states as get_feature_flag_states,
         set_state as set_feature_flag_state,
         set_tier_flags,
+    )
+    from services.marcacoes import (
+        get_config as get_marcacoes_config,
+        set_config as set_marcacoes_config,
     )
     from services.word_cloud_terms import (
         get_terms as get_word_cloud_terms,
@@ -680,3 +688,79 @@ def list_unmatched_amendment_authors(
         )
         for row in db.execute(stmt)
     ]
+
+
+class MarcacoesConfigOut(BaseModel):
+    """Configuração das marcações pessoais, como o painel a edita."""
+
+    mamutometro_max_level: int
+    mamutometro_notice_text: str
+    mamutometro_escopo: str
+    tags_escopo: str
+    updated_at: Optional[datetime] = None
+
+
+class MarcacoesConfigUpdate(BaseModel):
+    # Tamanho da régua (1..5). Quantos POLÍTICOS cada plano pode marcar não
+    # está aqui: é teto comercial e vive em `qtd_mamutometro`, na tela de tiers,
+    # junto de `qtd_termos`.
+    mamutometro_max_level: int
+    mamutometro_notice_text: str
+    mamutometro_escopo: Literal["monitorados", "todos"]
+    tags_escopo: Literal["monitorados", "todos"]
+
+
+def _serializar_marcacoes_config(config) -> dict:
+    return {
+        "mamutometro_max_level": int(config.mamutometro_max_level),
+        "mamutometro_notice_text": config.mamutometro_notice_text,
+        "mamutometro_escopo": config.mamutometro_escopo,
+        "tags_escopo": config.tags_escopo,
+        "updated_at": getattr(config, "updated_at", None),
+    }
+
+
+@router.get("/settings/marcacoes", response_model=MarcacoesConfigOut)
+def read_marcacoes_config_admin(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_ghost_admin),
+) -> dict:
+    return _serializar_marcacoes_config(get_marcacoes_config(db))
+
+
+@router.put("/settings/marcacoes", response_model=MarcacoesConfigOut)
+def update_marcacoes_config_route(
+    payload: MarcacoesConfigUpdate,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(require_ghost_admin),
+) -> dict:
+    """Grava a configuração das marcações.
+
+    Nada aqui apaga marcação de assinante: reduzir a régua ou apertar o escopo
+    só muda o que a tela mostra. O dado fica dormente e volta se a configuração
+    voltar — ver `.sdd/specs/001-.../plano.md`.
+    """
+    before = _serializar_marcacoes_config(get_marcacoes_config(db))
+    try:
+        depois = set_marcacoes_config(
+            db,
+            mamutometro_max_level=payload.mamutometro_max_level,
+            mamutometro_notice_text=payload.mamutometro_notice_text,
+            mamutometro_escopo=payload.mamutometro_escopo,
+            tags_escopo=payload.tags_escopo,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    after = _serializar_marcacoes_config(depois)
+    _log_admin_action(
+        db,
+        admin_email=admin_email,
+        action="update_marcacoes_config",
+        entity="marcacoes_config",
+        entity_id="global",
+        before=before,
+        after=after,
+    )
+    db.commit()
+    return after
