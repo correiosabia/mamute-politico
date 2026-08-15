@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import logoMamute from '@/assets/logo-mamute.png';
+import iconMamute from '@/assets/icon-mamute.png';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -76,7 +76,7 @@ export function Mamutometro({
                 variant="ghost"
                 size="icon"
                 disabled={disabled}
-                className="h-7 w-7 p-0.5"
+                className="h-7 w-7 cursor-pointer p-0.5"
                 aria-pressed={ativo}
                 // Rótulo POSICIONAL: descreve a posição, nunca o que ela quer dizer.
                 aria-label={`Marcar ${posicao} de ${maxLevel} em ${parlamentarNome}`}
@@ -86,11 +86,11 @@ export function Mamutometro({
                 }}
               >
                 <img
-                  src={logoMamute}
+                  src={iconMamute}
                   alt=""
                   aria-hidden="true"
-                  className={`h-4 w-4 object-contain transition-opacity ${
-                    ativo ? 'opacity-100' : 'opacity-25 grayscale'
+                  className={`h-[22px] w-[22px] object-contain transition-opacity ${
+                    ativo ? 'opacity-100' : 'opacity-30'
                   }`}
                 />
               </Button>

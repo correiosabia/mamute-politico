@@ -701,20 +701,6 @@ export function ParlamentarSelector({
                           {parlamentar.partido.sigla} - {parlamentar.uf}
                         </span>
                       </div>
-                      {mamutometro && (
-                        <div className="mt-1">
-                          <Mamutometro
-                            maxLevel={mamutometro.maxLevel}
-                            level={mamutometro.niveis[parlamentar.id] ?? null}
-                            onChange={(nivel) =>
-                              mamutometro.onChange(parlamentar.id, nivel)
-                            }
-                            disabled={mamutometro.salvando}
-                            noticeText={mamutometro.noticeText}
-                            parlamentarNome={parlamentar.nome}
-                          />
-                        </div>
-                      )}
                       {tagsPessoais && (
                         <div className="mt-1">
                           <TagChips
@@ -728,7 +714,18 @@ export function ParlamentarSelector({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col items-end gap-1">
+                    {mamutometro && (
+                      <Mamutometro
+                        maxLevel={mamutometro.maxLevel}
+                        level={mamutometro.niveis[parlamentar.id] ?? null}
+                        onChange={(nivel) => mamutometro.onChange(parlamentar.id, nivel)}
+                        disabled={mamutometro.salvando}
+                        noticeText={mamutometro.noticeText}
+                        parlamentarNome={parlamentar.nome}
+                      />
+                    )}
+                    <div className="flex items-center gap-1">
                     {tagsPessoais && (
                       <TagEditor
                         tags={tagsPessoais.tags}
@@ -818,6 +815,7 @@ export function ParlamentarSelector({
                     >
                       <X className="h-4 w-4" />
                     </Button>
+                    </div>
                   </div>
                 </div>
               ))}
