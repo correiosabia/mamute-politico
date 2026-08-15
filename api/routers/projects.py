@@ -10,9 +10,18 @@ from typing import Any, List, Literal, Mapping, Optional
 from zoneinfo import ZoneInfo
 import unicodedata
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, func, nullslast, select
+from sqlalchemy import asc, desc, func, null, nullslast, select
 from sqlalchemy.orm import Session, selectinload
 
 try:
@@ -38,7 +47,7 @@ try:
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
-    from ..security import get_admin_settings
+    from ..security import get_admin_settings, resolve_ghost_admin
     from .parliamentarians import is_parliamentarian_visible
     from .propositions import PropositionOut, _serialize_proposition
     from .roll_call_votes import (
@@ -70,7 +79,7 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
-    from security import get_admin_settings
+    from security import get_admin_settings, resolve_ghost_admin
     from routers.parliamentarians import is_parliamentarian_visible
     from routers.propositions import PropositionOut, _serialize_proposition
     from routers.roll_call_votes import (
@@ -92,7 +101,6 @@ class ProjectFavoriteOut(BaseModel):
     id: int
     projeto_id: int
     parliamentarian_id: int
-    # Ordem pessoal definida pelo assinante; None = nunca ordenado (SPEC-001).
     position: Optional[int] = None
     created_at: datetime
     updated_at: datetime
@@ -256,14 +264,24 @@ def _last_three_months_range_sao_paulo() -> tuple[date, date, datetime, datetime
     return range_start_date, range_end_date, range_start_dt, range_end_dt_exclusive
 
 
-def _apply_favorite_ordering(stmt, sort_by: str, sort_order: str):
-    """Aplica a ordenação da listagem de parlamentares monitorados.
+def _colunas_de_favorito(db: Session):
+    tem_position = _table_has_column(db, "projetos_parliamentarian", "position")
+    return (
+        ProjetosParliamentarian.id,
+        ProjetosParliamentarian.projeto_id,
+        ProjetosParliamentarian.parliamentarian_id,
+        (ProjetosParliamentarian.position if tem_position else null()).label("position"),
+        ProjetosParliamentarian.created_at,
+        ProjetosParliamentarian.updated_at,
+    )
 
-    ``position`` é a ordem pessoal do assinante (SPEC-001): sempre crescente,
-    com quem nunca foi ordenado (NULL) no fim e desempate pelo mais recente.
-    Enquanto ninguém ordenou nada, o resultado é idêntico ao antigo default
-    (``created_at`` desc) — por isso virar default é retrocompatível.
-    """
+
+def _apply_favorite_ordering(db: Session, stmt, sort_by: str, sort_order: str):
+    if sort_by == "position" and not _table_has_column(
+        db, "projetos_parliamentarian", "position"
+    ):
+        sort_by, sort_order = "created_at", "desc"
+
     if sort_by == "position":
         return stmt.order_by(
             nullslast(asc(ProjetosParliamentarian.position)),
@@ -845,10 +863,12 @@ def list_my_project_favorites(
         default="desc",
         description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
-) -> List[ProjetosParliamentarian]:
+) -> List[ProjectFavoriteOut]:
     """Retorna os favoritos do projeto identificado pelo e-mail do token JWT."""
     project = _get_project_from_token_email(request, db)
-    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project.id)
+    stmt = select(*_colunas_de_favorito(db)).where(
+        ProjetosParliamentarian.projeto_id == project.id
+    )
     if created_from is not None:
         stmt = stmt.where(ProjetosParliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -857,10 +877,9 @@ def list_my_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    stmt = _apply_favorite_ordering(stmt, sort_by, sort_order)
+    stmt = _apply_favorite_ordering(db, stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
-    favorites = db.execute(stmt)
-    return favorites.scalars().all()
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.get(
@@ -886,7 +905,7 @@ def reorder_my_project_favorites(
     request: Request,
     payload: ProjectFavoriteOrderUpdate,
     db: Session = Depends(get_db),
-) -> List[ProjetosParliamentarian]:
+) -> List[ProjectFavoriteOut]:
     """Reescreve as posições 0..n-1 do projeto do token, numa transação só.
 
     Exige a lista COMPLETA de monitorados. Se ela não bater exatamente com o que
@@ -924,13 +943,14 @@ def reorder_my_project_favorites(
     db.commit()
 
     stmt = _apply_favorite_ordering(
-        select(ProjetosParliamentarian).where(
+        db,
+        select(*_colunas_de_favorito(db)).where(
             ProjetosParliamentarian.projeto_id == project.id
         ),
         "position",
         "asc",
     )
-    return list(db.execute(stmt).scalars().all())
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.post(
@@ -995,8 +1015,6 @@ def get_my_dashboard_activity(
     )
 
 
-# --- Tags livres do assinante (SPEC-001, fatia 2) -------------------------
-#
 # Tags NAO consomem cota de plano: o que o plano vende e monitoramento —
 # coleta, dashboard, e-mail e IA —, nao organizacao pessoal. Os tetos abaixo
 # sao higiene (evitar lista impraticavel e texto abusivo), nao regra comercial.
@@ -1241,8 +1259,6 @@ def set_my_parliamentarian_tags(
     """
     project = _get_project_from_token_email(request, db)
 
-    # Escopo configurável (SPEC-001): o catálogo é o filtro externo, o painel é
-    # o interno. Tags nascem em "todos" — a config existe para poder apertar.
     _exigir_politico_marcavel(
         db, project, parliamentarian_id, get_marcacoes_config(db).tags_escopo
     )
@@ -1298,22 +1314,27 @@ def set_my_parliamentarian_tags(
     )
 
 
-# --- Mamutômetro (SPEC-001, fatia 3) --------------------------------------
-#
 # O SIGNIFICADO de cada nível não existe aqui, e é assim de propósito: cada
 # assinante escolhe a própria regra e nunca a informa. Por isso não há nome de
 # campo, mensagem ou log que sugira o que 1, 2 ou 3 querem dizer.
 MENSAGEM_TETO_MAMUTOMETRO = "Limite atingido. Faça um upgrade do plano em 'Conta'."
 
 
-def _exigir_mamutometro_no_plano(db: Session, project: Projetos) -> None:
+def _exigir_mamutometro_no_plano(
+    db: Session, project: Projetos, *, is_admin: bool = False
+) -> None:
     """404 (não 403) quando o plano não tem a feature.
 
     403 confirmaria que o recurso existe para quem não o tem — e a resposta
     ficaria diferente da de um político fora do escopo, dando ao cliente um
     jeito de distinguir os dois casos.
+
+    `is_admin` precisa chegar aqui resolvido: `services/feature_flags` define que
+    admin vê tudo que não está `off`, porque o papel é prévia e conferência, não
+    assinatura. Sem isso, a conta que confere a feature em produção — onde não há
+    staging — veria a escala na tela e tomaria 404 ao marcar.
     """
-    if not mamutometro_habilitado(db, project):
+    if not mamutometro_habilitado(db, project, is_admin=is_admin):
         raise HTTPException(status_code=404, detail="Recurso não encontrado.")
 
 
@@ -1364,10 +1385,12 @@ def set_my_mamutometro(
     request: Request,
     parliamentarian_id: int,
     payload: MamutometroUpdate,
+    authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ) -> MamutometroOut:
     project = _get_project_from_token_email(request, db)
-    _exigir_mamutometro_no_plano(db, project)
+    is_admin = resolve_ghost_admin(request, authorization) is not None
+    _exigir_mamutometro_no_plano(db, project, is_admin=is_admin)
 
     config = get_marcacoes_config(db)
     _exigir_politico_marcavel(
@@ -1500,11 +1523,13 @@ def list_project_favorites(
         default="desc",
         description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
-) -> List[ProjetosParliamentarian]:
+) -> List[ProjectFavoriteOut]:
     """Retorna os parlamentares marcados como favoritos por um projeto específico."""
     project = _get_project_from_token_email_for_path(request, db, project_id)
 
-    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project.id)
+    stmt = select(*_colunas_de_favorito(db)).where(
+        ProjetosParliamentarian.projeto_id == project.id
+    )
     if created_from is not None:
         stmt = stmt.where(ProjetosParliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -1513,10 +1538,9 @@ def list_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    stmt = _apply_favorite_ordering(stmt, sort_by, sort_order)
+    stmt = _apply_favorite_ordering(db, stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
-    favorites = db.execute(stmt)
-    return favorites.scalars().all()
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.post(

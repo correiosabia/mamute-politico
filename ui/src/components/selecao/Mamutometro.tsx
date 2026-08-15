@@ -15,12 +15,7 @@ import {
  * significa: cada assinante escolhe a própria regra ("3 = votei", "3 = acompanho
  * de perto", "1 = desconfio") e nunca a informa ao sistema. É isso que mantém o
  * produto longe de guardar declaração de voto.
- *
- * Na prática: os rótulos de acessibilidade são POSICIONAIS ("marcar 2 de 3"),
- * nunca semânticos, e não há tooltip explicando a escala. Há teste varrendo este
- * arquivo atrás de "voto", "apoio", "afinidade" e similares — se você precisa
- * escrever uma dessas palavras aqui, o desenho mudou e a spec precisa mudar
- * junto (.sdd/specs/001-marcacoes-pessoais-de-politicos/).
+.
  */
 
 const CHAVE_AVISO_VISTO = 'mamutometro:aviso-visto';

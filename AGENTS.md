@@ -1,27 +1,24 @@
 # Mamute Politico Agent Guide
 
-## Constitution (mandatory)
+## Working rules
 
-This repository operates under Spec-Driven Development. Read
-`.sdd/memory/constituicao.md` before planning or implementing anything.
+These describe how this repository actually behaves. They are not aspirational.
 
-Its `0*` clauses are **entrenched clauses (cláusulas pétreas): compliance is
-mandatory** and overrides any contrary impulse from whoever implements, human
-or AI. In short:
-
-- **0a** — a new feature (including a new crawler, a new cron line, or a tier
-  change) requires `.sdd/specs/NNN-slug/{spec,plano,tarefas}.md` approved
-  before any code. Bugfix, refactor and cosmetic changes do not.
-- **0b** — the audience is a non-technical subscriber; a zero must never be
-  mistakable for uncollected data, and `detail` in an API error reaches the
-  screen.
-- **0c** — recommend one option with reasoning; do not hand over a menu.
-- **0d** — `feat/*` branch → PR with all 7 CI gates green → merge to `main`,
-  which **deploys straight to production**. There is no staging.
-- **0e** — user scope comes from the Ghost JWT, never from the request body or
-  URL; admin failures return 404.
-- **0f** — user-visible changes update the affected module README (and
-  `CONTEXT.md` / `docs/adr/` when applicable) in the same PR.
+- **No staging.** `feat/*` branch → PR with all 7 CI gates green → merge to
+  `main`, which **deploys straight to production**. A user-visible feature ships
+  behind a feature flag (`ui/src/lib/featureFlags.ts`), off by default.
+- **Deploy applies migrations after the containers start.** New code runs
+  against the old schema for a window, so a query that depends on a brand-new
+  column must guard for its absence — see `_table_has_column` in
+  `api/routers/roll_call_votes.py`.
+- **User scope comes from the Ghost JWT**, never from the request body or URL
+  (`_get_project_from_token_email`). Admin gate failures return 404, not 403.
+- **The audience is a non-technical subscriber.** `detail` in an API error
+  reaches the screen, so write it as product copy. A zero must never be
+  mistakable for uncollected data.
+- **User-visible changes update the affected module README** — and `CONTEXT.md`
+  or `docs/adr/` when a term or a hard-to-reverse decision is involved — in the
+  same PR.
 
 ## Agent skills
 

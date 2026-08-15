@@ -204,3 +204,66 @@ def test_sort_by_explicito_continua_valendo(db: Session) -> None:
 
     assert response.status_code == 200
     assert [item["parliamentarian_id"] for item in response.json()] == [101, 202, 303]
+
+
+def test_listagem_sobrevive_ao_schema_sem_a_coluna_position() -> None:
+    """Janela de deploy: `up.sh` sobe os containers ANTES do `alembic upgrade`.
+
+    Nesse intervalo o código novo consulta o schema antigo. Sem a checagem da
+    coluna, o default `sort_by=position` viraria 500 na Seleção e no Dashboard
+    de todo assinante — e as feature flags não protegeriam, porque a mudança de
+    default é incondicional. Mesmo tratamento que `roll_call_votes` dá a
+    `vote_date`.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            create table projetos (
+                id integer primary key, nome text not null, cliente text,
+                email text not null, tier_id integer, tag_ghost text,
+                qtd_termos integer not null default 0,
+                created_at datetime not null default current_timestamp,
+                updated_at datetime not null default current_timestamp,
+                deleted_at datetime
+            )
+            """
+        )
+        # Schema PRÉ-migração: sem a coluna `position`.
+        conn.exec_driver_sql(
+            """
+            create table projetos_parliamentarian (
+                id integer primary key, projeto_id integer not null,
+                parliamentarian_id integer not null,
+                created_at datetime not null default current_timestamp,
+                updated_at datetime not null default current_timestamp,
+                deleted_at datetime,
+                unique (projeto_id, parliamentarian_id)
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            "insert into projetos (id, nome, email, qtd_termos, created_at, updated_at) "
+            "values (10, 'Assinante', 'assinante@example.com', 10, '2026-01-01', '2026-01-01')"
+        )
+        for row_id, pid, criado in ((1, 101, "2026-01-01"), (2, 202, "2026-02-01")):
+            conn.execute(
+                text(
+                    "insert into projetos_parliamentarian "
+                    "(id, projeto_id, parliamentarian_id, created_at, updated_at) "
+                    "values (:id, 10, :pid, :c, :c)"
+                ),
+                {"id": row_id, "pid": pid, "c": criado},
+            )
+    db = Session(engine)
+    client = _client(db)
+
+    resposta = client.get("/api/projects/me/favorites")
+
+    assert resposta.status_code == 200, resposta.text
+    # Cai no comportamento anterior: mais recente primeiro.
+    assert [f["parliamentarian_id"] for f in resposta.json()] == [202, 101]

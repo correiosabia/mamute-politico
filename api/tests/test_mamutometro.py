@@ -387,3 +387,51 @@ def test_servicos_de_metrica_nao_referenciam_mamutometro() -> None:
     assert encontrados == [], (
         "mamutômetro referenciado onde não pode aparecer: " + ", ".join(encontrados)
     )
+
+
+def test_admin_marca_mesmo_sem_a_feature_no_plano(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Admin é prévia e conferência, não assinatura.
+
+    Sem staging, é a conta de admin que confere a feature em produção. Se a
+    leitura (`/settings/marcacoes`) diz `enabled: true` e a escrita responde
+    404, a conferência é impossível — foi o que a revisão pegou.
+    """
+    db = _make_session(tier_pago_tem_feature=False)
+    monkeypatch.setattr(
+        projects, "resolve_ghost_admin", lambda request, authorization: "admin@example.com"
+    )
+    client = _client(db)
+
+    resposta = _marcar(client, 101, 2)
+
+    assert resposta.status_code == 200, resposta.json()
+
+
+def test_nao_admin_sem_a_feature_continua_recebendo_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """O contrapeso do teste acima: a prévia é do admin, não de todo mundo."""
+    db = _make_session(tier_pago_tem_feature=False)
+    monkeypatch.setattr(projects, "resolve_ghost_admin", lambda request, authorization: None)
+    client = _client(db)
+
+    assert _marcar(client, 101, 2).status_code == 404
+
+
+def test_leitura_e_escrita_concordam_sobre_o_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`enabled` na leitura e o gate da escrita não podem divergir."""
+    db = _make_session(tier_pago_tem_feature=False)
+    monkeypatch.setattr(
+        projects, "resolve_ghost_admin", lambda request, authorization: "admin@example.com"
+    )
+    import api.routers.settings as settings_router
+
+    monkeypatch.setattr(
+        settings_router, "resolve_ghost_admin", lambda request, authorization: "admin@example.com"
+    )
+    client = _client(db)
+
+    enabled = client.get("/api/settings/marcacoes").json()["mamutometro"]["enabled"]
+    escrita_ok = _marcar(client, 101, 1).status_code == 200
+
+    assert enabled is escrita_ok is True

@@ -121,7 +121,7 @@ class ProjectMamutometro(Base):
     (marcacao de voto declarada): o banco nao consegue responder "quem votou no
     politico X" porque nivel 3 nao e voto. O que protege continua sendo escopo
     por token, zero visibilidade no admin, zero agregado por politico e remocao
-    de verdade. Detalhes em .sdd/specs/001-.../plano.md.
+    de verdade. Detalhes em docs/adr/0002-privacidade-do-mamutometro.md.
 
     `level` nao tem CHECK contra o tamanho da regua: a regua e configuracao
     mutavel (`marcacoes_config`), e amarrar o schema a ela transformaria mudanca

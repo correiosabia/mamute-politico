@@ -738,7 +738,7 @@ def update_marcacoes_config_route(
 
     Nada aqui apaga marcação de assinante: reduzir a régua ou apertar o escopo
     só muda o que a tela mostra. O dado fica dormente e volta se a configuração
-    voltar — ver `.sdd/specs/001-.../plano.md`.
+    voltar — ver a seção de marcações pessoais em `api/README.md`.
     """
     before = _serializar_marcacoes_config(get_marcacoes_config(db))
     try:

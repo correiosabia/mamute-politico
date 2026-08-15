@@ -12,7 +12,7 @@ reescrita. A unicidade que importa — um parlamentar por projeto — ja e garan
 por uq_projeto_parliamentarian_unique.
 
 Revision ID: 4eecac3244dc
-Revises: b2c3d4e5f6a8
+Revises: c3d4e5f6a9b0
 Create Date: 2026-08-11 10:00:00.000000
 
 """
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "4eecac3244dc"
-down_revision: Union[str, None] = "b2c3d4e5f6a8"
+down_revision: Union[str, None] = "c3d4e5f6a9b0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
