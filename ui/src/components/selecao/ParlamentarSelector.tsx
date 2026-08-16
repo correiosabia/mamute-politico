@@ -135,6 +135,11 @@ interface ParlamentarSelectorProps {
     /** parlamentarId -> nivel gravado */
     niveis: Record<string, number>;
     salvando: boolean;
+    /**
+     * Quando presente, só a escala DESTE parlamentar desabilita durante o save —
+     * antes o `salvando` global congelava todas as escalas da página.
+     */
+    salvandoParlamentarId?: string | null;
     onChange: (parlamentarId: string, level: number | null) => void;
   } | null;
 }
@@ -720,7 +725,11 @@ export function ParlamentarSelector({
                         maxLevel={mamutometro.maxLevel}
                         level={mamutometro.niveis[parlamentar.id] ?? null}
                         onChange={(nivel) => mamutometro.onChange(parlamentar.id, nivel)}
-                        disabled={mamutometro.salvando}
+                        disabled={
+                          mamutometro.salvandoParlamentarId !== undefined
+                            ? mamutometro.salvandoParlamentarId === parlamentar.id
+                            : mamutometro.salvando
+                        }
                         noticeText={mamutometro.noticeText}
                         parlamentarNome={parlamentar.nome}
                       />

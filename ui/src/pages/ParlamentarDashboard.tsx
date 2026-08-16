@@ -14,6 +14,8 @@ import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EmendasTable } from '@/components/dashboard/EmendasTable';
 import { TrajetoriaTab } from '@/components/dashboard/TrajetoriaTab';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+import { useMarcacoesPessoais } from '@/hooks/useMarcacoesPessoais';
+import { MarcacoesInline } from '@/components/marcacoes/MarcacoesInline';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
 import { TrackSection } from '@/components/TrackSection';
 import { sendSectionView } from '@/api/events';
@@ -97,6 +99,10 @@ const ParlamentarDashboard = () => {
     enabled: isIdValid,
   });
   const monitoradosCount = favoritesQuery.data?.length ?? 0;
+  const monitorado =
+    favoritesQuery.data?.some((f) => f.parliamentarian_id === numericId) ?? false;
+  // Mesmo hook da Seleção e do Dashboard: flag global e plano já resolvidos.
+  const { tagsPessoais, mamutometro } = useMarcacoesPessoais({ enabled: isIdValid });
 
   if (!isIdValid) {
     return (
@@ -230,6 +236,20 @@ const ParlamentarDashboard = () => {
             <div className="mp-card bg-white p-6">
               <h2 className="mb-4 text-[32px] leading-none font-bold text-[#090909]">Dados cadastrais</h2>
               <ParlamentarInfo parlamentar={parlamentar} />
+              {/* Marcações pessoais do assinante sobre ESTE parlamentar — dado
+                  privado do projeto, por isso apartado do cadastro público pelo
+                  divider + rótulo. Some por inteiro (rótulo incluso) com as
+                  flags/plano desligados ou com o político fora do escopo
+                  configurado (ex.: mamutômetro em `monitorados` num perfil não
+                  monitorado). */}
+              <MarcacoesInline
+                titulo="Suas marcações"
+                parlamentarId={String(numericId)}
+                parlamentarNome={parlamentar.nome}
+                monitorado={monitorado}
+                tagsPessoais={tagsPessoais}
+                mamutometro={mamutometro}
+              />
             </div>
 
             <EstatisticasCard
