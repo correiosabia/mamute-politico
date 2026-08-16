@@ -7,7 +7,7 @@ import { Mamutometro } from './Mamutometro';
 
 function renderEscala(props: Partial<React.ComponentProps<typeof Mamutometro>> = {}) {
   const onChange = vi.fn();
-  render(
+  const { unmount } = render(
     <Mamutometro
       maxLevel={3}
       level={null}
@@ -17,7 +17,14 @@ function renderEscala(props: Partial<React.ComponentProps<typeof Mamutometro>> =
       {...props}
     />,
   );
-  return { onChange };
+  return { onChange, unmount };
+}
+
+const CHAVE_AVISO_ACEITO = 'mamutometro:aviso-aceito';
+
+/** Simula quem já confirmou o aviso — o caminho dos testes de marcação. */
+function aceitarAviso() {
+  localStorage.setItem(CHAVE_AVISO_ACEITO, '1');
 }
 
 describe('Mamutometro', () => {
@@ -32,6 +39,7 @@ describe('Mamutometro', () => {
   });
 
   it('marca o nível clicado', () => {
+    aceitarAviso();
     const { onChange } = renderEscala();
 
     fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
@@ -40,11 +48,71 @@ describe('Mamutometro', () => {
   });
 
   it('clicar no nível atual limpa a marcação', () => {
+    aceitarAviso();
     const { onChange } = renderEscala({ level: 2 });
 
     fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
 
     expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it('primeira marcação: abre o diálogo e NÃO grava antes do aceite', () => {
+    const { onChange } = renderEscala();
+
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText('Aqui que sua vida começa a mudar.')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('"Estou ciente" grava a marcação pendente e não pergunta de novo', () => {
+    const { onChange } = renderEscala();
+
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Estou ciente' }));
+
+    expect(onChange).toHaveBeenCalledWith(2);
+    expect(localStorage.getItem(CHAVE_AVISO_ACEITO)).toBe('1');
+
+    // Próximo clique vai direto, sem diálogo.
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 3 de 3/i }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+
+  it('fechar o diálogo sem confirmar descarta o clique e pergunta de novo', () => {
+    const { onChange } = renderEscala();
+
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(localStorage.getItem(CHAVE_AVISO_ACEITO)).toBeNull();
+
+    // Sem aceite registrado, a próxima tentativa reabre o diálogo.
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 1 de 3/i }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('o aceite é por conta: JWT de outro assinante não herda o aceite anterior', () => {
+    const jwtDe = (sub: string) =>
+      `h.${btoa(JSON.stringify({ sub })).replace(/\+/g, '-').replace(/\//g, '_')}.s`;
+
+    localStorage.setItem('mamutePoliticoJwtToken', jwtDe('primeira@conta.com'));
+    const primeira = renderEscala();
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Estou ciente' }));
+    expect(primeira.onChange).toHaveBeenCalledWith(2);
+    primeira.unmount();
+
+    // Troca de conta na mesma máquina: o aviso precisa aparecer de novo.
+    localStorage.setItem('mamutePoliticoJwtToken', jwtDe('segunda@conta.com'));
+    const segunda = renderEscala();
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(segunda.onChange).not.toHaveBeenCalled();
   });
 
   it('nível acima da régua aparece aparado, sem perder o valor', () => {
