@@ -1,7 +1,13 @@
 name: Deploy Mamute Politico
 
-# Roda em push em main (deploy) e em PRs (so validate, sem deploy).
+# Roda em push em main (deploy), em PRs (so validate, sem deploy) e sob demanda
+# pelo botao "Run workflow" (deploy, igual ao push).
 # Deploy depende de TODOS os checks passarem — gate obrigatorio pre-prod.
+#
+# O disparo manual existe pro caso de o push em main nao ter gerado run: Actions
+# desativadas na epoca do merge, run cancelado, ou re-deploy do mesmo commit
+# depois de mexer no servidor. Sem ele, a unica forma de deployar e empurrar um
+# commit novo pra main so pra acionar o gatilho.
 on:
   push:
     branches:
@@ -9,6 +15,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 # Serializa execucao por branch: 2 pushes seguidos em main nao disparam deploys
 # concorrentes (rsync race + container thrashing). PRs cancelam runs anteriores
@@ -223,8 +230,13 @@ jobs:
     name: Deploy producao
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # So roda em push em main + se TODOS os validates passaram. PRs nao deployam.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # So roda em main + se TODOS os validates passaram. PRs nao deployam.
+    # Push e disparo manual sao equivalentes aqui: o manual existe pra reexecutar
+    # um deploy que o push nao chegou a disparar, entao tem que passar pelos
+    # mesmos 7 gates e cair no mesmo caminho.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [ui-validate, api-smoke, scrappers-tests, contract-check, compose-validate, migration-smoke, e2e]
     steps:
       - name: Checkout arquivos
