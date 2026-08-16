@@ -12,6 +12,8 @@ import {
 import { ApiError } from '@/api/client';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+import { useMarcacoesPessoais } from '@/hooks/useMarcacoesPessoais';
+import { MarcacoesInline } from '@/components/marcacoes/MarcacoesInline';
 import { sortByNome } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2, Pencil, Users } from 'lucide-react';
@@ -66,6 +68,9 @@ const DashboardPage = () => {
   };
 
   const marcacoesPessoaisOn = useFeatureFlag('marcacoes_pessoais');
+  // Mesmo hook da Seleção: os dois portões (flag global e plano) já vêm
+  // resolvidos — `null` = card idêntico ao de antes da feature.
+  const { tagsPessoais, mamutometro } = useMarcacoesPessoais();
 
   const favoritesQuery = useQuery({
     queryKey: ['project-favorites', 'me'],
@@ -172,7 +177,7 @@ const DashboardPage = () => {
                     <AvatarImage src={parlamentar.foto} alt={parlamentar.nome} />
                     <AvatarFallback>{parlamentar.nome[0]}</AvatarFallback>
                   </Avatar>
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-semibold text-[18px] text-[#383838]">{parlamentar.nome}</p>
                     <div className="flex items-center gap-2">
                       <span
@@ -185,6 +190,19 @@ const DashboardPage = () => {
                       <span className="text-[11px] text-[#383838]">
                         {parlamentar.partido.sigla} - {parlamentar.uf}
                       </span>
+                    </div>
+                    {/* Marcações pessoais: mesmos componentes e gestos da Seleção.
+                        Clique nos controles não navega (eles fazem stopPropagation);
+                        clique no resto do card segue indo ao perfil. Todo card aqui
+                        é monitorado, então o escopo `monitorados` é satisfeito. */}
+                    <div className="mt-1">
+                      <MarcacoesInline
+                        parlamentarId={parlamentar.id}
+                        parlamentarNome={parlamentar.nome}
+                        monitorado
+                        tagsPessoais={tagsPessoais}
+                        mamutometro={mamutometro}
+                      />
                     </div>
                   </div>
                 </Link>
