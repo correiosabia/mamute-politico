@@ -237,12 +237,14 @@ Campos de limite:
 | `qtd_consultas_ia_mes` | Quantidade mensal de consultas ao chatbot/IA. | Chatbot quando `MAMUTE_CHATBOT_QUOTA_ENABLED=true`; as rotas de modelo continuam exigindo JWT mesmo com quota desligada. O uso é contado em `chatbot_usage`. |
 | `periodicidade_email` | Quais relatórios de e-mail o tier pode receber: `day`, `week` e/ou `month`. | Scripts de notificação filtram destinatários por esse campo. |
 | `qtd_email` | Quantidade de envios de e-mail prevista pelo plano. | Mantido como entitlement/metadado do tier; a elegibilidade atual do envio usa `periodicidade_email`. |
+| `qtd_mamutometro` | Quantos parlamentares o usuário pode marcar no mamutômetro. Ausente = sem teto. | API principal em `PUT /api/projects/me/parliamentarians/{id}/mamutometro`. O teto trava **criar** marcação nova; alterar o nível de uma que já existe nunca é bloqueado, para que reduzir o limite não prenda o assinante num nível escolhido antes. |
 | `orgao` | Lista de órgãos permitidos para o tier. Use `[]` para sem restrição. | Reservado para uma limitação futura por órgão; hoje não bloqueia consultas ou monitorados. |
 
 Precedência dos limites:
 
 1. Para parlamentares monitorados, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_termos`; se ausente, cai para `tiers.detalhes.qtd_termos`; se também ausente, usa `projetos.qtd_termos`, que é preenchido pela sincronização do Ghost.
-2. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
+2. Para o mamutômetro, a API usa `MAMUTE_TIER_LIMITS_JSON[slug].qtd_mamutometro`; se ausente, cai para `tiers.detalhes.qtd_mamutometro`; se também ausente, não há teto. **Quem tem** a feature é outra pergunta, respondida pelo recorte por plano das feature flags (`feature_flag_tier`), e não por este campo — de fábrica, só planos pagos.
+3. Para consultas de IA, o chatbot usa `MAMUTE_CHATBOT_MONTHLY_LIMITS_JSON` se existir; depois `MAMUTE_TIER_LIMITS_JSON[slug].qtd_consultas_ia_mes`; depois `tiers.detalhes.qtd_consultas_ia_mes`; depois `MAMUTE_CHATBOT_DEFAULT_MONTHLY_LIMIT`; sem configuração, o limite efetivo é `0`.
 
 `MAMUTE_CHATBOT_QUOTA_ENABLED=false` desliga apenas a reserva e gravação mensal de uso; não transforma `/chat/chatbot/query` ou `/chat/chatbot/stream` em endpoints públicos.
 

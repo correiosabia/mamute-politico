@@ -108,8 +108,39 @@ export interface ProjectFavoriteOut {
   id: number;
   projeto_id: number;
   parliamentarian_id: number;
+  position: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectTagOut {
+  id: number;
+  name: string;
+  slug: string;
+  /** Quantos parlamentares esta tag marca, no projeto autenticado. */
+  parliamentarian_count: number;
+}
+
+export interface ParliamentarianTagsOut {
+  parliamentarian_id: number;
+  tag_ids: number[];
+}
+
+export interface MamutometroOut {
+  parliamentarian_id: number;
+  level: number;
+}
+
+export interface MarcacoesSettingsOut {
+  mamutometro: {
+    enabled: boolean;
+    max_level: number;
+    notice_text: string;
+    escopo: 'monitorados' | 'todos';
+    limit: number | null;
+    used: number;
+  };
+  tags: { escopo: 'monitorados' | 'todos' };
 }
 
 export interface HouseFavoriteQuotaOut {

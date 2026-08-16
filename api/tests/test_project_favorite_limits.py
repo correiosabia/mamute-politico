@@ -14,7 +14,6 @@ from api.dependencies import get_db
 from api.routers import projects
 
 
-# Tipos por parlamentar usados nas fixtures: câmara (deputado) e senado (senador).
 _PARLIAMENTARIAN_TYPES = {
     101: "Deputado",
     202: "Deputado",
@@ -114,6 +113,7 @@ def _make_session(
                 id integer primary key,
                 projeto_id integer not null,
                 parliamentarian_id integer not null,
+                position integer,
                 created_at datetime not null default current_timestamp,
                 updated_at datetime not null default current_timestamp,
                 deleted_at datetime,

@@ -1,0 +1,91 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { Mamutometro } from './Mamutometro';
+
+function renderEscala(props: Partial<React.ComponentProps<typeof Mamutometro>> = {}) {
+  const onChange = vi.fn();
+  render(
+    <Mamutometro
+      maxLevel={3}
+      level={null}
+      onChange={onChange}
+      noticeText="Aqui que sua vida começa a mudar."
+      parlamentarNome="Jane Doe"
+      {...props}
+    />,
+  );
+  return { onChange };
+}
+
+describe('Mamutometro', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('renderiza uma posição por mamute da régua', () => {
+    renderEscala({ maxLevel: 5 });
+
+    expect(screen.getAllByRole('button', { name: /Marcar \d de 5/i })).toHaveLength(5);
+  });
+
+  it('marca o nível clicado', () => {
+    const { onChange } = renderEscala();
+
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+
+    expect(onChange).toHaveBeenCalledWith(2);
+  });
+
+  it('clicar no nível atual limpa a marcação', () => {
+    const { onChange } = renderEscala({ level: 2 });
+
+    fireEvent.click(screen.getByRole('button', { name: /Marcar 2 de 3/i }));
+
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it('nível acima da régua aparece aparado, sem perder o valor', () => {
+    // Admin reduziu a escala depois de o assinante marcar 5.
+    renderEscala({ maxLevel: 3, level: 5 });
+
+    const posicoes = screen.getAllByRole('button', { name: /Marcar \d de 3/i });
+    expect(posicoes).toHaveLength(3);
+    expect(posicoes.every((b) => b.getAttribute('aria-pressed') === 'true')).toBe(true);
+  });
+
+  it('os rótulos de acessibilidade são posicionais, nunca semânticos', () => {
+    renderEscala({ level: 1 });
+
+    for (const botao of screen.getAllByRole('button')) {
+      const rotulo = (botao.getAttribute('aria-label') ?? '').toLowerCase();
+      expect(rotulo).toMatch(/marcar \d de \d/);
+      for (const proibido of ['voto', 'votei', 'apoio', 'afinidade', 'prefer']) {
+        expect(rotulo).not.toContain(proibido);
+      }
+    }
+  });
+});
+
+describe('Mamutometro — neutralidade da copy (SPEC-001)', () => {
+  it('o componente não contém palavra que atribua significado a um nível', () => {
+    // Este é o teste que segura a garantia inteira da feature: o significado de
+    // cada nível é de quem usa, e o dia em que a tela disser o que 3 quer dizer,
+    // o sistema passa a guardar aquilo. Se este teste falhar, ou a copy voltou
+    // atrás, ou o desenho mudou — e aí a spec muda junto.
+    const arquivo = path.join(__dirname, 'Mamutometro.tsx');
+    const codigo = fs.readFileSync(arquivo, 'utf-8');
+
+    // Só o que a pessoa lê na tela: strings de JSX e rótulos, não comentários,
+    // que precisam justamente falar sobre o que NÃO pode aparecer.
+    const semComentarios = codigo
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+    for (const proibido of ['voto', 'votei', 'votar', 'apoio', 'afinidade', 'prefer']) {
+      expect(semComentarios.toLowerCase()).not.toContain(proibido);
+    }
+  });
+});

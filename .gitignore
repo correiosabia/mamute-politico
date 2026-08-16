@@ -11,3 +11,4 @@ api/.env
 api/.venv/
 chatbot_backend/.venv/
 venv/
+.sdd

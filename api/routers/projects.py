@@ -10,9 +10,18 @@ from typing import Any, List, Literal, Mapping, Optional
 from zoneinfo import ZoneInfo
 import unicodedata
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import asc, desc, func, null, nullslast, select
 from sqlalchemy.orm import Session, selectinload
 
 try:
@@ -23,11 +32,23 @@ try:
     from ..db.models.plenary_attendance import PlenaryAttendance
     from ..db.models.proposition import Proposition
     from ..db.models.project import Projetos, ProjetosParliamentarian
+    from ..db.models.personal_marks import (
+        ParliamentarianTag,
+        ProjectMamutometro,
+        ProjectTag,
+    )
+    from ..services.marcacoes import (
+        esta_no_escopo,
+        get_config as get_marcacoes_config,
+        mamutometro_habilitado,
+        mamutometro_limite,
+    )
     from ..db.models.usage_event import UsageEvent
     from ..db.models.roll_call_votes import RollCallVote
     from ..db.models.speeches_transcripts import SpeechesTranscript
     from ..dependencies import get_db
-    from ..security import get_admin_settings
+    from ..security import get_admin_settings, resolve_ghost_admin
+    from .parliamentarians import is_parliamentarian_visible
     from .propositions import PropositionOut, _serialize_proposition
     from .roll_call_votes import (
         RollCallVoteOut,
@@ -43,11 +64,23 @@ except (ImportError, ValueError):  # pragma: no cover - caminho alternativo
     from db.models.plenary_attendance import PlenaryAttendance
     from db.models.proposition import Proposition
     from db.models.project import Projetos, ProjetosParliamentarian
+    from db.models.personal_marks import (
+        ParliamentarianTag,
+        ProjectMamutometro,
+        ProjectTag,
+    )
+    from services.marcacoes import (
+        esta_no_escopo,
+        get_config as get_marcacoes_config,
+        mamutometro_habilitado,
+        mamutometro_limite,
+    )
     from db.models.usage_event import UsageEvent
     from db.models.roll_call_votes import RollCallVote
     from db.models.speeches_transcripts import SpeechesTranscript
     from dependencies import get_db
-    from security import get_admin_settings
+    from security import get_admin_settings, resolve_ghost_admin
+    from routers.parliamentarians import is_parliamentarian_visible
     from routers.propositions import PropositionOut, _serialize_proposition
     from routers.roll_call_votes import (
         RollCallVoteOut,
@@ -68,6 +101,7 @@ class ProjectFavoriteOut(BaseModel):
     id: int
     projeto_id: int
     parliamentarian_id: int
+    position: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -78,6 +112,12 @@ class ProjectFavoriteCreate(BaseModel):
     """Dados necessários para criar um novo favorito de projeto."""
 
     parliamentarian_id: int
+
+
+class ProjectFavoriteOrderUpdate(BaseModel):
+    """Nova ordem pessoal: a lista completa de monitorados, já ordenada."""
+
+    ordered_parliamentarian_ids: List[int]
 
 
 class HouseFavoriteQuotaOut(BaseModel):
@@ -107,6 +147,47 @@ class ProjectFavoriteQuotaOut(BaseModel):
     unlimited: bool = False
     camara: HouseFavoriteQuotaOut
     senado: HouseFavoriteQuotaOut
+
+
+class ProjectTagOut(BaseModel):
+    """Tag livre do assinante, com quantos parlamentares ela marca."""
+
+    id: int
+    name: str
+    slug: str
+    parliamentarian_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectTagCreate(BaseModel):
+    """Nome da tag, como a pessoa digitou."""
+
+    name: str
+
+
+class ParliamentarianTagsUpdate(BaseModel):
+    """Conjunto completo de tags de um parlamentar."""
+
+    tag_ids: List[int]
+
+
+class ParliamentarianTagsOut(BaseModel):
+    """Tags aplicadas a um parlamentar no projeto autenticado."""
+
+    parliamentarian_id: int
+    tag_ids: List[int]
+
+
+class MamutometroOut(BaseModel):
+    """Marcação do mamutômetro. `level` e nada mais — o significado é do dono."""
+
+    parliamentarian_id: int
+    level: int
+
+
+class MamutometroUpdate(BaseModel):
+    level: int
 
 
 class ProjectDashboardStatsOut(BaseModel):
@@ -181,6 +262,39 @@ def _last_three_months_range_sao_paulo() -> tuple[date, date, datetime, datetime
         tzinfo=tz,
     )
     return range_start_date, range_end_date, range_start_dt, range_end_dt_exclusive
+
+
+def _colunas_de_favorito(db: Session):
+    tem_position = _table_has_column(db, "projetos_parliamentarian", "position")
+    return (
+        ProjetosParliamentarian.id,
+        ProjetosParliamentarian.projeto_id,
+        ProjetosParliamentarian.parliamentarian_id,
+        (ProjetosParliamentarian.position if tem_position else null()).label("position"),
+        ProjetosParliamentarian.created_at,
+        ProjetosParliamentarian.updated_at,
+    )
+
+
+def _apply_favorite_ordering(db: Session, stmt, sort_by: str, sort_order: str):
+    if sort_by == "position" and not _table_has_column(
+        db, "projetos_parliamentarian", "position"
+    ):
+        sort_by, sort_order = "created_at", "desc"
+
+    if sort_by == "position":
+        return stmt.order_by(
+            nullslast(asc(ProjetosParliamentarian.position)),
+            desc(ProjetosParliamentarian.created_at),
+        )
+    sortable_columns = {
+        "created_at": ProjetosParliamentarian.created_at,
+        "updated_at": ProjetosParliamentarian.updated_at,
+        "id": ProjetosParliamentarian.id,
+        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
+    }
+    sort_column = sortable_columns[sort_by]
+    return stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
 
 
 def _get_project_favorite_ids(db: Session, project_id: int) -> List[int]:
@@ -736,18 +850,25 @@ def list_my_project_favorites(
         None,
         description="Filtra por favoritos atualizados até este instante (inclusive).",
     ),
-    sort_by: Literal["created_at", "updated_at", "id", "parliamentarian_id"] = Query(
-        default="created_at",
-        description="Campo usado para ordenação.",
+    sort_by: Literal[
+        "position", "created_at", "updated_at", "id", "parliamentarian_id"
+    ] = Query(
+        default="position",
+        description=(
+            "Campo usado para ordenação. 'position' é a ordem pessoal do assinante: "
+            "sempre crescente, com quem nunca foi ordenado no fim."
+        ),
     ),
     sort_order: Literal["asc", "desc"] = Query(
         default="desc",
-        description="Direção da ordenação.",
+        description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
-) -> List[ProjetosParliamentarian]:
+) -> List[ProjectFavoriteOut]:
     """Retorna os favoritos do projeto identificado pelo e-mail do token JWT."""
     project = _get_project_from_token_email(request, db)
-    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project.id)
+    stmt = select(*_colunas_de_favorito(db)).where(
+        ProjetosParliamentarian.projeto_id == project.id
+    )
     if created_from is not None:
         stmt = stmt.where(ProjetosParliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -756,17 +877,9 @@ def list_my_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    sortable_columns = {
-        "created_at": ProjetosParliamentarian.created_at,
-        "updated_at": ProjetosParliamentarian.updated_at,
-        "id": ProjetosParliamentarian.id,
-        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
-    }
-    sort_column = sortable_columns[sort_by]
-    stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
+    stmt = _apply_favorite_ordering(db, stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
-    favorites = db.execute(stmt)
-    return favorites.scalars().all()
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.get(
@@ -781,6 +894,63 @@ def get_my_project_favorites_quota(
     """Retorna limite, uso e saldo de parlamentares monitorados do projeto."""
     project = _get_project_from_token_email(request, db)
     return _build_project_favorite_quota(db, project)
+
+
+@router.patch(
+    "/me/favorites/order",
+    response_model=List[ProjectFavoriteOut],
+    summary="Define a ordem pessoal dos parlamentares monitorados",
+)
+def reorder_my_project_favorites(
+    request: Request,
+    payload: ProjectFavoriteOrderUpdate,
+    db: Session = Depends(get_db),
+) -> List[ProjectFavoriteOut]:
+    """Reescreve as posições 0..n-1 do projeto do token, numa transação só.
+
+    Exige a lista COMPLETA de monitorados. Se ela não bater exatamente com o que
+    está no banco, a ordem do cliente está velha (favorito adicionado ou removido
+    em outra aba/dispositivo) e aplicá-la parcialmente deixaria posições órfãs —
+    por isso 422, e o cliente recarrega antes de tentar de novo.
+    """
+    project = _get_project_from_token_email(request, db)
+
+    favorites = (
+        db.execute(
+            select(ProjetosParliamentarian).where(
+                ProjetosParliamentarian.projeto_id == project.id
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    requested = payload.ordered_parliamentarian_ids
+    current_ids = {int(item.parliamentarian_id) for item in favorites}
+    if len(requested) != len(set(requested)) or set(requested) != current_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Sua lista de parlamentares monitorados mudou. "
+                "Atualize a página e ordene novamente."
+            ),
+        )
+
+    by_parliamentarian = {int(item.parliamentarian_id): item for item in favorites}
+    for index, parliamentarian_id in enumerate(requested):
+        by_parliamentarian[parliamentarian_id].position = index
+
+    db.commit()
+
+    stmt = _apply_favorite_ordering(
+        db,
+        select(*_colunas_de_favorito(db)).where(
+            ProjetosParliamentarian.projeto_id == project.id
+        ),
+        "position",
+        "asc",
+    )
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.post(
@@ -845,6 +1015,474 @@ def get_my_dashboard_activity(
     )
 
 
+# Tags NAO consomem cota de plano: o que o plano vende e monitoramento —
+# coleta, dashboard, e-mail e IA —, nao organizacao pessoal. Os tetos abaixo
+# sao higiene (evitar lista impraticavel e texto abusivo), nao regra comercial.
+MAX_TAGS_POR_PROJETO = 50
+MAX_TAGS_POR_PARLAMENTAR = 10
+MAX_CARACTERES_TAG = 30
+
+
+def _tag_slug(nome: str) -> str:
+    """Slug de comparacao: sem acento, minusculo, espacos colapsados.
+
+    "Meio Ambiente", "meio  ambiente" e "MEIO AMBIENTE" viram a mesma tag —
+    o que a pessoa digitou fica em `name`, para exibir de volta como ela quis.
+    """
+    return " ".join(_normalize_text(nome).split())
+
+
+def _validar_nome_de_tag(nome: str) -> str:
+    limpo = (nome or "").strip()
+    if not limpo:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Dê um nome para a tag.",
+        )
+    if len(limpo) > MAX_CARACTERES_TAG:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"A tag pode ter no máximo {MAX_CARACTERES_TAG} caracteres.",
+        )
+    return limpo
+
+
+def _contagem_por_tag(db: Session, project_id: int) -> dict[int, int]:
+    linhas = db.execute(
+        select(ParliamentarianTag.tag_id, func.count())
+        .where(ParliamentarianTag.projeto_id == project_id)
+        .group_by(ParliamentarianTag.tag_id)
+    ).all()
+    return {int(tag_id): int(total) for tag_id, total in linhas}
+
+
+def _serializar_tag(tag: ProjectTag, contagem: dict[int, int]) -> ProjectTagOut:
+    return ProjectTagOut(
+        id=int(tag.id),
+        name=tag.name,
+        slug=tag.slug,
+        parliamentarian_count=contagem.get(int(tag.id), 0),
+    )
+
+
+def _tag_do_projeto(db: Session, project_id: int, tag_id: int) -> ProjectTag:
+    """Busca a tag JA escopada pelo projeto do token (cláusula 0e).
+
+    404 e nao 403: dizer "existe, mas nao e sua" ja entrega a existencia da tag
+    de outra conta.
+    """
+    tag = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.id == tag_id,
+            ProjectTag.projeto_id == project_id,
+        )
+    ).scalar_one_or_none()
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag não encontrada.")
+    return tag
+
+
+@router.get(
+    "/me/tags",
+    response_model=List[ProjectTagOut],
+    summary="Lista as tags do projeto autenticado",
+)
+def list_my_project_tags(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[ProjectTagOut]:
+    """Tags do projeto do token, com quantos parlamentares cada uma marca."""
+    project = _get_project_from_token_email(request, db)
+    tags = (
+        db.execute(
+            select(ProjectTag)
+            .where(ProjectTag.projeto_id == project.id)
+            .order_by(asc(ProjectTag.slug))
+        )
+        .scalars()
+        .all()
+    )
+    contagem = _contagem_por_tag(db, int(project.id))
+    return [_serializar_tag(tag, contagem) for tag in tags]
+
+
+@router.post(
+    "/me/tags",
+    response_model=ProjectTagOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria uma tag no projeto autenticado",
+)
+def create_my_project_tag(
+    request: Request,
+    payload: ProjectTagCreate,
+    db: Session = Depends(get_db),
+) -> ProjectTagOut:
+    project = _get_project_from_token_email(request, db)
+    nome = _validar_nome_de_tag(payload.name)
+    slug = _tag_slug(nome)
+
+    existente = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.projeto_id == project.id,
+            ProjectTag.slug == slug,
+        )
+    ).scalar_one_or_none()
+    if existente is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Você já tem a tag "{existente.name}".',
+        )
+
+    total = db.execute(
+        select(func.count()).select_from(ProjectTag).where(
+            ProjectTag.projeto_id == project.id
+        )
+    ).scalar_one()
+    if int(total) >= MAX_TAGS_POR_PROJETO:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Você já tem {MAX_TAGS_POR_PROJETO} tags. "
+                "Renomeie ou apague uma para criar outra."
+            ),
+        )
+
+    tag = ProjectTag(projeto_id=project.id, name=nome, slug=slug)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return _serializar_tag(tag, {})
+
+
+@router.patch(
+    "/me/tags/{tag_id}",
+    response_model=ProjectTagOut,
+    summary="Renomeia uma tag do projeto autenticado",
+)
+def rename_my_project_tag(
+    request: Request,
+    tag_id: int,
+    payload: ProjectTagCreate,
+    db: Session = Depends(get_db),
+) -> ProjectTagOut:
+    project = _get_project_from_token_email(request, db)
+    tag = _tag_do_projeto(db, int(project.id), tag_id)
+
+    nome = _validar_nome_de_tag(payload.name)
+    slug = _tag_slug(nome)
+
+    colisao = db.execute(
+        select(ProjectTag).where(
+            ProjectTag.projeto_id == project.id,
+            ProjectTag.slug == slug,
+            ProjectTag.id != tag.id,
+        )
+    ).scalar_one_or_none()
+    if colisao is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'Você já tem a tag "{colisao.name}".',
+        )
+
+    tag.name = nome
+    tag.slug = slug
+    db.commit()
+    db.refresh(tag)
+    return _serializar_tag(tag, _contagem_por_tag(db, int(project.id)))
+
+
+@router.delete(
+    "/me/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Apaga uma tag do projeto autenticado",
+)
+def delete_my_project_tag(
+    request: Request,
+    tag_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Apagar a tag tira a etiqueta de todos os parlamentares (cascade), e
+    nunca mexe no monitoramento."""
+    project = _get_project_from_token_email(request, db)
+    tag = _tag_do_projeto(db, int(project.id), tag_id)
+    db.delete(tag)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/me/parliamentarian-tags",
+    response_model=List[ParliamentarianTagsOut],
+    summary="Tags aplicadas a cada parlamentar, no projeto autenticado",
+)
+def list_my_parliamentarian_tags(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[ParliamentarianTagsOut]:
+    """Todas as aplicacoes do projeto de uma vez.
+
+    Uma chamada so em vez de uma por parlamentar: a tela lista dezenas de
+    cards, e N requests para montar chips seria desperdicio obvio. O volume e
+    pequeno por construcao (teto de 50 tags x 10 por parlamentar).
+    """
+    project = _get_project_from_token_email(request, db)
+    linhas = db.execute(
+        select(ParliamentarianTag.parliamentarian_id, ParliamentarianTag.tag_id)
+        .where(ParliamentarianTag.projeto_id == project.id)
+        .order_by(asc(ParliamentarianTag.parliamentarian_id))
+    ).all()
+
+    por_parlamentar: dict[int, List[int]] = {}
+    for parliamentarian_id, tag_id in linhas:
+        por_parlamentar.setdefault(int(parliamentarian_id), []).append(int(tag_id))
+    return [
+        ParliamentarianTagsOut(parliamentarian_id=pid, tag_ids=tag_ids)
+        for pid, tag_ids in por_parlamentar.items()
+    ]
+
+
+@router.put(
+    "/me/parliamentarians/{parliamentarian_id}/tags",
+    response_model=ParliamentarianTagsOut,
+    summary="Define as tags de um parlamentar, no projeto autenticado",
+)
+def set_my_parliamentarian_tags(
+    request: Request,
+    parliamentarian_id: int,
+    payload: ParliamentarianTagsUpdate,
+    db: Session = Depends(get_db),
+) -> ParliamentarianTagsOut:
+    """Substitui o conjunto inteiro de tags do parlamentar. Idempotente.
+
+    Substituir (e nao adicionar/remover uma a uma) espelha a tela, que edita a
+    lista toda e salva de uma vez — mesma politica de `word_cloud_terms`.
+    """
+    project = _get_project_from_token_email(request, db)
+
+    _exigir_politico_marcavel(
+        db, project, parliamentarian_id, get_marcacoes_config(db).tags_escopo
+    )
+
+    desejadas = list(dict.fromkeys(payload.tag_ids))
+    if len(desejadas) > MAX_TAGS_POR_PARLAMENTAR:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Um parlamentar pode ter no máximo {MAX_TAGS_POR_PARLAMENTAR} tags."
+            ),
+        )
+
+    if desejadas:
+        validas = set(
+            db.execute(
+                select(ProjectTag.id).where(
+                    ProjectTag.projeto_id == project.id,
+                    ProjectTag.id.in_(desejadas),
+                )
+            ).scalars()
+        )
+        if len(validas) != len(desejadas):
+            raise HTTPException(status_code=404, detail="Tag não encontrada.")
+
+    atuais = {
+        int(linha.tag_id): linha
+        for linha in db.execute(
+            select(ParliamentarianTag).where(
+                ParliamentarianTag.projeto_id == project.id,
+                ParliamentarianTag.parliamentarian_id == parliamentarian_id,
+            )
+        ).scalars()
+    }
+
+    for tag_id, linha in atuais.items():
+        if tag_id not in desejadas:
+            db.delete(linha)
+    for tag_id in desejadas:
+        if tag_id not in atuais:
+            db.add(
+                ParliamentarianTag(
+                    projeto_id=project.id,
+                    tag_id=tag_id,
+                    parliamentarian_id=parliamentarian_id,
+                )
+            )
+    db.commit()
+
+    return ParliamentarianTagsOut(
+        parliamentarian_id=parliamentarian_id,
+        tag_ids=desejadas,
+    )
+
+
+# O SIGNIFICADO de cada nível não existe aqui, e é assim de propósito: cada
+# assinante escolhe a própria regra e nunca a informa. Por isso não há nome de
+# campo, mensagem ou log que sugira o que 1, 2 ou 3 querem dizer.
+MENSAGEM_TETO_MAMUTOMETRO = "Limite atingido. Faça um upgrade do plano em 'Conta'."
+
+
+def _exigir_mamutometro_no_plano(
+    db: Session, project: Projetos, *, is_admin: bool = False
+) -> None:
+    """404 (não 403) quando o plano não tem a feature.
+
+    403 confirmaria que o recurso existe para quem não o tem — e a resposta
+    ficaria diferente da de um político fora do escopo, dando ao cliente um
+    jeito de distinguir os dois casos.
+
+    `is_admin` precisa chegar aqui resolvido: `services/feature_flags` define que
+    admin vê tudo que não está `off`, porque o papel é prévia e conferência, não
+    assinatura. Sem isso, a conta que confere a feature em produção — onde não há
+    staging — veria a escala na tela e tomaria 404 ao marcar.
+    """
+    if not mamutometro_habilitado(db, project, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="Recurso não encontrado.")
+
+
+def _exigir_politico_marcavel(
+    db: Session, project: Projetos, parliamentarian_id: int, escopo: str
+) -> None:
+    if not is_parliamentarian_visible(db, parliamentarian_id):
+        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+    if not esta_no_escopo(db, int(project.id), parliamentarian_id, escopo):
+        raise HTTPException(status_code=404, detail="Parlamentar não encontrado.")
+
+
+@router.get(
+    "/me/mamutometro",
+    response_model=List[MamutometroOut],
+    summary="Marcações do mamutômetro do projeto autenticado",
+)
+def list_my_mamutometro(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> List[MamutometroOut]:
+    """Devolve o nível gravado, sem recorte pela régua vigente.
+
+    Se o admin reduzir a régua, a marcação continua aqui como está — quem
+    apara para exibição é a tela (`min(level, max_level)`). Configuração nunca
+    destrói dado do assinante.
+    """
+    project = _get_project_from_token_email(request, db)
+    linhas = db.execute(
+        select(ProjectMamutometro)
+        .where(ProjectMamutometro.projeto_id == project.id)
+        .order_by(asc(ProjectMamutometro.parliamentarian_id))
+    ).scalars()
+    return [
+        MamutometroOut(
+            parliamentarian_id=int(linha.parliamentarian_id), level=int(linha.level)
+        )
+        for linha in linhas
+    ]
+
+
+@router.put(
+    "/me/parliamentarians/{parliamentarian_id}/mamutometro",
+    response_model=MamutometroOut,
+    summary="Marca o mamutômetro de um parlamentar",
+)
+def set_my_mamutometro(
+    request: Request,
+    parliamentarian_id: int,
+    payload: MamutometroUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> MamutometroOut:
+    project = _get_project_from_token_email(request, db)
+    is_admin = resolve_ghost_admin(request, authorization) is not None
+    _exigir_mamutometro_no_plano(db, project, is_admin=is_admin)
+
+    config = get_marcacoes_config(db)
+    _exigir_politico_marcavel(
+        db, project, parliamentarian_id, config.mamutometro_escopo
+    )
+
+    max_level = int(config.mamutometro_max_level)
+    if not 1 <= int(payload.level) <= max_level:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Escolha um valor entre 1 e {max_level}.",
+        )
+
+    existente = db.execute(
+        select(ProjectMamutometro).where(
+            ProjectMamutometro.projeto_id == project.id,
+            ProjectMamutometro.parliamentarian_id == parliamentarian_id,
+        )
+    ).scalar_one_or_none()
+
+    if existente is None:
+        # O teto do plano trava CRIAR, nunca ALTERAR: quem já marcou não pode
+        # ficar preso a um nível porque o admin reduziu o limite depois.
+        limite = mamutometro_limite(project)
+        if limite is not None:
+            usados = db.execute(
+                select(func.count())
+                .select_from(ProjectMamutometro)
+                .where(ProjectMamutometro.projeto_id == project.id)
+            ).scalar_one()
+            if int(usados) >= int(limite):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=MENSAGEM_TETO_MAMUTOMETRO,
+                )
+        existente = ProjectMamutometro(
+            projeto_id=project.id,
+            parliamentarian_id=parliamentarian_id,
+            level=int(payload.level),
+        )
+        db.add(existente)
+    else:
+        existente.level = int(payload.level)
+
+    db.commit()
+    return MamutometroOut(parliamentarian_id=parliamentarian_id, level=int(payload.level))
+
+
+@router.delete(
+    "/me/parliamentarians/{parliamentarian_id}/mamutometro",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a marcação do mamutômetro de um parlamentar",
+)
+def delete_my_mamutometro(
+    request: Request,
+    parliamentarian_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Remover não depende de escopo nem de plano: quem marcou pode desmarcar,
+    mesmo que a configuração tenha mudado desde então."""
+    project = _get_project_from_token_email(request, db)
+    linha = db.execute(
+        select(ProjectMamutometro).where(
+            ProjectMamutometro.projeto_id == project.id,
+            ProjectMamutometro.parliamentarian_id == parliamentarian_id,
+        )
+    ).scalar_one_or_none()
+    if linha is not None:
+        db.delete(linha)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/me/mamutometro",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Apaga todas as marcações do mamutômetro",
+)
+def delete_all_my_mamutometro(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Apagar é apagar: `DELETE`, não `deleted_at`."""
+    project = _get_project_from_token_email(request, db)
+    for linha in db.execute(
+        select(ProjectMamutometro).where(ProjectMamutometro.projeto_id == project.id)
+    ).scalars():
+        db.delete(linha)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/{project_id}/favorites",
     response_model=List[ProjectFavoriteOut],
@@ -872,19 +1510,26 @@ def list_project_favorites(
         None,
         description="Filtra por favoritos atualizados até este instante (inclusive).",
     ),
-    sort_by: Literal["created_at", "updated_at", "id", "parliamentarian_id"] = Query(
-        default="created_at",
-        description="Campo usado para ordenação.",
+    sort_by: Literal[
+        "position", "created_at", "updated_at", "id", "parliamentarian_id"
+    ] = Query(
+        default="position",
+        description=(
+            "Campo usado para ordenação. 'position' é a ordem pessoal do assinante: "
+            "sempre crescente, com quem nunca foi ordenado no fim."
+        ),
     ),
     sort_order: Literal["asc", "desc"] = Query(
         default="desc",
-        description="Direção da ordenação.",
+        description="Direção da ordenação. Ignorado quando sort_by='position'.",
     ),
-) -> List[ProjetosParliamentarian]:
+) -> List[ProjectFavoriteOut]:
     """Retorna os parlamentares marcados como favoritos por um projeto específico."""
     project = _get_project_from_token_email_for_path(request, db, project_id)
 
-    stmt = select(ProjetosParliamentarian).where(ProjetosParliamentarian.projeto_id == project.id)
+    stmt = select(*_colunas_de_favorito(db)).where(
+        ProjetosParliamentarian.projeto_id == project.id
+    )
     if created_from is not None:
         stmt = stmt.where(ProjetosParliamentarian.created_at >= created_from)
     if created_to is not None:
@@ -893,17 +1538,9 @@ def list_project_favorites(
         stmt = stmt.where(ProjetosParliamentarian.updated_at >= updated_from)
     if updated_to is not None:
         stmt = stmt.where(ProjetosParliamentarian.updated_at <= updated_to)
-    sortable_columns = {
-        "created_at": ProjetosParliamentarian.created_at,
-        "updated_at": ProjetosParliamentarian.updated_at,
-        "id": ProjetosParliamentarian.id,
-        "parliamentarian_id": ProjetosParliamentarian.parliamentarian_id,
-    }
-    sort_column = sortable_columns[sort_by]
-    stmt = stmt.order_by(asc(sort_column) if sort_order == "asc" else desc(sort_column))
+    stmt = _apply_favorite_ordering(db, stmt, sort_by, sort_order)
     stmt = stmt.offset(offset).limit(limit)
-    favorites = db.execute(stmt)
-    return favorites.scalars().all()
+    return [ProjectFavoriteOut(**linha) for linha in db.execute(stmt).mappings()]
 
 
 @router.post(

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Parlamentar, CasaLegislativa } from '@/types/parlamentar';
 import { getParliamentarianCatalogConfig, listParliamentarians } from '@/api/endpoints';
-import type { ParliamentarianSituation } from '@/api/types';
+import type { ParliamentarianSituation, ProjectTagOut } from '@/api/types';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,10 +30,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Search, Filter, PlusCircle, X, ExternalLink, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  PlusCircle,
+  X,
+  ExternalLink,
+  Loader2,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUp,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { includesNormalizedSearch, sortByNome } from '@/lib/utils';
 import { PLANS_URL } from '@/components/auth/config';
+import { TagChips, TagEditor, TagFilter } from './TagEditor';
+import { Mamutometro } from './Mamutometro';
 
 type SituacaoFilter = ParliamentarianSituation;
 
@@ -99,6 +111,32 @@ interface ParlamentarSelectorProps {
     camara: { used: number; limit: number; limit_reached: boolean };
     senado: { used: number; limit: number; limit_reached: boolean };
   } | null;
+
+  onReorderParlamentares?: (orderedIds: string[]) => void;
+  reorderPending?: boolean;
+  /**
+   * Tags livres do assinante (SPEC-001). A PRESENCA desta prop e o portao da
+   * feature — a pagina so a passa com a flag ligada, do mesmo jeito que faz com
+   * onReorderParlamentares. Ausente = nada de tags na tela.
+   */
+  tagsPessoais?: {
+    tags: ProjectTagOut[];
+    tagIdsPorParlamentar: Record<string, number[]>;
+    filtroTagId: number | null;
+    maxTagsPorParlamentar: number;
+    salvando: boolean;
+    onFiltrarPorTag: (tagId: number | null) => void;
+    onAlterarTags: (parlamentarId: string, tagIds: number[]) => void;
+    onCriarTag: (nome: string, parlamentarId: string) => void;
+  } | null;
+  mamutometro?: {
+    maxLevel: number;
+    noticeText: string;
+    /** parlamentarId -> nivel gravado */
+    niveis: Record<string, number>;
+    salvando: boolean;
+    onChange: (parlamentarId: string, level: number | null) => void;
+  } | null;
 }
 
 export function ParlamentarSelector({
@@ -114,6 +152,10 @@ export function ParlamentarSelector({
   monitoradosQuotaLoading = false,
   recentlyAdded = null,
   monitoradosQuota = null,
+  onReorderParlamentares,
+  reorderPending = false,
+  tagsPessoais = null,
+  mamutometro = null,
 }: ParlamentarSelectorProps) {
   const navigate = useNavigate();
   const monitoradosCardRef = useRef<HTMLDivElement>(null);
@@ -222,9 +264,39 @@ export function ParlamentarSelector({
   }, [allParlamentares, searchTerm, partidoFilter, ufFilter, legislaturaFilter, selectedSituacao, parlamentaresSelecionados]);
 
   const parlamentaresSelecionadosOrdenados = useMemo(
-    () => sortByNome(parlamentaresSelecionados),
-    [parlamentaresSelecionados],
+    () =>
+      onReorderParlamentares != null
+        ? parlamentaresSelecionados
+        : sortByNome(parlamentaresSelecionados),
+    [parlamentaresSelecionados, onReorderParlamentares],
   );
+
+  const filtroTagAtivo = tagsPessoais?.filtroTagId ?? null;
+  const parlamentaresVisiveis = useMemo(() => {
+    if (tagsPessoais == null || filtroTagAtivo == null) {
+      return parlamentaresSelecionadosOrdenados;
+    }
+    return parlamentaresSelecionadosOrdenados.filter((p) =>
+      (tagsPessoais.tagIdsPorParlamentar[p.id] ?? []).includes(filtroTagAtivo),
+    );
+  }, [parlamentaresSelecionadosOrdenados, tagsPessoais, filtroTagAtivo]);
+
+  // Ordenar com filtro ligado enviaria a lista PARCIAL ao endpoint, que exige a
+  // completa e responderia 422. Some os controles enquanto filtra.
+  const podeOrdenar =
+    onReorderParlamentares != null &&
+    filtroTagAtivo == null &&
+    parlamentaresSelecionadosOrdenados.length > 1;
+  const ultimoIndiceMonitorado = parlamentaresSelecionadosOrdenados.length - 1;
+
+  const moverMonitorado = (deIndice: number, paraIndice: number) => {
+    if (!onReorderParlamentares) return;
+    if (paraIndice < 0 || paraIndice > ultimoIndiceMonitorado) return;
+    const proxima = [...parlamentaresSelecionadosOrdenados];
+    const [movido] = proxima.splice(deIndice, 1);
+    proxima.splice(paraIndice, 0, movido);
+    onReorderParlamentares(proxima.map((p) => p.id));
+  };
   const quotaUsed =
     typeof monitoradosUsed === 'number' ? monitoradosUsed : parlamentaresSelecionados.length;
   const monitoradosLimitReached =
@@ -599,7 +671,16 @@ export function ParlamentarSelector({
               </div>
             ) : (
             <div className="flex flex-col gap-2 pr-4">
-              {parlamentaresSelecionadosOrdenados.map((parlamentar) => (
+              {tagsPessoais && tagsPessoais.tags.length > 0 && (
+                <div className="mb-1">
+                  <TagFilter
+                    tags={tagsPessoais.tags}
+                    selectedTagId={tagsPessoais.filtroTagId}
+                    onSelect={tagsPessoais.onFiltrarPorTag}
+                  />
+                </div>
+              )}
+              {parlamentaresVisiveis.map((parlamentar, indice) => (
                 <div
                   key={parlamentar.id}
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors group cursor-pointer"
@@ -620,9 +701,94 @@ export function ParlamentarSelector({
                           {parlamentar.partido.sigla} - {parlamentar.uf}
                         </span>
                       </div>
+                      {tagsPessoais && (
+                        <div className="mt-1">
+                          <TagChips
+                            tags={tagsPessoais.tags.filter((tag) =>
+                              (tagsPessoais.tagIdsPorParlamentar[parlamentar.id] ?? []).includes(
+                                tag.id,
+                              ),
+                            )}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col items-end gap-1">
+                    {mamutometro && (
+                      <Mamutometro
+                        maxLevel={mamutometro.maxLevel}
+                        level={mamutometro.niveis[parlamentar.id] ?? null}
+                        onChange={(nivel) => mamutometro.onChange(parlamentar.id, nivel)}
+                        disabled={mamutometro.salvando}
+                        noticeText={mamutometro.noticeText}
+                        parlamentarNome={parlamentar.nome}
+                      />
+                    )}
+                    <div className="flex items-center gap-1">
+                    {tagsPessoais && (
+                      <TagEditor
+                        tags={tagsPessoais.tags}
+                        selectedTagIds={
+                          tagsPessoais.tagIdsPorParlamentar[parlamentar.id] ?? []
+                        }
+                        onChange={(tagIds) =>
+                          tagsPessoais.onAlterarTags(parlamentar.id, tagIds)
+                        }
+                        onCreateTag={(nome) =>
+                          tagsPessoais.onCriarTag(nome, parlamentar.id)
+                        }
+                        disabled={tagsPessoais.salvando}
+                        maxTagsPerParliamentarian={tagsPessoais.maxTagsPorParlamentar}
+                        parlamentarNome={parlamentar.nome}
+                      />
+                    )}
+                    {podeOrdenar && (
+                      // Setas em vez de arrastar: funciona no toque, funciona no
+                      // teclado e não exige biblioteca de drag-and-drop nova.
+                      // Sempre visíveis (não só no hover) pelo mesmo motivo.
+                      <div className="flex items-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === 0 || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, 0);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para o topo`}
+                        >
+                          <ChevronsUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === 0 || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, indice - 1);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para cima`}
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={indice === ultimoIndiceMonitorado || reorderPending}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moverMonitorado(indice, indice + 1);
+                          }}
+                          aria-label={`Mover ${parlamentar.nome} para baixo`}
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -649,6 +815,7 @@ export function ParlamentarSelector({
                     >
                       <X className="h-4 w-4" />
                     </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -658,6 +825,15 @@ export function ParlamentarSelector({
                   <p className="text-sm mt-1">Adicione parlamentares da lista ao lado.</p>
                 </div>
               )}
+              {parlamentaresSelecionados.length > 0 &&
+                parlamentaresVisiveis.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>Nenhum monitorado com essa tag.</p>
+                    <p className="text-sm mt-1">
+                      Clique na tag de novo para ver todos.
+                    </p>
+                  </div>
+                )}
             </div>
             )}
           </ScrollArea>

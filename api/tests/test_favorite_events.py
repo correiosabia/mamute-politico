@@ -39,7 +39,8 @@ def _session() -> Session:
         )
         conn.exec_driver_sql(
             "create table projetos_parliamentarian (id integer primary key, projeto_id integer, "
-            "parliamentarian_id integer, created_at datetime, updated_at datetime, deleted_at datetime)"
+            "parliamentarian_id integer, position integer, created_at datetime, "
+            "updated_at datetime, deleted_at datetime)"
         )
         conn.exec_driver_sql(
             """create table usage_events (id integer primary key, projeto_id integer,

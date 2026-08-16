@@ -431,6 +431,22 @@ def _apply_situacao_filter(stmt, situacao: str):
     return stmt
 
 
+def is_parliamentarian_visible(db: Session, parliamentarian_id: int) -> bool:
+    """Diz se o parlamentar aparece sob a política de catálogo vigente.
+
+    Existe para manter a política num lugar só: quem grava marcação pessoal
+    (tag, e adiante voto) não pode alcançar quem o catálogo esconde. Reescrever
+    o predicado fora daqui é exatamente como as duas visões divergem — e a
+    divergência viraria um oráculo de existência para ids ocultos.
+    """
+    config = get_parliamentarian_catalog_config()
+    for situacao in config.allowed_situations:
+        stmt = select(Parliamentarian.id).where(Parliamentarian.id == parliamentarian_id)
+        if db.execute(_apply_situacao_filter(stmt, situacao.value)).first() is not None:
+            return True
+    return False
+
+
 @router.get("/catalog-config", response_model=ParliamentarianCatalogConfigOut)
 def get_catalog_config() -> ParliamentarianCatalogConfigOut:
     """Retorna a política de visibilidade em vigor para o cliente autenticado."""

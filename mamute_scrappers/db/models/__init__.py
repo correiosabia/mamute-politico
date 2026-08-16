@@ -9,6 +9,8 @@ from .committee import Committee
 from .electoral_history import ElectoralHistory
 from .committee_attendance import CommitteeAttendance
 from .feature_flag import FeatureFlag, FeatureFlagTier
+from .marcacoes_config import MarcacoesConfig
+from .personal_marks import ParliamentarianTag, ProjectMamutometro, ProjectTag
 from .parliamentarian import Parliamentarian
 from .parliamentary_amendment import ParliamentaryAmendment
 from .plenary_attendance import PlenaryAttendance
@@ -36,9 +38,13 @@ __all__ = [
     "FeatureFlag",
     "FeatureFlagTier",
     "Parliamentarian",
+    "MarcacoesConfig",
+    "ParliamentarianTag",
     "ParliamentarianSocialNetwork",
     "ParliamentaryAmendment",
     "PlenaryAttendance",
+    "ProjectMamutometro",
+    "ProjectTag",
     "Projetos",
     "ProjetosParliamentarian",
     "Proposition",

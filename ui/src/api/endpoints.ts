@@ -9,6 +9,10 @@ import type {
   SpeechesTranscriptOut,
   ProjectFavoriteOut,
   ProjectFavoriteQuotaOut,
+  ProjectTagOut,
+  ParliamentarianTagsOut,
+  MamutometroOut,
+  MarcacoesSettingsOut,
   AuthorsPropositionOut,
   SpeechAnalysisSummaryOut,
   SpeechAnalysisOut,
@@ -343,6 +347,79 @@ export function addMyProjectFavorite(parliamentarianId: number): Promise<Project
 export function removeMyProjectFavorite(parliamentarianId: number): Promise<void> {
   return request<void>(`/projects/me/favorites/${parliamentarianId}`, {
     method: 'DELETE',
+  });
+}
+
+/** Tags livres do assinante (SPEC-001). Não consomem cota de plano. */
+export function listMyProjectTags(): Promise<ProjectTagOut[]> {
+  return request<ProjectTagOut[]>('/projects/me/tags');
+}
+
+export function createMyProjectTag(name: string): Promise<ProjectTagOut> {
+  return request<ProjectTagOut>('/projects/me/tags', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function renameMyProjectTag(tagId: number, name: string): Promise<ProjectTagOut> {
+  return request<ProjectTagOut>(`/projects/me/tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteMyProjectTag(tagId: number): Promise<void> {
+  return request<void>(`/projects/me/tags/${tagId}`, { method: 'DELETE' });
+}
+
+export function listMyParliamentarianTags(): Promise<ParliamentarianTagsOut[]> {
+  return request<ParliamentarianTagsOut[]>('/projects/me/parliamentarian-tags');
+}
+
+/** Substitui o conjunto inteiro de tags de um parlamentar. Idempotente. */
+export function setMyParliamentarianTags(
+  parliamentarianId: number,
+  tagIds: number[]
+): Promise<ParliamentarianTagsOut> {
+  return request<ParliamentarianTagsOut>(
+    `/projects/me/parliamentarians/${parliamentarianId}/tags`,
+    { method: 'PUT', body: JSON.stringify({ tag_ids: tagIds }) }
+  );
+}
+
+/** Config das marcações já resolvida para o usuário atual (SPEC-001). */
+export function getMarcacoesSettings(): Promise<MarcacoesSettingsOut> {
+  return request<MarcacoesSettingsOut>('/settings/marcacoes');
+}
+
+export function listMyMamutometro(): Promise<MamutometroOut[]> {
+  return request<MamutometroOut[]>('/projects/me/mamutometro');
+}
+
+export function setMyMamutometro(
+  parliamentarianId: number,
+  level: number
+): Promise<MamutometroOut> {
+  return request<MamutometroOut>(
+    `/projects/me/parliamentarians/${parliamentarianId}/mamutometro`,
+    { method: 'PUT', body: JSON.stringify({ level }) }
+  );
+}
+
+export function clearMyMamutometro(parliamentarianId: number): Promise<void> {
+  return request<void>(
+    `/projects/me/parliamentarians/${parliamentarianId}/mamutometro`,
+    { method: 'DELETE' }
+  );
+}
+
+export function reorderMyProjectFavorites(
+  orderedParliamentarianIds: number[]
+): Promise<ProjectFavoriteOut[]> {
+  return request<ProjectFavoriteOut[]>('/projects/me/favorites/order', {
+    method: 'PATCH',
+    body: JSON.stringify({ ordered_parliamentarian_ids: orderedParliamentarianIds }),
   });
 }
 

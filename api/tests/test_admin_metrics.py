@@ -42,7 +42,7 @@ def _make_session() -> Session:
         )
         conn.exec_driver_sql(
             """create table projetos_parliamentarian (id integer primary key,
-               projeto_id integer, parliamentarian_id integer, created_at datetime,
+               projeto_id integer, parliamentarian_id integer, position integer, created_at datetime,
                updated_at datetime, deleted_at datetime)"""
         )
         conn.exec_driver_sql(
@@ -127,7 +127,7 @@ def _session_limits(qtd_termos: int, favoritos: int, consultas: int, limite_ia: 
         conn.exec_driver_sql("create table parliamentarian (id integer primary key, name text)")
         conn.exec_driver_sql(
             """create table projetos_parliamentarian (id integer primary key,
-               projeto_id integer, parliamentarian_id integer, created_at datetime,
+               projeto_id integer, parliamentarian_id integer, position integer, created_at datetime,
                updated_at datetime, deleted_at datetime)"""
         )
         conn.exec_driver_sql(

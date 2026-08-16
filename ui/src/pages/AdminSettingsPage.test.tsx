@@ -16,6 +16,14 @@ vi.mock('@/api/admin', () => ({
   // A pagina passou a montar o painel de funcionalidades.
   fetchFeatureFlagsAdmin: vi.fn().mockResolvedValue([]),
   saveFeatureFlag: vi.fn(),
+  // ...e o painel de marcacoes pessoais.
+  fetchMarcacoesConfig: vi.fn().mockResolvedValue({
+    mamutometro_max_level: 3,
+    mamutometro_notice_text: 'aviso',
+    mamutometro_escopo: 'monitorados',
+    tags_escopo: 'todos',
+  }),
+  saveMarcacoesConfig: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
@@ -122,7 +130,9 @@ describe('AdminSettingsPage — filtro da nuvem de palavras', () => {
     await adicionar(/stopwords/i, 'gente');
     expect(mockedSave).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /salvar/i }));
+    // Nome exato: a pagina passou a ter um segundo botao de salvar, o das
+    // marcacoes pessoais. /salvar/i casaria com os dois.
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1));
     expect(mockedSave.mock.calls[0][0]).toEqual({
