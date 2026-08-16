@@ -168,11 +168,22 @@ const DashboardPage = () => {
           ) : (
             <div className="flex flex-col gap-[27px] md:flex-row md:flex-wrap">
               {monitorados.map((parlamentar) => (
-                <Link
+                // Card é DIV com "stretched link", não <a> envolvendo tudo: botão
+                // dentro de anchor é HTML inválido, e `stopPropagation` nos
+                // controles não cancela a ATIVAÇÃO nativa do anchor — o clique
+                // num mamute abria o diálogo e o browser navegava por cima
+                // (preventDefault é quem cancela, não stopPropagation). O Link
+                // absoluto cobre o card; a linha de marcações fica ACIMA dele
+                // (z-10), então clique nos controles nunca toca o anchor.
+                <div
                   key={parlamentar.id}
-                  to={`/parlamentar/${parlamentar.id}`}
-                  className="flex min-w-0 w-full items-center gap-3 rounded-[28px] bg-white px-4 py-3 shadow-[0_4px_4px_rgba(0,0,0,0.25)] transition-[transform,background-color] duration-200 ease-out hover:-translate-y-1 hover:bg-[#f9f9f9] md:w-auto md:min-w-[200px]"
+                  className="relative flex min-w-0 w-full items-center gap-3 rounded-[28px] bg-white px-4 py-3 shadow-[0_4px_4px_rgba(0,0,0,0.25)] transition-[transform,background-color] duration-200 ease-out hover:-translate-y-1 hover:bg-[#f9f9f9] md:w-auto md:min-w-[200px]"
                 >
+                  <Link
+                    to={`/parlamentar/${parlamentar.id}`}
+                    aria-label={`Abrir perfil de ${parlamentar.nome}`}
+                    className="absolute inset-0 rounded-[28px]"
+                  />
                   <Avatar className="h-[50px] w-[50px] shrink-0">
                     <AvatarImage src={parlamentar.foto} alt={parlamentar.nome} />
                     <AvatarFallback>{parlamentar.nome[0]}</AvatarFallback>
@@ -191,11 +202,9 @@ const DashboardPage = () => {
                         {parlamentar.partido.sigla} - {parlamentar.uf}
                       </span>
                     </div>
-                    {/* Marcações pessoais: mesmos componentes e gestos da Seleção.
-                        Clique nos controles não navega (eles fazem stopPropagation);
-                        clique no resto do card segue indo ao perfil. Todo card aqui
-                        é monitorado, então o escopo `monitorados` é satisfeito. */}
-                    <div className="mt-1">
+                    {/* Todo card aqui é monitorado, então o escopo `monitorados`
+                        é satisfeito por definição. */}
+                    <div className="relative z-10 mt-1">
                       <MarcacoesInline
                         parlamentarId={parlamentar.id}
                         parlamentarNome={parlamentar.nome}
@@ -205,7 +214,7 @@ const DashboardPage = () => {
                       />
                     </div>
                   </div>
-                </Link>
+                </div>
               ))}
               {monitorados.length === 0 && (
                 <p className="text-sm text-[#383838]/60 py-4">Nenhum parlamentar monitorado.</p>

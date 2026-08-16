@@ -90,6 +90,34 @@ describe('DashboardPage — marcações pessoais nos cards de monitorados', () =
     });
   });
 
+  it('nenhum controle de marcação vive dentro do link do card', async () => {
+    // Regressão real: o card era um <a> envolvendo os controles, e
+    // stopPropagation não cancela a ativação nativa do anchor — clicar num
+    // mamute abria o diálogo e o browser navegava pro perfil por cima dele.
+    // O contrato estrutural é: controle interativo NUNCA dentro de anchor.
+    flagState.marcacoes_pessoais = true;
+    flagState.mamutometro = true;
+    await renderDashboard();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('group', { name: /Mamutômetro de Alan Rick/i }),
+      ).toBeInTheDocument();
+    });
+
+    const controles = [
+      ...screen.getAllByRole('button', { name: /Marcar \d de \d em Alan Rick/i }),
+      screen.getByRole('button', { name: /Editar tags de Alan Rick/i }),
+    ];
+    for (const controle of controles) {
+      expect(controle.closest('a')).toBeNull();
+    }
+    // E o card continua navegável: o link pro perfil existe, como overlay.
+    expect(
+      screen.getByRole('link', { name: /Abrir perfil de Alan Rick/i }),
+    ).toBeInTheDocument();
+  });
+
   it('flag global ligada mas plano sem a feature: escala não aparece', async () => {
     flagState.mamutometro = true;
     const endpoints = await import('@/api/endpoints');
