@@ -70,6 +70,7 @@ def _session_com_flags(linhas: list[tuple[str, str]]) -> Session:
             create table feature_flag_tier (
                 flag_key text not null,
                 tier_id integer not null,
+                mode text not null default 'liberado',
                 created_at datetime not null default current_timestamp,
                 primary key (flag_key, tier_id)
             )
