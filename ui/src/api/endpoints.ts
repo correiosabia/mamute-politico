@@ -534,13 +534,13 @@ export function getElectoralHistory(
 }
 
 /**
- * Estado das feature flags já resolvido para o usuário atual.
- *
- * O backend aplica o tri-estado (off/admins/all) e devolve booleano. Chave
- * ausente vale `off`. Consumido via `useFeatureFlag`.
+ * Acesso às feature flags já resolvido para o usuário atual:
+ * 'liberada' | 'bloqueada' (cadeado + prévia desfocada, CS-58) | 'oculta'.
+ * Chave ausente vale 'oculta'. Consumido via `useFeatureFlag` (booleano) e
+ * `useFeatureAccess` (tri-valor).
  */
-export function fetchFeatureFlags(): Promise<Record<string, boolean>> {
-  return request<Record<string, boolean>>('/settings/feature-flags');
+export function fetchFeatureFlags(): Promise<Record<string, string>> {
+  return request<Record<string, string>>('/settings/feature-flags');
 }
 
 /** Planos de ação (entes beneficiários) de uma emenda Pix. Vazio para as demais. */

@@ -9,6 +9,7 @@ const getBaseUrl = (): string => {
 };
 
 import { JWT_TOKEN_KEY } from '@/components/auth/config';
+import { previewHeaderValue } from '@/lib/featurePreview';
 
 /** Ghost Members JWT: from localStorage (same key as auth flow) then env fallback. Used for all API requests. */
 const getToken = (): string | undefined => {
@@ -44,6 +45,12 @@ export async function request<T>(
   };
   if (token) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+  // Preview de admin "ver como bloqueada" (CS-58): o backend so honra o
+  // header para admin; para os demais e inerte.
+  const preview = previewHeaderValue();
+  if (preview) {
+    (headers as Record<string, string>)['X-Feature-Preview'] = preview;
   }
 
   const res = await fetch(url, {

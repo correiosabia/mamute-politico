@@ -4,11 +4,12 @@ import { fetchFeatureFlags } from '@/api/endpoints';
 import type { FeatureFlagKey } from '@/lib/featureFlags';
 
 /**
- * Estado da feature flag para o usuário atual.
+ * Estado da feature flag para o usuário atual, como booleano.
  *
- * O backend já resolve o tri-estado (`off`/`admins`/`all`) e devolve booleano,
- * então aqui não há regra a repetir — e o call site fica com o menor formato
- * possível, que é o que torna a remoção da flag barata.
+ * O backend já resolve tri-estado + modo do plano e devolve
+ * `'liberada' | 'bloqueada' | 'oculta'`; aqui só 'liberada' vale `true` —
+ * cadeado é vitrine, não acesso. Pontos de montagem que sabem renderizar o
+ * estado 'bloqueada' usam `useFeatureAccess`.
  *
  * Uma única query compartilhada: N chamadas do hook na mesma tela não viram N
  * requests. Enquanto carrega devolve `false` — é preferível a feature aparecer
@@ -25,5 +26,5 @@ export function useFeatureFlag(key: FeatureFlagKey): boolean {
     retry: false,
   });
 
-  return data?.[key] === true;
+  return data?.[key] === 'liberada';
 }
