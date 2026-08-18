@@ -1,7 +1,7 @@
 """add feature_flag_tier mode
 
-Revision ID: d4e5f6a7b8c9
-Revises: c3d4e5f6a9b0
+Revision ID: b8f4d2a91c57
+Revises: 6e50fdbccf48
 Create Date: 2026-08-18
 
 CS-58: o vinculo plano x feature deixa de ser binario (linha presente =
@@ -16,8 +16,8 @@ preserva o comportamento atual ate o admin configurar o cadeado.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "d4e5f6a7b8c9"
-down_revision = "c3d4e5f6a9b0"
+revision = "b8f4d2a91c57"
+down_revision = "6e50fdbccf48"
 branch_labels = None
 depends_on = None
 
