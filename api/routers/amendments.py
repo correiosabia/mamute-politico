@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, field_serializer
 from sqlalchemy import asc, desc, func, select
 from sqlalchemy.orm import Session
@@ -20,11 +20,13 @@ try:
     from ..db.models.amendment_action_plan import AmendmentActionPlan
     from ..db.models.parliamentary_amendment import ParliamentaryAmendment
     from ..dependencies import get_db
+    from ..feature_gate import PREVIEW_ROWS, FeatureAccess, emendas_access
 except (ImportError, ValueError):
     # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.amendment_action_plan import AmendmentActionPlan
     from db.models.parliamentary_amendment import ParliamentaryAmendment
     from dependencies import get_db
+    from feature_gate import PREVIEW_ROWS, FeatureAccess, emendas_access
 
 router = APIRouter(prefix="/amendments", tags=["amendments"])
 
@@ -142,8 +144,15 @@ def get_amendments_summary(
     parliamentarian_id: int = Query(..., description="Parlamentar dono das emendas"),
     year: Optional[int] = Query(None, description="Ano civil; omitido soma todos"),
     db: Session = Depends(get_db),
+    access: FeatureAccess = Depends(emendas_access),
 ) -> AmendmentSummaryOut:
     """Totais de valor empenhado e pago de um parlamentar, por ano."""
+    if not access.full:
+        # O agregado E o produto: nao ha previa de um numero so. O front nem
+        # chama esta rota com o recurso bloqueado — mostra o cadeado no card.
+        raise HTTPException(
+            status_code=403, detail="Recurso não disponível no seu plano."
+        )
     stmt = select(
         func.count(ParliamentaryAmendment.id),
         func.sum(ParliamentaryAmendment.committed_value),
@@ -172,8 +181,17 @@ def list_amendments(
     sort_by: AmendmentSortBy = Query("committed_value"),
     sort_order: SortOrder = Query("desc"),
     db: Session = Depends(get_db),
+    access: FeatureAccess = Depends(emendas_access),
 ) -> List[AmendmentOut]:
     """Lista emendas, opcionalmente filtradas por parlamentar e ano."""
+    if not access.full:
+        # PREVIA (CS-58): mantem o contexto da tela (parlamentar/ano), mas
+        # pina ordenacao e corte no servidor. Honrar limit/offset/sort aqui
+        # viraria oraculo de extracao via paginacao.
+        limit = PREVIEW_ROWS
+        offset = 0
+        sort_by = "committed_value"
+        sort_order = "desc"
     # Subquery, e nao join direto: uma emenda Pix tem varios planos de acao
     # (mediana 8), e o join multiplicaria a linha da emenda.
     agregado = (
@@ -230,6 +248,7 @@ def list_amendments(
 def list_action_plans(
     amendment_code: str,
     db: Session = Depends(get_db),
+    access: FeatureAccess = Depends(emendas_access),
 ) -> List[ActionPlanOut]:
     """Planos de acao (entes beneficiarios) de uma emenda Pix.
 
@@ -246,6 +265,8 @@ def list_action_plans(
             AmendmentActionPlan.id_plano_acao,
         )
     )
-    return [
-        ActionPlanOut.model_validate(row) for row in db.execute(stmt).scalars()
-    ]
+    linhas = list(db.execute(stmt).scalars())
+    if not access.full:
+        # PREVIA (CS-58): corte fixo no servidor, ordem ja deterministica.
+        linhas = linhas[:PREVIEW_ROWS]
+    return [ActionPlanOut.model_validate(row) for row in linhas]
