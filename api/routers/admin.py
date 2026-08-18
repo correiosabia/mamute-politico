@@ -496,9 +496,10 @@ class FeatureFlagOut(BaseModel):
     key: str
     state: str
     updated_at: Optional[datetime] = None
-    # Quantos planos ativos tem a feature ligada. Denuncia o caso silencioso:
-    # flag em `all` com zero planos nao aparece para ninguem.
-    tiers_ligados: int = 0
+    # Quantos planos ativos liberam / mostram cadeado. Denuncia o caso
+    # silencioso: flag em `all` sem nenhum plano nao aparece para ninguem.
+    tiers_liberados: int = 0
+    tiers_cadeado: int = 0
     tiers_total: int = 0
 
 
@@ -526,7 +527,8 @@ def read_feature_flags_admin(
             "key": key,
             "state": state,
             "updated_at": quando.get(key),
-            "tiers_ligados": ligados.get(key, 0),
+            "tiers_liberados": ligados.get(key, {}).get("liberado", 0),
+            "tiers_cadeado": ligados.get(key, {}).get("cadeado", 0),
             "tiers_total": total,
         }
         for key, state in sorted(get_feature_flag_states(db).items())
@@ -557,14 +559,20 @@ def update_feature_flag_route(
 
 
 class TierFeaturesUpdate(BaseModel):
-    """Lista completa de features liberadas para o plano."""
+    """Mapa completo recurso -> modo do plano. Salvar substitui tudo.
 
-    features: list[str] = Field(default_factory=list)
+    Chave ausente = oculto no plano; 'cadeado' = entrada visivel com previa
+    desfocada (CS-58); 'liberado' = acesso pleno.
+    """
+
+    features: dict[str, Literal["liberado", "cadeado"]] = Field(
+        default_factory=dict
+    )
 
 
 class TierFeaturesOut(BaseModel):
     tier_id: int
-    features: list[str]
+    features: dict[str, str]
 
 
 @router.get("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
@@ -584,7 +592,7 @@ def read_tier_features(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
         )
-    return {"tier_id": tier_id, "features": sorted(enabled_flags_for_tier(db, tier_id))}
+    return {"tier_id": tier_id, "features": enabled_flags_for_tier(db, tier_id)}
 
 
 @router.put("/tiers/{tier_id}/features", response_model=TierFeaturesOut)
@@ -600,7 +608,7 @@ def update_tier_features(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tier não encontrado."
         )
 
-    before = sorted(enabled_flags_for_tier(db, tier_id))
+    before = enabled_flags_for_tier(db, tier_id)
     after = set_tier_flags(db, tier_id, payload.features)
 
     _log_admin_action(

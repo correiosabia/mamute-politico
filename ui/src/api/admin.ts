@@ -365,8 +365,10 @@ export interface FeatureFlagAdminOut {
   key: string;
   state: string;
   updated_at: string | null;
-  /** Planos ativos que liberam a feature. */
-  tiers_ligados: number;
+  /** Planos ativos com acesso pleno. */
+  tiers_liberados: number;
+  /** Planos ativos com cadeado (entrada visível + prévia desfocada). */
+  tiers_cadeado: number;
   tiers_total: number;
 }
 
@@ -386,19 +388,23 @@ export function saveFeatureFlag(
   );
 }
 
+/** Modo de uma feature no plano; chave ausente do mapa = oculto (CS-58). */
+export type TierFeatureMode = 'liberado' | 'cadeado';
+
 export interface TierFeaturesOut {
   tier_id: number;
-  features: string[];
+  /** recurso -> modo; chave ausente = oculto no plano. */
+  features: Record<string, TierFeatureMode>;
 }
 
-/** Features que um plano libera. Lista completa: salvar substitui tudo. */
+/** Modos das features de um plano. Mapa completo: salvar substitui tudo. */
 export function fetchTierFeatures(tierId: number): Promise<TierFeaturesOut> {
   return request<TierFeaturesOut>(`/admin/tiers/${tierId}/features`);
 }
 
 export function saveTierFeatures(
   tierId: number,
-  features: string[]
+  features: Record<string, TierFeatureMode>
 ): Promise<TierFeaturesOut> {
   return request<TierFeaturesOut>(`/admin/tiers/${tierId}/features`, {
     method: 'PUT',

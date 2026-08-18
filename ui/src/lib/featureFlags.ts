@@ -41,6 +41,10 @@ export const FEATURE_FLAGS = {
     label: 'Aba Trajetória no dashboard do parlamentar',
     since: '2026-08-10',
   },
+  emendas: {
+    label: 'Aba Emendas no dashboard do parlamentar',
+    since: '2026-08-18',
+  },
   emendas_prestacao: {
     label: 'Prestação de contas das emendas Pix',
     since: '2026-08-12',

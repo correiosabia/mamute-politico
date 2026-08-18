@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api import main
+from api.feature_gate import FeatureAccess, trajetoria_access
 from api.dependencies import get_db
 from api.security import verify_token
 
@@ -118,6 +119,7 @@ def session() -> Session:
 def client(session: Session) -> TestClient:
     main.app.dependency_overrides[get_db] = lambda: session
     main.app.dependency_overrides[verify_token] = lambda: None
+    main.app.dependency_overrides[trajetoria_access] = lambda: FeatureAccess(full=True)
     yield TestClient(main.app)
     main.app.dependency_overrides.clear()
 

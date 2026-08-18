@@ -24,12 +24,23 @@ describe('useFeatureFlag', () => {
     expect(result.current).toBe(false);
   });
 
-  it('devolve true quando a flag esta ligada para o chamador', async () => {
-    vi.mocked(fetchFeatureFlags).mockResolvedValue({ trajetoria: true });
+  it('devolve true quando a flag esta liberada para o chamador', async () => {
+    vi.mocked(fetchFeatureFlags).mockResolvedValue({ trajetoria: 'liberada' });
     const { result } = renderHook(() => useFeatureFlag('trajetoria'), {
       wrapper,
     });
     await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it('devolve false quando a flag esta bloqueada (cadeado nao e acesso)', async () => {
+    vi.mocked(fetchFeatureFlags).mockResolvedValue({ trajetoria: 'bloqueada' });
+    const { result } = renderHook(() => useFeatureFlag('trajetoria'), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(vi.mocked(fetchFeatureFlags)).toHaveBeenCalled()
+    );
+    expect(result.current).toBe(false);
   });
 
   it('devolve false quando a chave nao veio na resposta', async () => {

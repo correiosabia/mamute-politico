@@ -22,12 +22,14 @@ try:
     from ..db.models.electoral_history import ElectoralHistory
     from ..db.models.parliamentarian import Parliamentarian
     from ..dependencies import get_db
+    from ..feature_gate import PREVIEW_ROWS, FeatureAccess, trajetoria_access
 except (ImportError, ValueError):
     # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.candidacy import Candidacy
     from db.models.electoral_history import ElectoralHistory
     from db.models.parliamentarian import Parliamentarian
     from dependencies import get_db
+    from feature_gate import PREVIEW_ROWS, FeatureAccess, trajetoria_access
 
 router = APIRouter(tags=["electoral-history"])
 
@@ -61,13 +63,17 @@ class ElectoralHistoryOut(BaseModel):
 
 
 def _timeline(
-    db: Session, where_clause: Any, include_assets: bool
+    db: Session, where_clause: Any, include_assets: bool, full: bool = True
 ) -> ElectoralHistoryOut:
     stmt = (
         select(ElectoralHistory)
         .where(where_clause)
         .order_by(ElectoralHistory.election_year.desc(), ElectoralHistory.id)
     )
+    if not full:
+        # PREVIA (CS-58): corte fixo no servidor; bens nunca trafegam.
+        stmt = stmt.limit(PREVIEW_ROWS)
+        include_assets = False
     entries = [
         ElectoralHistoryEntryOut(
             year=row.election_year,
@@ -96,6 +102,7 @@ def get_parliamentarian_electoral_history(
     parliamentarian_id: int,
     include_assets: bool = Query(False, description="Inclui a lista de bens"),
     db: Session = Depends(get_db),
+    access: FeatureAccess = Depends(trajetoria_access),
 ) -> ElectoralHistoryOut:
     """Linha do tempo eleitoral de um parlamentar."""
     if db.get(Parliamentarian, parliamentarian_id) is None:
@@ -104,6 +111,7 @@ def get_parliamentarian_electoral_history(
         db,
         ElectoralHistory.parliamentarian_id == parliamentarian_id,
         include_assets,
+        full=access.full,
     )
 
 
@@ -116,10 +124,14 @@ def get_candidacy_electoral_history(
     candidacy_id: int,
     include_assets: bool = Query(False, description="Inclui a lista de bens"),
     db: Session = Depends(get_db),
+    access: FeatureAccess = Depends(trajetoria_access),
 ) -> ElectoralHistoryOut:
     """Linha do tempo eleitoral pela candidatura 2026."""
     if db.get(Candidacy, candidacy_id) is None:
         raise HTTPException(status_code=404, detail="Candidatura não encontrada")
     return _timeline(
-        db, ElectoralHistory.candidacy_id == candidacy_id, include_assets
+        db,
+        ElectoralHistory.candidacy_id == candidacy_id,
+        include_assets,
+        full=access.full,
     )
