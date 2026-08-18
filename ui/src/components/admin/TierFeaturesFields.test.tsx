@@ -24,78 +24,78 @@ function renderFields(props: { disabled?: boolean } = {}) {
 describe('TierFeaturesFields', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('plano sem nenhuma feature liberada nasce com tudo desmarcado', async () => {
+  it('plano sem nenhuma feature nasce com tudo oculto', async () => {
     vi.mocked(fetchTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: [],
+      features: {},
     });
     renderFields();
-    const box = (await screen.findByLabelText(
+    const select = (await screen.findByLabelText(
       /Aba Trajetória/i
-    )) as HTMLInputElement;
-    expect(box.checked).toBe(false);
+    )) as HTMLSelectElement;
+    expect(select.value).toBe('oculto');
   });
 
-  it('marca o que o plano ja libera', async () => {
+  it('mostra o modo que o plano ja tem', async () => {
     vi.mocked(fetchTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: ['trajetoria'],
+      features: { trajetoria: 'cadeado' },
     });
     renderFields();
-    const box = (await screen.findByLabelText(
+    const select = (await screen.findByLabelText(
       /Aba Trajetória/i
-    )) as HTMLInputElement;
-    await waitFor(() => expect(box.checked).toBe(true));
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('cadeado'));
   });
 
-  it('salva a lista completa ao marcar', async () => {
+  it('salva o mapa completo ao selecionar um modo', async () => {
     vi.mocked(fetchTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: [],
+      features: {},
     });
     vi.mocked(saveTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: ['trajetoria'],
+      features: { emendas: 'cadeado' },
     });
     renderFields();
-    const box = await screen.findByLabelText(/Aba Trajetória/i);
-    fireEvent.click(box);
+    const select = await screen.findByLabelText(/Aba Emendas/i);
+    fireEvent.change(select, { target: { value: 'cadeado' } });
     await waitFor(() =>
-      expect(vi.mocked(saveTierFeatures)).toHaveBeenCalledWith(1, [
-        'trajetoria',
-      ])
+      expect(vi.mocked(saveTierFeatures)).toHaveBeenCalledWith(1, {
+        emendas: 'cadeado',
+      })
     );
   });
 
-  it('salva lista vazia ao desmarcar', async () => {
+  it('voltar para oculto tira a chave do mapa', async () => {
     vi.mocked(fetchTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: ['trajetoria'],
+      features: { trajetoria: 'liberado' },
     });
     vi.mocked(saveTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: [],
+      features: {},
     });
     renderFields();
-    const box = (await screen.findByLabelText(
+    const select = (await screen.findByLabelText(
       /Aba Trajetória/i
-    )) as HTMLInputElement;
-    await waitFor(() => expect(box.checked).toBe(true));
-    fireEvent.click(box);
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('liberado'));
+    fireEvent.change(select, { target: { value: 'oculto' } });
     await waitFor(() =>
-      expect(vi.mocked(saveTierFeatures)).toHaveBeenCalledWith(1, [])
+      expect(vi.mocked(saveTierFeatures)).toHaveBeenCalledWith(1, {})
     );
   });
 
   it('plano fora do ar nao aceita edicao', async () => {
     vi.mocked(fetchTierFeatures).mockResolvedValue({
       tier_id: 1,
-      features: [],
+      features: {},
     });
     renderFields({ disabled: true });
-    const box = (await screen.findByLabelText(
+    const select = (await screen.findByLabelText(
       /Aba Trajetória/i
-    )) as HTMLInputElement;
-    expect(box.disabled).toBe(true);
+    )) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
   });
 });

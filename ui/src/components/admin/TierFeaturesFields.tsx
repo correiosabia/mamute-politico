@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 
-import { fetchTierFeatures, saveTierFeatures } from '@/api/admin';
+import {
+  fetchTierFeatures,
+  saveTierFeatures,
+  type TierFeatureMode,
+} from '@/api/admin';
 import { FEATURE_FLAGS, type FeatureFlagKey } from '@/lib/featureFlags';
 
 interface TierFeaturesFieldsProps {
@@ -13,15 +17,22 @@ interface TierFeaturesFieldsProps {
   onError?: (erro: unknown) => void;
 }
 
+const MODOS = [
+  { value: 'oculto', label: 'Oculto' },
+  { value: 'cadeado', label: 'Cadeado (prévia desfocada)' },
+  { value: 'liberado', label: 'Liberado' },
+] as const;
+
 /**
- * Quais funcionalidades este plano libera.
+ * Modo de cada funcionalidade neste plano (CS-58).
  *
  * O tri-estado global (desativado / só admins / liberado) fica em
- * Configurações gerais e é o ciclo de vida do lançamento. Aqui se decide quem
- * recebe depois que a feature saiu da prévia — por isso "liberado" lá não
- * significa "todo mundo vê", e sim "agora quem decide é o plano".
+ * Configurações gerais e é o ciclo de vida do lançamento. Aqui se decide como
+ * cada plano recebe a feature depois que ela saiu da prévia: Oculto (some da
+ * tela), Cadeado (entrada visível + prévia desfocada + chamada para assinar)
+ * ou Liberado.
  *
- * Plano novo, vindo do sync do Ghost, nasce sem nenhuma marcada.
+ * Plano novo, vindo do sync do Ghost, nasce com tudo oculto.
  *
  * A lista é renderizada a partir do registro do código (`FEATURE_FLAGS`), então
  * flag removida do código some daqui sozinha.
@@ -39,16 +50,17 @@ export function TierFeaturesFields({
     retry: false,
   });
 
-  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const [modos, setModos] = useState<Record<string, TierFeatureMode>>({});
   useEffect(() => {
-    if (data) setMarcadas(data.features);
+    if (data) setModos(data.features);
   }, [data]);
 
   const mutation = useMutation({
-    mutationFn: (features: string[]) => saveTierFeatures(tierId, features),
+    mutationFn: (features: Record<string, TierFeatureMode>) =>
+      saveTierFeatures(tierId, features),
     onSuccess: (resultado) => {
       queryClient.setQueryData(['admin', 'tier-features', tierId], resultado);
-      // A contagem "liberada em N de M planos" vive na tela de flags.
+      // As contagens "liberada/cadeado em N planos" vivem na tela de flags.
       void queryClient.invalidateQueries({
         queryKey: ['admin', 'feature-flags'],
       });
@@ -58,12 +70,12 @@ export function TierFeaturesFields({
     onError: (erro) => onError?.(erro),
   });
 
-  const alternar = (key: string, ligado: boolean) => {
-    const proximas = ligado
-      ? [...marcadas, key]
-      : marcadas.filter((k) => k !== key);
-    setMarcadas(proximas);
-    mutation.mutate(proximas);
+  const alterar = (key: string, valor: string) => {
+    const proximos = { ...modos };
+    if (valor === 'oculto') delete proximos[key];
+    else proximos[key] = valor as TierFeatureMode;
+    setModos(proximos);
+    mutation.mutate(proximos);
   };
 
   const chaves = Object.keys(FEATURE_FLAGS) as FeatureFlagKey[];
@@ -85,27 +97,34 @@ export function TierFeaturesFields({
             <label
               key={key}
               htmlFor={`${tierId}-feature-${key}`}
-              className="flex items-center gap-3 rounded-xl border border-[#383838]/15 px-3 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-xl border border-[#383838]/15 px-3 py-2.5"
             >
-              <input
-                id={`${tierId}-feature-${key}`}
-                type="checkbox"
-                checked={marcadas.includes(key)}
-                disabled={disabled || mutation.isPending}
-                onChange={(e) => alternar(key, e.target.checked)}
-                className="h-4 w-4 rounded border-[#383838]/30"
-              />
               <span className="text-[13px] font-semibold text-[#383838]">
                 {FEATURE_FLAGS[key].label}
               </span>
+              <select
+                id={`${tierId}-feature-${key}`}
+                value={modos[key] ?? 'oculto'}
+                disabled={disabled || mutation.isPending}
+                onChange={(e) => alterar(key, e.target.value)}
+                className="shrink-0 rounded-full border border-[#383838]/15 px-3 py-1.5 text-[12px] font-semibold text-[#090909]"
+              >
+                {MODOS.map((op) => (
+                  <option key={op.value} value={op.value}>
+                    {op.label}
+                  </option>
+                ))}
+              </select>
             </label>
           ))}
         </div>
       )}
 
       <p className="text-[11px] text-[#383838]/50">
-        Vale só depois que a funcionalidade estiver como “liberado” em
-        Configurações gerais. Plano novo nasce com tudo desmarcado.
+        Oculto some da tela; Cadeado mostra a entrada com prévia desfocada e
+        chamada para assinar; Liberado dá o recurso. Vale só com a
+        funcionalidade “liberada” em Configurações gerais. Plano novo nasce
+        com tudo oculto.
       </p>
     </div>
   );

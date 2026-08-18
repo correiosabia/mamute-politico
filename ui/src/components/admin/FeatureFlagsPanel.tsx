@@ -1,5 +1,6 @@
+import { useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { fetchFeatureFlagsAdmin, saveFeatureFlag } from '@/api/admin';
@@ -9,6 +10,11 @@ import {
   flagAgeInDays,
   type FeatureFlagKey,
 } from '@/lib/featureFlags';
+import {
+  getPreviewKeys,
+  subscribeFeaturePreview,
+  toggleFeaturePreview,
+} from '@/lib/featurePreview';
 
 const ESTADOS = [
   { value: 'off', label: 'Desativado' },
@@ -43,6 +49,12 @@ export function FeatureFlagsPanel() {
   // precisar de um segundo mecanismo para esconder o botão.
   const doBanco = new Map((data ?? []).map((f) => [f.key, f]));
   const chaves = Object.keys(FEATURE_FLAGS) as FeatureFlagKey[];
+  // Preview "ver como bloqueada" (CS-58): lente por admin e por navegador.
+  const previewKeys = useSyncExternalStore(
+    subscribeFeaturePreview,
+    getPreviewKeys,
+    getPreviewKeys
+  );
 
   return (
     <section aria-label="Funcionalidades" className="flex flex-col gap-4">
@@ -69,9 +81,12 @@ export function FeatureFlagsPanel() {
             const estado = linha?.state ?? 'off';
             const idade = flagAgeInDays(since);
             const velha = idade > FLAG_AGE_WARNING_DAYS;
+            const liberados = linha?.tiers_liberados ?? 0;
+            const cadeados = linha?.tiers_cadeado ?? 0;
             // Flag liberada sem nenhum plano não aparece para ninguém. É o
             // erro silencioso do desenho — melhor gritar aqui.
-            const semPlano = estado === 'all' && (linha?.tiers_ligados ?? 0) === 0;
+            const semPlano = estado === 'all' && liberados + cadeados === 0;
+            const previewOn = previewKeys.includes(key);
 
             return (
               <div
@@ -105,26 +120,56 @@ export function FeatureFlagsPanel() {
                     >
                       {semPlano
                         ? 'Nenhum plano libera esta funcionalidade — ninguém a vê. Configure em Planos.'
-                        : `Liberada em ${linha?.tiers_ligados} de ${linha?.tiers_total} planos.`}
+                        : `Liberada em ${liberados} de ${linha?.tiers_total} planos` +
+                          (cadeados > 0
+                            ? `, com cadeado em ${cadeados}.`
+                            : '.')}
                     </p>
                   )}
                 </div>
 
-                <select
-                  id={`ff-${key}`}
-                  value={estado}
-                  disabled={mutation.isPending}
-                  onChange={(e) =>
-                    mutation.mutate({ key, state: e.target.value })
-                  }
-                  className="rounded-full border border-[#383838]/15 px-4 py-2 text-[13px] font-semibold text-[#090909]"
-                >
-                  {ESTADOS.map((op) => (
-                    <option key={op.value} value={op.value}>
-                      {op.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  {/* Preview só-admin: renderiza ESTA feature como bloqueada
+                      (cadeado + blur + CTA) e manda o header que o backend
+                      honra apenas para admin — simulação de ponta a ponta,
+                      sem tocar estado nem plano nenhum. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleFeaturePreview(key)}
+                    title={
+                      previewOn
+                        ? 'Deixar de ver como bloqueada'
+                        : 'Ver como bloqueada (só afeta você, neste navegador)'
+                    }
+                    aria-pressed={previewOn}
+                    className={`rounded-full border p-2 transition ${
+                      previewOn
+                        ? 'border-[#b45309] bg-amber-50 text-[#b45309]'
+                        : 'border-[#383838]/15 text-[#383838]/70'
+                    }`}
+                  >
+                    {previewOn ? (
+                      <EyeOff className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <Eye className="h-4 w-4" aria-hidden />
+                    )}
+                  </button>
+                  <select
+                    id={`ff-${key}`}
+                    value={estado}
+                    disabled={mutation.isPending}
+                    onChange={(e) =>
+                      mutation.mutate({ key, state: e.target.value })
+                    }
+                    className="rounded-full border border-[#383838]/15 px-4 py-2 text-[13px] font-semibold text-[#090909]"
+                  >
+                    {ESTADOS.map((op) => (
+                      <option key={op.value} value={op.value}>
+                        {op.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             );
           })}
