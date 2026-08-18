@@ -121,7 +121,8 @@ def _make_session(
         )
         conn.exec_driver_sql(
             "create table feature_flag_tier (id integer primary key, flag_key text not null, "
-            "tier_id integer not null, created_at datetime)"
+            "tier_id integer not null, mode text not null default 'liberado', "
+            "created_at datetime)"
         )
         conn.execute(
             text(

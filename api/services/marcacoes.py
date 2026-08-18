@@ -19,7 +19,7 @@ try:
     )
     from ..db.models.personal_marks import ProjectMamutometro
     from ..db.models.project import ProjetosParliamentarian
-    from .feature_flags import enabled_flags_for_tier, resolve_for
+    from .feature_flags import ACCESS_LIBERADA, enabled_flags_for_tier, resolve_for
 except ImportError:  # execução dentro de api/
     from db.models.marcacoes_config import (
         ESCOPO_MONITORADOS,
@@ -34,7 +34,7 @@ except ImportError:  # execução dentro de api/
     )
     from db.models.personal_marks import ProjectMamutometro
     from db.models.project import ProjetosParliamentarian
-    from services.feature_flags import enabled_flags_for_tier, resolve_for
+    from services.feature_flags import ACCESS_LIBERADA, enabled_flags_for_tier, resolve_for
 
 FLAG_MAMUTOMETRO = "mamutometro"
 CAMPO_LIMITE_TIER = "qtd_mamutometro"
@@ -99,9 +99,10 @@ def set_config(
 
 def mamutometro_habilitado(db: Session, project: Any, *, is_admin: bool = False) -> bool:
 
-    liberadas = enabled_flags_for_tier(db, getattr(project, "tier_id", None))
-    resolvido = resolve_for(db, is_admin=is_admin, liberadas=liberadas)
-    return resolvido.get(FLAG_MAMUTOMETRO, False)
+    modos = enabled_flags_for_tier(db, getattr(project, "tier_id", None))
+    resolvido = resolve_for(db, is_admin=is_admin, modos=modos)
+    # So acesso pleno habilita a escrita: cadeado e vitrine, nao permissao.
+    return resolvido.get(FLAG_MAMUTOMETRO) == ACCESS_LIBERADA
 
 
 def mamutometro_limite(project: Any) -> Optional[int]:
