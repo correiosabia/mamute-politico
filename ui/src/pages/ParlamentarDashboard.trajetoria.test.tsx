@@ -5,11 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type * as endpointsModule from '@/api/endpoints';
 
 const isAdminState = { isAdmin: false, isLoading: false };
-const flagState: Record<string, boolean> = { trajetoria: false };
+// Acesso resolvido por chave; default espelha a producao de hoje: emendas
+// liberada (seed da migration) e trajetoria oculta para nao-admin.
+const accessState: Record<string, string> = {
+  trajetoria: 'oculta',
+  emendas: 'liberada',
+};
 
 vi.mock('@/hooks/useIsAdmin', () => ({ useIsAdmin: () => isAdminState }));
-vi.mock('@/hooks/useFeatureFlag', () => ({
-  useFeatureFlag: (key: string) => flagState[key] === true,
+vi.mock('@/hooks/useFeatureAccess', () => ({
+  useFeatureAccess: (key: string) => accessState[key] ?? 'oculta',
 }));
 vi.mock('@/components/layout/Header', () => ({ Header: () => <header /> }));
 vi.mock('@/components/selecao/SelecaoFooter', () => ({
@@ -72,28 +77,57 @@ function renderPage() {
 describe('gate da aba Trajetória', () => {
   beforeEach(() => {
     isAdminState.isAdmin = false;
-    flagState.trajetoria = false;
+    accessState.trajetoria = 'oculta';
+    accessState.emendas = 'liberada';
   });
 
-  it('flag desligada esconde a aba', async () => {
+  it('oculta esconde a aba', async () => {
     renderPage();
     await screen.findAllByText(/VOTAÇÕES/i);
     expect(screen.queryByText(/TRAJETÓRIA/i)).not.toBeInTheDocument();
   });
 
-  it('flag ligada mostra a aba', async () => {
-    flagState.trajetoria = true;
+  it('liberada mostra a aba sem cadeado nem CTA', async () => {
+    accessState.trajetoria = 'liberada';
     renderPage();
     await screen.findAllByText(/VOTAÇÕES/i);
     expect(screen.getByText(/TRAJETÓRIA/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/exclusivo para assinantes/i)
+    ).not.toBeInTheDocument();
   });
 
-  it('ser admin nao basta: quem manda agora e a flag', async () => {
+  it('ser admin nao basta: quem manda agora e a resolucao', async () => {
     // O gate saiu do isAdmin improvisado. Admin continua vendo, mas via
     // resolucao da flag no backend, nao por checagem espalhada na tela.
     isAdminState.isAdmin = true;
     renderPage();
     await screen.findAllByText(/VOTAÇÕES/i);
     expect(screen.queryByText(/TRAJETÓRIA/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('estado bloqueado (cadeado + previa desfocada, CS-58)', () => {
+  beforeEach(() => {
+    isAdminState.isAdmin = false;
+    accessState.trajetoria = 'bloqueada';
+    accessState.emendas = 'bloqueada';
+  });
+
+  it('bloqueada mantem a aba na lista, com o conteudo sob CTA', async () => {
+    renderPage();
+    await screen.findAllByText(/VOTAÇÕES/i);
+    expect(screen.getByRole('tab', { name: /TRAJETÓRIA/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /EMENDAS/i })).toBeInTheDocument();
+    // O painel da aba ativa por padrao e VOTACOES; o CTA da aba bloqueada
+    // monta ao clicar nela.
+  });
+
+  it('emendas bloqueada mostra cadeado no card de estatisticas', async () => {
+    renderPage();
+    await screen.findAllByText(/VOTAÇÕES/i);
+    expect(
+      await screen.findByText(/Exclusivo para assinantes/i)
+    ).toBeInTheDocument();
   });
 });

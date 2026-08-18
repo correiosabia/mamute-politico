@@ -1,3 +1,5 @@
+import { Lock } from 'lucide-react';
+
 import type { AmendmentSummaryOut, DashboardStatsOut } from '@/api/types';
 
 interface EstatisticasCardProps {
@@ -5,6 +7,8 @@ interface EstatisticasCardProps {
   isLoading?: boolean;
   amendmentsSummary?: AmendmentSummaryOut;
   amendmentsYear?: number;
+  /** Recurso emendas em modo cadeado (CS-58): mostra o bloqueio, sem números. */
+  emendasBloqueadas?: boolean;
 }
 
 const BRL_COMPACT = new Intl.NumberFormat('pt-BR', {
@@ -26,6 +30,7 @@ export function EstatisticasCard({
   isLoading = false,
   amendmentsSummary,
   amendmentsYear,
+  emendasBloqueadas = false,
 }: EstatisticasCardProps) {
   const statsItems = [
     {
@@ -65,25 +70,34 @@ export function EstatisticasCard({
         ))}
       </div>
 
-      {amendmentsSummary != null && (
+      {(amendmentsSummary != null || emendasBloqueadas) && (
         <div className="mt-6 border-t border-black/[0.08] pt-4">
           <p className="text-[13px] font-semibold uppercase tracking-wide text-[#383838]">
-            Emendas {amendmentsYear ?? amendmentsSummary.year ?? ''}
+            Emendas {amendmentsYear ?? amendmentsSummary?.year ?? ''}
           </p>
-          <div className="mt-2 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[18px] font-bold text-[#468fff]">
-                {formatCompactBRL(amendmentsSummary.committed_total)}
-              </p>
-              <p className="text-[13px] text-[#383838]">Destinado</p>
+          {emendasBloqueadas || amendmentsSummary == null ? (
+            // Bloqueado: cadeado no lugar dos números, sem chamada à API — o
+            // agregado é o produto e a rota devolveria 403 (CS-58).
+            <p className="mt-2 flex items-center gap-2 text-[13px] text-[#383838]/70">
+              <Lock className="h-4 w-4" aria-hidden />
+              Exclusivo para assinantes
+            </p>
+          ) : (
+            <div className="mt-2 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[18px] font-bold text-[#468fff]">
+                  {formatCompactBRL(amendmentsSummary.committed_total)}
+                </p>
+                <p className="text-[13px] text-[#383838]">Destinado</p>
+              </div>
+              <div>
+                <p className="text-[18px] font-bold text-[#468fff]">
+                  {formatCompactBRL(amendmentsSummary.paid_total)}
+                </p>
+                <p className="text-[13px] text-[#383838]">Pago</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[18px] font-bold text-[#468fff]">
-                {formatCompactBRL(amendmentsSummary.paid_total)}
-              </p>
-              <p className="text-[13px] text-[#383838]">Pago</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

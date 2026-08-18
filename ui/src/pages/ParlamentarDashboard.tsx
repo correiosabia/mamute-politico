@@ -13,7 +13,8 @@ import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EmendasTable } from '@/components/dashboard/EmendasTable';
 import { TrajetoriaTab } from '@/components/dashboard/TrajetoriaTab';
-import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+import { PaywallOverlay } from '@/components/paywall/PaywallOverlay';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { useMarcacoesPessoais } from '@/hooks/useMarcacoesPessoais';
 import { MarcacoesInline } from '@/components/marcacoes/MarcacoesInline';
 import { EstatisticasCard } from '@/components/dashboard/EstatisticasCard';
@@ -27,7 +28,7 @@ import {
 } from '@/api/endpoints';
 import { mapParliamentarianOutToParlamentar } from '@/api/mappers';
 import { ApiError } from '@/api/client';
-import { ArrowLeft, Cloud, FileText, Vote, Loader2, Users, Pencil } from 'lucide-react';
+import { ArrowLeft, Cloud, FileText, Vote, Loader2, Lock, Users, Pencil } from 'lucide-react';
 
 const MONITORADOS_AMBAS_CASAS_LINK = '/selecao#ambas-casas';
 
@@ -65,10 +66,12 @@ const ParlamentarDashboard = () => {
   const navigate = useNavigate();
   const numericId = id != null ? Number(id) : NaN;
   const isIdValid = Number.isInteger(numericId) && numericId > 0;
-  // Gerenciada em /admin/configuracoes (estado) e na tela de Planos (quais
-  // planos liberam). Para remover a flag, ver o procedimento em
+  // Gerenciadas em /admin/configuracoes (estado) e na tela de Planos (modo
+  // por plano: oculto/cadeado/liberado). 'bloqueada' monta a aba com cadeado
+  // e a previa desfocada (CS-58). Para remover a flag, ver o procedimento em
   // `@/lib/featureFlags`.
-  const trajetoriaOn = useFeatureFlag('trajetoria');
+  const emendasAccess = useFeatureAccess('emendas');
+  const trajetoriaAccess = useFeatureAccess('trajetoria');
 
   const { data: raw, isLoading, isError, error } = useQuery({
     queryKey: ['parliamentarian', id],
@@ -91,12 +94,13 @@ const ParlamentarDashboard = () => {
     enabled: isIdValid,
   });
   // Emendas sao grandeza de ano civil, diferente do dashboardStats (3 meses),
-  // por isso query e endpoint proprios.
+  // por isso query e endpoint proprios. So busca com acesso pleno: bloqueado,
+  // o card mostra o cadeado sem tocar a API (a rota devolveria 403).
   const emendasYear = new Date().getFullYear();
   const amendmentsSummaryQuery = useQuery({
     queryKey: ['amendments-summary', numericId, emendasYear],
     queryFn: () => getAmendmentsSummary(numericId, emendasYear),
-    enabled: isIdValid,
+    enabled: isIdValid && emendasAccess === 'liberada',
   });
   const monitoradosCount = favoritesQuery.data?.length ?? 0;
   const monitorado =
@@ -164,39 +168,64 @@ const ParlamentarDashboard = () => {
 
   // Abas derivadas de uma lista: o portão da flag fica em UM lugar só. Antes
   // eram duas condições espalhadas (TabsTrigger e TabsContent), e é esse tipo
-  // de espalhamento que torna caro remover a flag depois.
+  // de espalhamento que torna caro remover a flag depois. Aba 'locked' fica
+  // na lista em cinza com cadeado; o conteúdo monta o componente real (que já
+  // recebe a prévia truncada do backend) sob o desfoque com CTA.
   const abas = [
     {
       value: 'votacoes',
+      locked: false,
       label: 'VOTAÇÕES',
       className: 'mt-0 p-6 pt-4 h-[500px]',
       content: <VotacoesTable parliamentarianId={numericId} />,
     },
     {
       value: 'proposicoes',
+      locked: false,
       label: 'PROPOSIÇÕES',
       className: 'mt-0 p-6 pt-4',
       content: <ProposicoesTable parliamentarianId={id} />,
     },
     {
       value: 'taquigraficas',
+      locked: false,
       label: 'TAQUIGRÁFICAS',
       className: 'mt-0 p-6 pt-4 h-[500px]',
       content: <TaquigraficasTable parliamentarianId={numericId} />,
     },
-    {
-      value: 'emendas',
-      label: 'EMENDAS',
-      className: 'mt-0 p-6 pt-4 h-[500px]',
-      content: <EmendasTable parliamentarianId={numericId} year={emendasYear} />,
-    },
-    ...(trajetoriaOn
+    ...(emendasAccess !== 'oculta'
+      ? [
+          {
+            value: 'emendas',
+            label: 'EMENDAS',
+            locked: emendasAccess === 'bloqueada',
+            className: 'mt-0 p-6 pt-4 h-[500px]',
+            content:
+              emendasAccess === 'bloqueada' ? (
+                <PaywallOverlay recurso="a aba Emendas">
+                  <EmendasTable parliamentarianId={numericId} year={emendasYear} />
+                </PaywallOverlay>
+              ) : (
+                <EmendasTable parliamentarianId={numericId} year={emendasYear} />
+              ),
+          },
+        ]
+      : []),
+    ...(trajetoriaAccess !== 'oculta'
       ? [
           {
             value: 'trajetoria',
             label: 'TRAJETÓRIA',
+            locked: trajetoriaAccess === 'bloqueada',
             className: 'mt-0 p-6 pt-4 h-[500px]',
-            content: <TrajetoriaTab parliamentarianId={numericId} />,
+            content:
+              trajetoriaAccess === 'bloqueada' ? (
+                <PaywallOverlay recurso="a aba Trajetória">
+                  <TrajetoriaTab parliamentarianId={numericId} />
+                </PaywallOverlay>
+              ) : (
+                <TrajetoriaTab parliamentarianId={numericId} />
+              ),
           },
         ]
       : []),
@@ -257,6 +286,7 @@ const ParlamentarDashboard = () => {
               isLoading={dashboardStatsQuery.isLoading}
               amendmentsSummary={amendmentsSummaryQuery.data}
               amendmentsYear={emendasYear}
+              emendasBloqueadas={emendasAccess === 'bloqueada'}
             />
           </div>
 
@@ -291,8 +321,15 @@ const ParlamentarDashboard = () => {
                     <TabsTrigger
                       key={aba.value}
                       value={aba.value}
-                      className={parlamentarSectionTabTriggerClass}
+                      className={`${parlamentarSectionTabTriggerClass}${
+                        aba.locked
+                          ? ' data-[state=inactive]:text-[#090909]/45 data-[state=active]:bg-[#6b6b6b]'
+                          : ''
+                      }`}
                     >
+                      {aba.locked && (
+                        <Lock className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                      )}
                       {aba.label}
                     </TabsTrigger>
                   ))}
