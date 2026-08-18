@@ -63,14 +63,16 @@ def read_feature_flags(
     request: Request,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
-) -> dict[str, bool]:
-    """Estado das flags já resolvido para quem chamou.
+) -> dict[str, str]:
+    """Acesso às flags já resolvido para quem chamou.
 
-    Devolve booleano e não o tri-estado: quem não é admin não precisa saber
-    que a flag existe em modo `admins`, e o front não repete a regra.
+    Devolve `'liberada' | 'bloqueada' | 'oculta'`, e não o estado cru: quem
+    não é admin não precisa saber que a flag existe em modo `admins`, e o
+    front não repete a regra. `'bloqueada'` é o cadeado da CS-58 — entrada
+    visível, conteúdo em prévia desfocada.
 
-    Isto controla apenas a exibição na interface. Os endpoints de dado seguem
-    abertos — não é fronteira de segurança.
+    Isto controla a exibição na interface; a fronteira de segurança
+    correspondente é a dependency de `api/feature_gate.py` nas rotas de dado.
     """
     is_admin = resolve_ghost_admin(request, authorization) is not None
     email = getattr(request.state, "token_email", None)
@@ -78,7 +80,7 @@ def read_feature_flags(
     return resolve_for(
         db,
         is_admin=is_admin,
-        liberadas=enabled_flags_for_tier(db, tier_id),
+        modos=enabled_flags_for_tier(db, tier_id),
     )
 
 
