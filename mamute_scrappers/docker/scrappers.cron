@@ -145,3 +145,22 @@ PYTHONPATH=/app
 # Burst de inicializacao: esvazia a fila do backfill mais rapido que o ritmo
 # horario. A trava de arquivo garante que burst e cron nao rodam juntos.
 @reboot sleep 45 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_emendas --chunks-per-run 1 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill de emendas completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
+
+# --- Cota parlamentar (CEAP Camara + CEAPS Senado) — CS-57 ---
+# Camara: arquivo anual em massa (a API REST de despesas esta degradada — ver
+# camara_crawler/expenses.py). Senado: API JSON de dados abertos. Sem chave de
+# API e sem rate limit relevante: e 1 download por ano x casa.
+
+# Ano corrente (diario, depois das emendas das 06h50: Camara 07h15, Senado
+# 07h30 UTC). Continua necessario apos o backfill: valor e glosa mudam
+# retroativamente o ano inteiro.
+15 7 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh cota-camara -- /usr/local/bin/python -m mamute_scrappers.camara_crawler.expenses --ano $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
+30 7 * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh cota-senado -- /usr/local/bin/python -m mamute_scrappers.senado_crawler.expenses --ano $(date +\%Y) >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Backfill 2022 -> ano corrente (a cada 1h no minuto 20 — livre entre os jobs
+# horarios, que ocupam 10, 25, 35, 40 e 55). Sao 10 chunks ano x casa; com 2
+# por execucao a fila fecha em ~5 horas e depois vira no-op.
+20 * * * * cd /app && /app/mamute_scrappers/docker/run-cron-job.sh backfill-cota -- /usr/local/bin/python -m mamute_scrappers.scripts.backfill_cota --chunks-per-run 2 >> /proc/1/fd/1 2>> /proc/1/fd/2
+
+# Burst de inicializacao da cota: mesma mecanica do burst de emendas.
+@reboot sleep 60 && cd /app && (while true; do OUT=$(/usr/local/bin/python -m mamute_scrappers.scripts.backfill_cota --chunks-per-run 1 2>&1); echo "$OUT" | tail -3; if echo "$OUT" | grep -qE 'Backfill de cota completo|nada a fazer'; then break; fi; sleep 5; done) >> /proc/1/fd/1 2>&1
