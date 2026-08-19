@@ -33,6 +33,7 @@ import requests  # noqa: E402
 
 from mamute_scrappers.expenses.upsert import (  # noqa: E402
     COMMIT_EVERY,
+    sequenced_key,
     upsert_expense,
 )
 
@@ -202,6 +203,10 @@ def expenses(
     sem_url = 0
     inserted = 0
     updated = 0
+    # Ids da API medidos unicos em 2025, mas a unicidade e garantia nossa.
+    from collections import Counter
+
+    seen_keys: Counter = Counter()
 
     with session_context as session:
         senators = _senator_map(session) if session is not None else {}
@@ -213,6 +218,9 @@ def expenses(
                 continue
             total += 1
 
+            payload["source_key"] = sequenced_key(
+                payload["source_key"], seen_keys
+            )
             cod_senador = payload.pop("cod_senador")
             payload["parliamentarian_id"] = senators.get(cod_senador)
             if payload["parliamentarian_id"] is None:

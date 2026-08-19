@@ -127,6 +127,18 @@ def test_repetida_no_mesmo_lote_nao_estoura_unique(session):
     assert rows[0].net_value == Decimal("1.00")
 
 
+def test_sequenced_key_desambigua_chave_repetida_no_mesmo_arquivo():
+    # Caso real do Ano-2025.csv: o bilhete SIGEPA aparece duas vezes com o
+    # mesmo ideDocumento (compra e compensacao negativa). Sem o sufixo, a
+    # segunda linha sobrescreveria a primeira e o par que se cancela sumiria.
+    from collections import Counter
+
+    seen: Counter = Counter()
+    assert upsert_mod.sequenced_key("998:319264:0", seen) == "998:319264:0#0"
+    assert upsert_mod.sequenced_key("998:319264:0", seen) == "998:319264:0#1"
+    assert upsert_mod.sequenced_key("1:7883485:0", seen) == "1:7883485:0#0"
+
+
 def test_fallback_source_key_deterministico():
     a = upsert_mod.fallback_source_key("62881", 2025, 1, "10", "CELULAR", "224.65")
     b = upsert_mod.fallback_source_key("62881", 2025, 1, "10", "CELULAR", "224.65")

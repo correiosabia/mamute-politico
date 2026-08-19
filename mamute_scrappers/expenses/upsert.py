@@ -50,6 +50,24 @@ def _ensure_model() -> None:
     ParliamentaryExpense = ParliamentaryExpenseRuntime
 
 
+def sequenced_key(base: str, seen: Any) -> str:
+    """Desambigua chave repetida DENTRO do mesmo arquivo/ano da fonte.
+
+    Medido no Ano-2025.csv da Camara: ~12 mil linhas reutilizam o mesmo
+    ideDocumento — o bilhete SIGEPA aparece uma vez na compra e outra na
+    compensacao (valor negativo). Sem o sufixo, a segunda linha sobrescreveria
+    a primeira e o total do mes perderia o par que se cancela.
+
+    `seen` e um collections.Counter por execucao: a primeira ocorrencia vira
+    "base#0", a segunda "base#1", e assim por diante, na ordem do arquivo. Se
+    a fonte reordenar as ocorrencias entre execucoes, os conteudos trocam de
+    linha entre si — o conjunto persistido continua identico.
+    """
+    seq = seen[base]
+    seen[base] += 1
+    return f"{base}#{seq}"
+
+
 def fallback_source_key(*parts: Any) -> str:
     """Chave deterministica para linha sem id na fonte (sha1 hex, 40 chars).
 
@@ -96,5 +114,6 @@ __all__ = [
     "COMMIT_EVERY",
     "EXPENSE_FIELDS",
     "fallback_source_key",
+    "sequenced_key",
     "upsert_expense",
 ]

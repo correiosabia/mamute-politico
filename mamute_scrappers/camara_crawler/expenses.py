@@ -36,6 +36,7 @@ import requests  # noqa: E402
 from mamute_scrappers.expenses.upsert import (  # noqa: E402
     COMMIT_EVERY,
     fallback_source_key,
+    sequenced_key,
     upsert_expense,
 )
 
@@ -204,6 +205,11 @@ def expenses(
     sem_vinculo = 0
     inserted = 0
     updated = 0
+    # Chaves ja vistas nesta execucao: a fonte repete ideDocumento dentro do
+    # mesmo ano (compra + compensacao do SIGEPA) — ver sequenced_key.
+    from collections import Counter
+
+    seen_keys: Counter = Counter()
 
     with session_context as session:
         deputies = _deputy_map(session) if session is not None else {}
@@ -217,6 +223,9 @@ def expenses(
                     continue
                 total += 1
 
+                payload["source_key"] = sequenced_key(
+                    payload["source_key"], seen_keys
+                )
                 ide_cadastro = payload.pop("ide_cadastro")
                 if ide_cadastro is None:
                     sem_cadastro += 1
