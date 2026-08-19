@@ -90,6 +90,11 @@ class Parliamentarian(Base):
         back_populates="parliamentarian",
     )
 
+    expenses = relationship(
+        "ParliamentaryExpense",
+        back_populates="parliamentarian",
+    )
+
 
 __all__ = ["Parliamentarian"]
 

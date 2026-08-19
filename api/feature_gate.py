@@ -102,6 +102,7 @@ def feature_access(key: str):
 
 emendas_access = feature_access("emendas")
 trajetoria_access = feature_access("trajetoria")
+cota_access = feature_access("cota_parlamentar")
 
 __all__ = [
     "PREVIEW_ROWS",
@@ -109,4 +110,5 @@ __all__ = [
     "feature_access",
     "emendas_access",
     "trajetoria_access",
+    "cota_access",
 ]

@@ -104,6 +104,36 @@ python -m mamute_scrappers.scripts.backfill_emendas --chunks-per-run 2
 python -m mamute_scrappers.scripts.backfill_emendas --status
 ```
 
+### Coleta da cota parlamentar (CEAP Câmara + CEAPS Senado) — CS-57
+
+Gastos de gabinete do parlamentar (combustível, aluguel de escritório,
+divulgação, passagens), por mês, tipo de despesa e fornecedor, com link para o
+documento fiscal.
+
+Sem chave de API e sem rate limit relevante: a Câmara publica um **arquivo
+anual em massa** (`camara.leg.br/cotas/Ano-{ano}.csv.zip`, atualizado
+diariamente — a API REST de despesas está degradada e não é usada) e o Senado
+uma **API JSON** (`adm.senado.gov.br/adm-dadosabertos`). As duas fontes
+publicam o id do parlamentar, então o vínculo é join direto por
+`parliamentarian_code`, sem casamento por nome.
+
+```bash
+# ano corrente, persistindo no banco
+python -m mamute_scrappers.camara_crawler.expenses
+python -m mamute_scrappers.senado_crawler.expenses
+
+# ano específico
+python -m mamute_scrappers.camara_crawler.expenses --ano 2024
+
+# diagnóstico sem banco
+python -m mamute_scrappers.camara_crawler.expenses --ano 2025 --dry-run --limit 50
+python -m mamute_scrappers.senado_crawler.expenses --ano 2025 --dry-run --limit 50
+
+# backfill 2022 -> ano corrente (10 chunks ano x casa; auto-encerra)
+python -m mamute_scrappers.scripts.backfill_cota --chunks-per-run 2
+python -m mamute_scrappers.scripts.backfill_cota --status
+```
+
 ### Reprocessar análise de texto de pronunciamentos
 
 ```bash

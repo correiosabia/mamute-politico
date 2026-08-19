@@ -225,6 +225,51 @@ export interface AmendmentSummaryOut {
   paid_total: string;
 }
 
+/** Gasto da cota parlamentar (CEAP Câmara / CEAPS Senado) — CS-57. */
+export interface ExpenseOut {
+  id: number;
+  house: 'camara' | 'senado';
+  source_key: string;
+  parliamentarian_id?: number | null;
+  year: number;
+  month: number;
+  expense_type: string;
+  supplier_name?: string | null;
+  supplier_id?: string | null;
+  document_number?: string | null;
+  document_date?: string | null;
+  details?: string | null;
+  /** Valores vêm como string para não perder centavo em ponto flutuante. */
+  document_value?: string | null;
+  glosa_value?: string | null;
+  net_value: string;
+  /** Câmara: PDF direto da nota; Senado: página de detalhe do portal. */
+  document_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonthlyTypeTotalOut {
+  month: number;
+  expense_type: string;
+  total: string;
+}
+
+export interface TopSupplierOut {
+  supplier_name?: string | null;
+  supplier_id?: string | null;
+  total: string;
+  count: number;
+}
+
+export interface ExpenseSummaryOut {
+  year?: number | null;
+  count: number;
+  total: string;
+  monthly: MonthlyTypeTotalOut[];
+  top_suppliers: TopSupplierOut[];
+}
+
 export interface UnmatchedAuthorOut {
   author_name_raw?: string | null;
   amendment_count: number;
