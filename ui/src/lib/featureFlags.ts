@@ -57,6 +57,10 @@ export const FEATURE_FLAGS = {
     label: 'Mamutômetro — escala pessoal de 1 a N mamutes',
     since: '2026-08-13',
   },
+  cota_parlamentar: {
+    label: 'Aba Gastos (cota parlamentar) no dashboard do parlamentar',
+    since: '2026-08-19',
+  },
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

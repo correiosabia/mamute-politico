@@ -12,6 +12,7 @@ import { ProposicoesTable } from '@/components/dashboard/ProposicoesTable';
 import { VotacoesTable } from '@/components/dashboard/VotacoesTable';
 import { TaquigraficasTable } from '@/components/dashboard/TaquigraficasTable';
 import { EmendasTable } from '@/components/dashboard/EmendasTable';
+import { GastosTab } from '@/components/dashboard/GastosTab';
 import { TrajetoriaTab } from '@/components/dashboard/TrajetoriaTab';
 import { PaywallOverlay } from '@/components/paywall/PaywallOverlay';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
@@ -72,6 +73,7 @@ const ParlamentarDashboard = () => {
   // `@/lib/featureFlags`.
   const emendasAccess = useFeatureAccess('emendas');
   const trajetoriaAccess = useFeatureAccess('trajetoria');
+  const cotaAccess = useFeatureAccess('cota_parlamentar');
 
   const { data: raw, isLoading, isError, error } = useQuery({
     queryKey: ['parliamentarian', id],
@@ -207,6 +209,24 @@ const ParlamentarDashboard = () => {
                 </PaywallOverlay>
               ) : (
                 <EmendasTable parliamentarianId={numericId} year={emendasYear} />
+              ),
+          },
+        ]
+      : []),
+    ...(cotaAccess !== 'oculta'
+      ? [
+          {
+            value: 'gastos',
+            label: 'GASTOS',
+            locked: cotaAccess === 'bloqueada',
+            className: 'mt-0 p-6 pt-4 h-[500px]',
+            content:
+              cotaAccess === 'bloqueada' ? (
+                <PaywallOverlay recurso="a aba Gastos">
+                  <GastosTab parliamentarianId={numericId} />
+                </PaywallOverlay>
+              ) : (
+                <GastosTab parliamentarianId={numericId} />
               ),
           },
         ]

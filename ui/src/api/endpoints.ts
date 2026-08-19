@@ -21,6 +21,8 @@ import type {
   AmendmentOut,
   AmendmentSummaryOut,
   ActionPlanOut,
+  ExpenseOut,
+  ExpenseSummaryOut,
 } from './types';
 
 export interface ListParliamentariansParams {
@@ -259,6 +261,44 @@ export function getAmendmentsSummary(
   const sp = new URLSearchParams({ parliamentarian_id: String(parliamentarianId) });
   if (year != null) sp.set('year', String(year));
   return request<AmendmentSummaryOut>(`/amendments/summary?${sp.toString()}`);
+}
+
+export type ExpenseSortBy = 'year' | 'month' | 'net_value' | 'id';
+
+export interface ListExpensesParams {
+  parliamentarian_id?: number;
+  year?: number;
+  month?: number;
+  limit?: number;
+  offset?: number;
+  sort_by?: ExpenseSortBy;
+  sort_order?: SortOrder;
+}
+
+/** Gastos da cota parlamentar (CEAP Câmara / CEAPS Senado) — CS-57. */
+export function listExpenses(
+  params: ListExpensesParams = {}
+): Promise<ExpenseOut[]> {
+  const sp = new URLSearchParams();
+  if (params.parliamentarian_id != null)
+    sp.set('parliamentarian_id', String(params.parliamentarian_id));
+  if (params.year != null) sp.set('year', String(params.year));
+  if (params.month != null) sp.set('month', String(params.month));
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  if (params.offset != null) sp.set('offset', String(params.offset));
+  if (params.sort_by) sp.set('sort_by', params.sort_by);
+  if (params.sort_order) sp.set('sort_order', params.sort_order);
+  const q = sp.toString();
+  return request<ExpenseOut[]>(`/expenses/${q ? `?${q}` : ''}`);
+}
+
+export function getExpensesSummary(
+  parliamentarianId: number,
+  year?: number
+): Promise<ExpenseSummaryOut> {
+  const sp = new URLSearchParams({ parliamentarian_id: String(parliamentarianId) });
+  if (year != null) sp.set('year', String(year));
+  return request<ExpenseSummaryOut>(`/expenses/summary?${sp.toString()}`);
 }
 
 export type SpeechesTranscriptSortBy =
