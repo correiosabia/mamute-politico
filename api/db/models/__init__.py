@@ -16,6 +16,7 @@ from .marcacoes_config import MarcacoesConfig
 from .personal_marks import ParliamentarianTag, ProjectMamutometro, ProjectTag
 from .parliamentarian import Parliamentarian
 from .parliamentary_amendment import ParliamentaryAmendment
+from .parliamentary_expense import ParliamentaryExpense
 from .plenary_attendance import PlenaryAttendance
 from .proposition import Proposition
 from .proposition_status import PropositionStatus
@@ -50,6 +51,7 @@ __all__ = [
     "ParliamentarianTag",
     "ParliamentarianSocialNetwork",
     "ParliamentaryAmendment",
+    "ParliamentaryExpense",
     "PlenaryAttendance",
     "ProjectMamutometro",
     "ProjectTag",
