@@ -134,6 +134,38 @@ python -m mamute_scrappers.scripts.backfill_cota --chunks-per-run 2
 python -m mamute_scrappers.scripts.backfill_cota --status
 ```
 
+### Perfil demográfico dos candidatos (TSE) — CS-63
+
+Cor/raça, gênero, escolaridade, ocupação, estado civil, nascimento e
+federação de **todos os candidatos** das eleições gerais, como colunas na
+tabela `candidacy`. Duas fontes que convergem na mesma chave natural
+`(election_year, state, tse_candidate_id)`:
+
+- **2026 (vivo):** o crawler da DivulgaCandContas (`tse_crawler.candidacy`)
+  já preenche as colunas a partir do detalhe. Para promover o que foi
+  coletado ANTES das colunas existirem (JSONB `details`), rodar uma vez:
+
+  ```bash
+  python -m mamute_scrappers.tse_crawler.promote_profile            # ~20k linhas, local
+  python -m mamute_scrappers.tse_crawler.promote_profile --dry-run  # só conta
+  ```
+
+- **Histórico 1994→2022 (carga única):** CSVs de dados abertos do TSE
+  (`consulta_cand_{ano}.zip`, ~3-5 MB/ano), ~190 mil candidaturas no total:
+
+  ```bash
+  python -m mamute_scrappers.tse_crawler.consulta_cand                    # todas as gerais
+  python -m mamute_scrappers.tse_crawler.consulta_cand --anos 1998,2002   # anos específicos
+  python -m mamute_scrappers.tse_crawler.consulta_cand --anos 2022 --dry-run --limit 50
+  ```
+
+Gotchas da fonte (medidos em 2026-08-20): o CDN do TSE (Akamai) exige o
+conjunto **completo** de headers de navegador (User-Agent sozinho = 403);
+em 2002/2006 o `SQ_CANDIDATO` é sequencial **por UF** e as linhas de 1º
+turno vêm duplicadas em dobro; cor/raça só existe desde **2014** e federação
+desde **2022** (NULL antes disso é lacuna da fonte). O CSV nunca sobrescreve
+campo preenchido pela API — só completa NULL.
+
 ### Reprocessar análise de texto de pronunciamentos
 
 ```bash

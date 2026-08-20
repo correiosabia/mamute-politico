@@ -113,12 +113,16 @@ def build_listing_payload(
 def merge_detail_payload(
     payload: Dict[str, Any], detail: Dict[str, Any]
 ) -> Dict[str, Any]:
+    # Import tardio: profile.py importa deste modulo (coerce_text).
+    from mamute_scrappers.tse_crawler.profile import extract_profile_from_detail
+
     merged = dict(payload)
     merged["cpf"] = normalize_cpf(detail.get("cpf"))
     merged["voter_id"] = coerce_text(detail.get("tituloEleitor"))
     merged["photo_url"] = coerce_text(detail.get("fotoUrl"))
     merged["tse_last_update"] = parse_tse_datetime(detail.get("dataUltimaAtualizacao"))
     merged["details"] = detail
+    merged.update(extract_profile_from_detail(detail))
     return merged
 
 
