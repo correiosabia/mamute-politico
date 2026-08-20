@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,6 +22,12 @@ import {
   type ElectoralHistoryEntryOut,
 } from '@/api/endpoints';
 import { getSafeExternalUrl } from '@/lib/safeExternalUrl';
+import {
+  assetVariations,
+  mandateBands,
+  variationForYear,
+  type AssetVariation,
+} from '@/lib/trajetoria';
 import { ExternalLink, Loader2 } from 'lucide-react';
 
 interface TrajetoriaTabProps {
@@ -37,6 +44,21 @@ function formatBRL(value?: string | null): string {
   if (value == null || value === '') return '—';
   const parsed = Number(value);
   return Number.isFinite(parsed) ? BRL.format(parsed) : '—';
+}
+
+const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+
+/**
+ * "+R$ 320.000,00 (+45%)" / "−R$ 150.000,00 (−9%)". Absoluto E percentual
+ * juntos, sempre: percentual sozinho explode com base pequena e vira a
+ * manchete errada que a CS-60 existe para evitar. Sem percentual quando a
+ * base é zero.
+ */
+function formatVariation(variation: AssetVariation): string {
+  const sinal = variation.absolute >= 0 ? '+' : '−';
+  const valor = BRL.format(Math.abs(variation.absolute));
+  if (variation.percent == null) return `${sinal}${valor}`;
+  return `${sinal}${valor} (${sinal}${PCT.format(Math.abs(variation.percent))}%)`;
 }
 
 function resultBadgeClass(result?: string | null): string {
@@ -79,12 +101,17 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
       patrimonio: Number(entry.declared_assets),
     }));
 
+  const years = chartData.map((point) => point.year);
+  // Faixas de mandato (fato: eleição vencida + duração do cargo) sombreiam o
+  // fundo do gráfico; variações alimentam tooltip e a coluna da tabela.
+  const bands =
+    years.length >= 2
+      ? mandateBands(entries, Math.min(...years), Math.max(...years))
+      : [];
+  const variations = assetVariations(entries);
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <span className="inline-flex w-fit items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-        Prévia — visível só para administradores
-      </span>
-
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Histórico eleitoral ainda não coletado para este parlamentar.
@@ -102,7 +129,14 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                     strokeDasharray="3 3"
                     stroke="rgba(0,0,0,0.06)"
                   />
-                  <XAxis dataKey="year" tick={{ fontSize: 12 }} />
+                  <XAxis
+                    dataKey="year"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
+                    ticks={years}
+                    allowDecimals={false}
+                    tick={{ fontSize: 12 }}
+                  />
                   <YAxis
                     tick={{ fontSize: 12 }}
                     width={90}
@@ -110,12 +144,35 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                       BRL.format(value).replace(/,00$/, '')
                     }
                   />
+                  {bands.map((band) => (
+                    <ReferenceArea
+                      key={`${band.startYear}-${band.office}`}
+                      x1={band.startYear}
+                      x2={band.endYear}
+                      fill="#1f2b44"
+                      fillOpacity={0.06}
+                      label={{
+                        value: band.office,
+                        position: 'insideTopLeft',
+                        fontSize: 10,
+                        fill: '#64748b',
+                      }}
+                    />
+                  ))}
                   <Tooltip
                     formatter={(value: number) => [
                       BRL.format(value),
                       'Patrimônio declarado',
                     ]}
-                    labelFormatter={(year) => `Eleição de ${year}`}
+                    labelFormatter={(year) => {
+                      const variation = variationForYear(
+                        variations,
+                        Number(year)
+                      );
+                      return variation
+                        ? `Eleição de ${year} · desde ${variation.fromYear}: ${formatVariation(variation)}`
+                        : `Eleição de ${year}`;
+                    }}
                   />
                   <Line
                     type="monotone"
@@ -126,6 +183,11 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                   />
                 </LineChart>
               </ResponsiveContainer>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Faixas sombreadas indicam mandato eletivo (eleição vencida +
+                duração do cargo). Valores nominais declarados ao TSE, sem
+                correção inflacionária.
+              </p>
             </div>
           )}
 
@@ -140,6 +202,7 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                 <TableHead className="text-right">
                   Patrimônio declarado
                 </TableHead>
+                <TableHead className="text-right">Variação</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -148,6 +211,7 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                 const safeUrl = entry.source_link
                   ? getSafeExternalUrl(entry.source_link)
                   : null;
+                const variation = variationForYear(variations, entry.year);
                 return (
                   <TableRow key={`${entry.year}-${entry.office}-${entry.state}`}>
                     <TableCell className="font-medium">{entry.year}</TableCell>
@@ -165,6 +229,16 @@ export function TrajetoriaTab({ parliamentarianId }: TrajetoriaTabProps) {
                     </TableCell>
                     <TableCell className="text-right">
                       {formatBRL(entry.declared_assets)}
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-right text-muted-foreground"
+                      title={
+                        variation
+                          ? `Em relação à eleição de ${variation.fromYear} (valores nominais)`
+                          : undefined
+                      }
+                    >
+                      {variation ? formatVariation(variation) : '—'}
                     </TableCell>
                     <TableCell>
                       {safeUrl && (
