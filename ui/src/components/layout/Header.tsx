@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, User, X } from 'lucide-react';
+import { ChevronDown, Menu, User, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
@@ -11,18 +11,59 @@ import logoMamute from '@/assets/logo-mamute.png';
 const siteRootUrl = '/#/';
 const parceriasUrl = 'https://mamutepolitico.com.br/seja-parceiro/';
 
-type NavItem =
+type NavLeaf =
   | { id: string; label: string; path: string }
   | { id: string; label: string; href: string; external: true; newTab?: boolean };
+
+type NavGroup = { id: string; label: string; children: NavLeaf[] };
+
+type NavItem = NavLeaf | NavGroup;
+
+const isGroup = (item: NavItem): item is NavGroup => 'children' in item;
 
 const navItems: NavItem[] = [
   { id: 'home', path: '/', label: 'Início' },
   { id: 'selecao', path: '/selecao', label: 'Selecionar Parlamentares' },
   { id: 'dashboard', path: '/dashboard', label: 'Dashboard Geral' },
   { id: 'pesquisa', path: '/pesquisa', label: 'Pesquisa IA' },
-  { id: 'blog', href: siteRootUrl, label: 'Blog', external: true },
-  { id: 'parcerias', href: parceriasUrl, label: 'Parcerias', external: true, newTab: true },
+  {
+    id: 'contato',
+    label: 'Contato',
+    children: [
+      { id: 'parcerias', href: parceriasUrl, label: 'Parcerias', external: true, newTab: true },
+      { id: 'blog', href: siteRootUrl, label: 'Blog', external: true },
+    ],
+  },
 ];
+
+function NavLeafLink({
+  item,
+  className,
+  onNavigate,
+}: {
+  item: NavLeaf;
+  className: string;
+  onNavigate?: () => void;
+}) {
+  if ('external' in item) {
+    return (
+      <a
+        href={item.href}
+        onClick={onNavigate}
+        className={className}
+        {...(item.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        {item.label}
+      </a>
+    );
+  }
+
+  return (
+    <Link to={item.path} onClick={onNavigate} className={className}>
+      {item.label}
+    </Link>
+  );
+}
 
 export function Header() {
   const location = useLocation();
@@ -31,6 +72,7 @@ export function Header() {
   const { openLogin } = useLoginModal();
   const { openAccount } = useAccountModal();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const baseNavItems = token ? navItems : navItems;//.filter((item) => item.path === '/');
   const visibleNavItems: NavItem[] = isAdmin
     ? [...baseNavItems, { id: 'admin', path: '/admin', label: 'Admin' }]
@@ -51,6 +93,7 @@ export function Header() {
 
   useEffect(() => {
     closeMobileMenu();
+    setOpenSubmenuId(null);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -64,6 +107,20 @@ export function Header() {
       document.body.style.overflow = previousOverflow;
     };
   }, [isMobileMenuOpen]);
+
+  const isActivePath = (item: NavLeaf) => !('external' in item) && location.pathname === item.path;
+
+  const desktopLinkClass = (item: NavLeaf) =>
+    cn(
+      'px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
+      isActivePath(item) ? 'underline underline-offset-4' : 'opacity-85 hover:opacity-100'
+    );
+
+  const mobileLinkClass = (item: NavLeaf) =>
+    cn(
+      'rounded-lg px-2 py-2 text-[16px] font-medium text-[#393939] transition-colors',
+      isActivePath(item) ? 'bg-black/5' : 'hover:bg-black/5'
+    );
 
   // const handleAccountClick = () => {
   //   window.open(ACCOUNT_URL, '_blank', 'noopener,noreferrer');
@@ -103,37 +160,30 @@ export function Header() {
         </div>
 
         <nav className="flex flex-col gap-2">
-          {visibleNavItems.map((item) => {
-            const linkClassName = cn(
-              'rounded-lg px-2 py-2 text-[16px] font-medium text-[#393939] transition-colors',
-              'external' in item ? 'hover:bg-black/5' : location.pathname === item.path ? 'bg-black/5' : 'hover:bg-black/5'
-            );
-
-            if ('external' in item) {
-              return (
-                <a
-                  key={item.id}
-                  href={item.href}
-                  onClick={closeMobileMenu}
-                  className={linkClassName}
-                  {...(item.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                >
+          {visibleNavItems.map((item) =>
+            isGroup(item) ? (
+              <div key={item.id} className="flex flex-col gap-1">
+                <span className="px-2 py-2 text-[16px] font-medium text-[#393939]">
                   {item.label}
-                </a>
-              );
-            }
-
-            return (
-              <Link
+                </span>
+                {item.children.map((child) => (
+                  <NavLeafLink
+                    key={child.id}
+                    item={child}
+                    className={cn(mobileLinkClass(child), 'ml-3 text-[15px]')}
+                    onNavigate={closeMobileMenu}
+                  />
+                ))}
+              </div>
+            ) : (
+              <NavLeafLink
                 key={item.id}
-                to={item.path}
-                onClick={closeMobileMenu}
-                className={linkClassName}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+                item={item}
+                className={mobileLinkClass(item)}
+                onNavigate={closeMobileMenu}
+              />
+            )
+          )}
         </nav>
 
         <button
@@ -163,32 +213,70 @@ export function Header() {
 
           <nav className="hidden md:flex items-center gap-3">
             {visibleNavItems.map((item) => {
-              const linkClassName = cn(
-                'px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
-                'external' in item
-                  ? 'opacity-85 hover:opacity-100'
-                  : location.pathname === item.path
-                    ? 'underline underline-offset-4'
-                    : 'opacity-85 hover:opacity-100'
-              );
-
-              if ('external' in item) {
-                return (
-                  <a
-                    key={item.id}
-                    href={item.href}
-                    className={linkClassName}
-                    {...(item.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                  >
-                    {item.label}
-                  </a>
-                );
+              if (!isGroup(item)) {
+                return <NavLeafLink key={item.id} item={item} className={desktopLinkClass(item)} />;
               }
 
+              const isSubmenuOpen = openSubmenuId === item.id;
+
               return (
-                <Link key={item.id} to={item.path} className={linkClassName}>
-                  {item.label}
-                </Link>
+                <div
+                  key={item.id}
+                  className="relative"
+                  onMouseEnter={() => setOpenSubmenuId(item.id)}
+                  onMouseLeave={() => setOpenSubmenuId(null)}
+                  onFocus={() => setOpenSubmenuId(item.id)}
+                  onBlur={(event) => {
+                    // Fecha só quando o foco sai do conjunto gatilho + painel.
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setOpenSubmenuId(null);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setOpenSubmenuId(null);
+                    }
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenSubmenuId(isSubmenuOpen ? null : item.id)}
+                    className={cn(
+                      'flex items-center gap-1 px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
+                      isSubmenuOpen ? 'opacity-100' : 'opacity-85 hover:opacity-100'
+                    )}
+                    aria-expanded={isSubmenuOpen}
+                    aria-controls={`nav-submenu-${item.id}`}
+                    aria-haspopup="true"
+                  >
+                    {item.label}
+                    <ChevronDown
+                      className={cn('h-4 w-4 transition-transform', isSubmenuOpen && 'rotate-180')}
+                      aria-hidden="true"
+                    />
+                  </button>
+
+                  {isSubmenuOpen && (
+                    <div
+                      id={`nav-submenu-${item.id}`}
+                      className="absolute left-1/2 top-full z-50 min-w-[168px] -ml-2.5 -translate-x-1/2 pt-3"
+                    >
+                          <div className="flex flex-col rounded-2xl border border-black/10 bg-[#e6c54a]/80 p-2 shadow-[0_8px_18px_rgba(0,0,0,0.14)] backdrop-blur-md">
+                            {item.children.map((child) => (
+                              <NavLeafLink
+                                key={child.id}
+                                item={child}
+                                className={cn(
+                                  'rounded-lg px-3 py-2 text-center text-[15px] font-medium text-[#393939] transition-colors hover:bg-black/10',
+                                  isActivePath(child) && 'bg-black/10'
+                                )}
+                                onNavigate={() => setOpenSubmenuId(null)}
+                              />
+                            ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>
