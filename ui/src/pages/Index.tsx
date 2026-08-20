@@ -87,6 +87,7 @@ const Index = () => {
 
         <section
           ref={heroContainerRef}
+          data-testid="hero-inicio"
           className="relative overflow-hidden"
           onMouseMove={handleHeroMouseMove}
           onMouseLeave={handleHeroMouseLeave}
@@ -104,12 +105,13 @@ const Index = () => {
             <img
               src={congressoForeground}
               alt=""
+              data-testid="hero-congresso-desktop"
               className="absolute right-0 bottom-0 w-full object-cover object-center"
             />
           </div>
 
-          <div className="relative z-10">
-            <div className="container flex flex-col py-8 md:grid md:min-h-[560px] 2xl:min-h-[800px] md:items-center">
+          <div className="relative z-10 flex flex-col md:min-h-[29vw]">
+            <div className="container flex flex-col py-8 md:flex-1 md:justify-center md:pt-12 md:pb-10">
               <div className="max-w-[610px] space-y-5">
                 <p className="flex items-center gap-2 text-[15px] font-extrabold italic leading-normal tracking-[0.02em] text-[#393939] uppercase">
                   <TempoRealIcon />
@@ -134,6 +136,7 @@ const Index = () => {
                 </div>
               </div>
             </div>
+            <div className="hidden w-full shrink-0 aspect-[1440/146] md:block" aria-hidden="true" />
             <div className="mt-8 w-full overflow-hidden md:hidden" aria-hidden="true">
               <img
                 src={congressoForeground}
