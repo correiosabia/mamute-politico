@@ -124,6 +124,14 @@ def test_build_payload_normaliza_e_chaveia():
     assert built["profile_source"] == PROFILE_SOURCE_CSV
 
 
+def test_build_payload_descarta_sentinela_em_voter_id():
+    # 1994/1998 vem com NR_TITULO_ELEITORAL_CANDIDATO = "#NE".
+    built = consulta_mod.build_csv_payload(
+        csv_row(NR_TITULO_ELEITORAL_CANDIDATO="#NE"), year=1998
+    )
+    assert built["voter_id"] is None
+
+
 def test_build_payload_sem_sq_retorna_none():
     assert consulta_mod.build_csv_payload(csv_row(SQ_CANDIDATO=""), year=2022) is None
 
