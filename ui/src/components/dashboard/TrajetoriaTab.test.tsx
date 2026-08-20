@@ -52,15 +52,29 @@ const ENTRIES = [
 ];
 
 describe('TrajetoriaTab', () => {
-  it('renderiza selo de prévia, disputas e patrimônio em BRL', async () => {
+  it('renderiza disputas e patrimônio em BRL, sem o selo antigo de prévia', async () => {
     mocked.mockResolvedValue({ entries: ENTRIES });
     renderTab();
-    expect(await screen.findByText(/Prévia/)).toBeInTheDocument();
-    expect(screen.getByText('Governador')).toBeInTheDocument();
+    expect(await screen.findByText('Governador')).toBeInTheDocument();
     expect(screen.getByText('Eleito')).toBeInTheDocument();
     // BRL usa espaço não separável entre R$ e o número.
     expect(screen.getByText(/R\$\s?1\.036\.642,25/)).toBeInTheDocument();
     expect(screen.getByText(/R\$\s?1\.589\.369,94/)).toBeInTheDocument();
+    // O selo hardcoded "Prévia — visível só para administradores" mentia
+    // quando a flag saía de 'admins'; quem manda é a flag, não o componente.
+    expect(screen.queryByText(/Prévia/)).not.toBeInTheDocument();
+  });
+
+  it('mostra a variação nominal em relação à eleição anterior', async () => {
+    mocked.mockResolvedValue({ entries: ENTRIES });
+    renderTab();
+    // 2022 -> 2026: 1.036.642,25 − 1.589.369,94 = −552.727,69 (−34,8%)
+    expect(
+      await screen.findByText(/−R\$\s?552\.727,69 \(−34,8%\)/)
+    ).toBeInTheDocument();
+    // A linha mais antiga não tem eleição anterior: traço, não zero.
+    const variacaoCells = screen.getAllByTitle(/Em relação à eleição de/);
+    expect(variacaoCells).toHaveLength(1);
   });
 
   it('links para o TSE saem do source_link', async () => {
