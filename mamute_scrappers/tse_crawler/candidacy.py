@@ -82,6 +82,16 @@ _DETAIL_FIELDS = (
     "tse_last_update",
     "details",
     "listing_fingerprint",
+    # Perfil demografico (CS-63), extraido do mesmo payload de detalhe.
+    "birth_date",
+    "gender",
+    "race",
+    "education",
+    "occupation",
+    "marital_status",
+    "nationality",
+    "federation",
+    "profile_source",
 )
 
 
