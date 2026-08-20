@@ -170,6 +170,14 @@ def iter_csv_rows(zip_path: Path) -> Iterator[Dict[str, str]]:
                 yield from reader
 
 
+def _csv_text(value: Any) -> Optional[str]:
+    """coerce_text que tambem descarta sentinelas (#NE, #NULO#...)."""
+    text = coerce_text(value)
+    if text is None or text.startswith("#"):
+        return None
+    return text
+
+
 def build_csv_payload(row: Dict[str, str], *, year: int) -> Optional[Dict[str, Any]]:
     """Payload de upsert a partir de uma linha do consulta_cand."""
     tse_candidate_id = parse_int(row.get("SQ_CANDIDATO"))
@@ -191,7 +199,7 @@ def build_csv_payload(row: Dict[str, str], *, year: int) -> Optional[Dict[str, A
         "status": normalize_profile_text(row.get("DS_SITUACAO_CANDIDATURA")),
         "totalization_status": normalize_profile_text(row.get("DS_SIT_TOT_TURNO")),
         "cpf": normalize_cpf(row.get("NR_CPF_CANDIDATO")),
-        "voter_id": coerce_text(row.get("NR_TITULO_ELEITORAL_CANDIDATO")),
+        "voter_id": _csv_text(row.get("NR_TITULO_ELEITORAL_CANDIDATO")),
     }
     payload.update(extract_profile_from_csv_row(row))
     return payload
