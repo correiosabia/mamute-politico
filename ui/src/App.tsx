@@ -9,6 +9,7 @@ import SelecaoPage from "./pages/SelecaoPage";
 import ParlamentarDashboard from "./pages/ParlamentarDashboard";
 import DashboardPage from "./pages/DashboardPage";
 import PesquisaIAPage from "./pages/PesquisaIAPage";
+import BuscarCandidaturasPage from "./pages/BuscarCandidaturasPage";
 import AdminPage from "./pages/AdminPage";
 import AdminTiersPage from "./pages/AdminTiersPage";
 import AdminSettingsPage from './pages/AdminSettingsPage';
@@ -113,6 +114,14 @@ const App = () => (
                 element={
                   <RequireAuth>
                     <PesquisaIAPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/candidaturas"
+                element={
+                  <RequireAuth>
+                    <BuscarCandidaturasPage />
                   </RequireAuth>
                 }
               />

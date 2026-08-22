@@ -23,6 +23,8 @@ import type {
   ActionPlanOut,
   ExpenseOut,
   ExpenseSummaryOut,
+  CandidacyOut,
+  CandidacyFiltersOut,
 } from './types';
 
 export interface ListParliamentariansParams {
@@ -590,4 +592,37 @@ export function listActionPlans(
   return request<ActionPlanOut[]>(
     `/amendments/${encodeURIComponent(amendmentCode)}/action-plans`
   );
+}
+
+export interface ListCandidaciesParams {
+  limit?: number;
+  offset?: number;
+  election_year?: number;
+  /** Nome de urna ou nome completo. O backend exige 2+ caracteres. */
+  name?: string;
+  state?: string;
+  office_code?: number;
+  sort_by?: 'ballot_name' | 'full_name' | 'state' | 'party';
+  sort_order?: 'asc' | 'desc';
+}
+
+export function listCandidacies(
+  params: ListCandidaciesParams = {}
+): Promise<CandidacyOut[]> {
+  const sp = new URLSearchParams();
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  if (params.offset != null) sp.set('offset', String(params.offset));
+  if (params.election_year != null) sp.set('election_year', String(params.election_year));
+  if (params.name) sp.set('name', params.name);
+  if (params.state) sp.set('state', params.state);
+  if (params.office_code != null) sp.set('office_code', String(params.office_code));
+  if (params.sort_by) sp.set('sort_by', params.sort_by);
+  if (params.sort_order) sp.set('sort_order', params.sort_order);
+  const q = sp.toString();
+  return request<CandidacyOut[]>(`/candidacies/${q ? `?${q}` : ''}`);
+}
+
+/** Anos, UFs e cargos que existem na base — alimenta os dropdowns da busca. */
+export function getCandidacyFilters(): Promise<CandidacyFiltersOut> {
+  return request<CandidacyFiltersOut>('/candidacies/filters');
 }

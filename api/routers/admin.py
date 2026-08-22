@@ -150,6 +150,10 @@ class TierDetailsUpdate(BaseModel):
     qtd_termos: Optional[int] = Field(default=None, ge=0)
     qtd_termos_camara: Optional[int] = Field(default=None, ge=0)
     qtd_termos_senado: Optional[int] = Field(default=None, ge=0)
+    # Candidaturas da eleição de 2026 (CS-62). Default de 10 semeado na
+    # migration e1f2a3b4c5d6; a aplicação do limite depende do monitoramento de
+    # candidatura, que ainda não existe no backend.
+    qtd_candidatos: Optional[int] = Field(default=None, ge=0)
     qtd_consultas_ia_mes: Optional[int] = Field(default=None, ge=0)
     qtd_consultas_ia_semana: Optional[int] = Field(default=None, ge=0)
     periodicidade_email: Optional[list[str]] = None

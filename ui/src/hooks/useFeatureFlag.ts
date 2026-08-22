@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { fetchFeatureFlags } from '@/api/endpoints';
+import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
 import type { FeatureFlagKey } from '@/lib/featureFlags';
 
 /**
@@ -19,12 +20,20 @@ import type { FeatureFlagKey } from '@/lib/featureFlags';
  * Para remover a flag, veja o procedimento em `@/lib/featureFlags`.
  */
 export function useFeatureFlag(key: FeatureFlagKey): boolean {
+  const token = useGhostAuth();
+  // O token entra na chave porque, se ele estiver expirado no boot, a rota
+  // devolve 401 e — com `retry: false` — a query fica em erro, fazendo TODA
+  // flag ler `false` (interface sem as features liberadas). O serviço de auth
+  // renova o token em seguida; com ele na chave, a renovação refaz a busca.
+  // ATENÇÃO: esta query é a MESMA de `useFeatureAccess.ts`. Mexeu aqui, mexa lá.
   const { data } = useQuery({
-    queryKey: ['feature-flags'],
+    queryKey: ['feature-flags', token],
     queryFn: fetchFeatureFlags,
     staleTime: 5 * 60 * 1000,
     retry: false,
+    enabled: Boolean(token),
   });
 
   return data?.[key] === 'liberada';
 }
+

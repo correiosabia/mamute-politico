@@ -9,6 +9,10 @@ import { useFeatureAccess } from './useFeatureAccess';
 
 vi.mock('@/api/endpoints', () => ({ fetchFeatureFlags: vi.fn() }));
 
+vi.mock('@/components/auth/ghost-auth/react/useGhostAuth', () => ({
+  useGhostAuth: () => 'token-de-teste',
+}));
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },

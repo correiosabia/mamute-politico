@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, Menu, User, X } from 'lucide-react';
+import { Bell, ChevronDown, Menu, Search, User, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { useAccountModal } from '@/components/auth/useAccountModal';
 import { useLoginModal } from '@/components/auth/useLoginModal';
 import logoMamute from '@/assets/logo-mamute.png';
@@ -65,7 +66,26 @@ function NavLeafLink({
   );
 }
 
-export function Header() {
+export interface HeaderProps {
+  /**
+   * Fundo sobre o qual o header é desenhado.
+   * 'gold' (default) = resto do app, logo e navegação em #393939.
+   * 'blue' = herói azul da busca de candidaturas, logo e navegação em branco.
+   */
+  tone?: 'gold' | 'blue';
+  /**
+   * Contador do sino. Sem valor (o caso de hoje), o sino aparece sem badge:
+   * não existe fonte de notificações no backend — `events` é telemetria de uso
+   * e `email_send_log` é log de envio, nenhum dos dois tem estado de lido.
+   * O sino em si só aparece com a flag `notificacoes` ligada.
+   */
+  notificationCount?: number | null;
+}
+
+export function Header({
+  tone = 'gold',
+  notificationCount = null,
+}: HeaderProps = {}) {
   const location = useLocation();
   const token = useGhostAuth();
   const { isAdmin } = useIsAdmin();
@@ -73,6 +93,15 @@ export function Header() {
   const { openAccount } = useAccountModal();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
+  const onBlue = tone === 'blue';
+  // O sino é desenho do mockup sem backend por trás: não existe entidade de
+  // notificação nem estado de lido/não lido (o módulo de notificação do projeto
+  // manda e-mail e grava `email_send_log`, que é log de envio). Fica atrás de
+  // flag, desligada, até a fonte existir.
+  const notificacoesOn = useFeatureFlag('notificacoes');
+  // Mesma flag da rota: o BUSCAR é a porta de entrada da tela, então aparecer
+  // no header sem a rota liberada levaria a um redirect para a home.
+  const buscaCandidaturasOn = useFeatureFlag('busca_candidaturas');
   const baseNavItems = token ? navItems : navItems;//.filter((item) => item.path === '/');
   const visibleNavItems: NavItem[] = isAdmin
     ? [...baseNavItems, { id: 'admin', path: '/admin', label: 'Admin' }]
@@ -112,7 +141,8 @@ export function Header() {
 
   const desktopLinkClass = (item: NavLeaf) =>
     cn(
-      'px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
+      'px-1 py-1 text-[15px] font-medium transition-opacity',
+      onBlue ? 'text-white' : 'text-[#393939]',
       isActivePath(item) ? 'underline underline-offset-4' : 'opacity-85 hover:opacity-100'
     );
 
@@ -121,6 +151,54 @@ export function Header() {
       'rounded-lg px-2 py-2 text-[16px] font-medium text-[#393939] transition-colors',
       isActivePath(item) ? 'bg-black/5' : 'hover:bg-black/5'
     );
+
+  /**
+   * O sino aparece nos DOIS arranjos do canto direito: a flag `notificacoes` é
+   * o único portão dele. Enquanto morava dentro do arranjo 'busca', ligar a
+   * flag não mostrava nada fora da tela de candidaturas — dois portões em
+   * série, sem motivo. Em variável para a ordem do mockup (BUSCAR, sino, SAIR)
+   * continuar valendo lá sem duplicar o JSX aqui.
+   */
+  /**
+   * BUSCAR é a porta de entrada da tela de candidaturas, e por isso vale em
+   * TODA página, não só nela: um botão de busca no header da própria tela de
+   * busca é redundante com o PESQUISAR do formulário. Como está atrás da flag
+   * `busca_candidaturas`, com ela desligada (o padrão) nenhuma página muda.
+   */
+  const botaoBuscar =
+    buscaCandidaturasOn && token ? (
+      <Link
+        to="/candidaturas"
+        className="hidden items-center gap-2 rounded-[92px] bg-[#393939] px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-white transition hover:opacity-90 md:inline-flex"
+      >
+        <Search className="h-4 w-4" aria-hidden="true" />
+        BUSCAR
+      </Link>
+    ) : null;
+
+  const sinoNotificacoes =
+    notificacoesOn && token ? (
+      <button
+        type="button"
+        // Sem destino ainda: o controle se declara inativo em vez de levar
+        // para uma tela que não é de notificação.
+        aria-disabled="true"
+        className={cn(
+          'relative flex h-9 w-9 cursor-default items-center justify-center rounded-full',
+          onBlue ? 'text-white' : 'text-[#393939]'
+        )}
+        aria-label="Notificações"
+        title="Notificações — em breve"
+      >
+        <Bell className="h-5 w-5" />
+        {/* Sem badge quando não há contagem: o número não é inventado. */}
+        {notificationCount != null && notificationCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-black px-1 text-[10px] font-bold text-white">
+            {notificationCount > 99 ? '99+' : notificationCount}
+          </span>
+        )}
+      </button>
+    ) : null;
 
   // const handleAccountClick = () => {
   //   window.open(ACCOUNT_URL, '_blank', 'noopener,noreferrer');
@@ -208,7 +286,11 @@ export function Header() {
       <div className="container flex h-[88px] items-center justify-between">
         <div className="flex items-center gap-10">
           <Link to="/" className="flex items-center">
-            <img src={logoMamute} alt="Mamute Político" className="h-[39px] w-auto" />
+            <img
+              src={logoMamute}
+              alt="Mamute Político"
+              className={cn('h-[39px] w-auto', onBlue && 'brightness-0 invert')}
+            />
           </Link>
 
           <nav className="hidden md:flex items-center gap-3">
@@ -242,7 +324,8 @@ export function Header() {
                     type="button"
                     onClick={() => setOpenSubmenuId(isSubmenuOpen ? null : item.id)}
                     className={cn(
-                      'flex items-center gap-1 px-1 py-1 text-[15px] font-medium text-[#393939] transition-opacity',
+                      'flex items-center gap-1 px-1 py-1 text-[15px] font-medium transition-opacity',
+                      onBlue ? 'text-white' : 'text-[#393939]',
                       isSubmenuOpen ? 'opacity-100' : 'opacity-85 hover:opacity-100'
                     )}
                     aria-expanded={isSubmenuOpen}
@@ -261,7 +344,12 @@ export function Header() {
                       id={`nav-submenu-${item.id}`}
                       className="absolute left-1/2 top-full z-50 min-w-[168px] -ml-2.5 -translate-x-1/2 pt-3"
                     >
-                          <div className="flex flex-col rounded-2xl border border-black/10 bg-[#e6c54a]/80 p-2 shadow-[0_8px_18px_rgba(0,0,0,0.14)] backdrop-blur-md">
+                          <div
+                            className={cn(
+                              'flex flex-col rounded-2xl border border-black/10 p-2 shadow-[0_8px_18px_rgba(0,0,0,0.14)] backdrop-blur-md',
+                              onBlue ? 'bg-white/95' : 'bg-[#e6c54a]/80'
+                            )}
+                          >
                             {item.children.map((child) => (
                               <NavLeafLink
                                 key={child.id}
@@ -286,35 +374,19 @@ export function Header() {
           <button
             type="button"
             onClick={toggleMobileMenu}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#393939] transition hover:bg-black/5 md:hidden"
+            className={cn(
+              'inline-flex h-9 w-9 items-center justify-center rounded-full transition md:hidden',
+              onBlue ? 'text-white hover:bg-white/15' : 'text-[#393939] hover:bg-black/5'
+            )}
             aria-label={isMobileMenuOpen ? 'Fechar menu' : 'Abrir menu'}
             aria-expanded={isMobileMenuOpen}
             aria-controls="mobile-header-drawer"
           >
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          {/* <button
-            type="button"
-            className="relative flex h-8 w-8 items-center justify-center rounded-full text-[#393939] transition hover:opacity-80"
-            aria-label="Notificações"
-          >
-            <Bell className="h-[15px] w-[15px]" />
-            <span className="absolute right-[4px] top-[1px] flex h-[15px] w-[15px] items-center justify-center rounded-full bg-black text-[10px] font-bold text-white">
-              3
-            </span>
-          </button> */}
-          {/* {token && (
-            <button
-              type="button"
-              onClick={handleAuthClick}
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-[#ff0004] hover:text-white border-[#393939] bg-white text-[#393939] transition hover:opacity-80"
-              aria-label="Sua conta"
-              title="Sua conta"
-            >
-              <User className="h-5 w-5" /> CONTA
-            </button>
-          )} */}
-          {<button
+          {botaoBuscar}
+          {sinoNotificacoes}
+          <button
             type="button"
             onClick={handleAuthClick}
             className={cn(
@@ -324,7 +396,7 @@ export function Header() {
             aria-label={token ? 'Sair' : 'Iniciar Sessão'}
           >
             {token ? <div className="flex items-center gap-2"><User className="h-5 w-5" /><span className="hidden md:block">{" "}CONTA</span></div> : 'INICIAR SESSÃO'}
-          </button>}
+          </button>
         </div>
       </div>
     </header>

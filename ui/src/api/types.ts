@@ -336,3 +336,34 @@ export interface SpeechAnalysisOut {
   keywords: AnalysisKeywordOut[];
   entities: AnalysisEntityOut[];
 }
+
+/** Candidatura da eleição de 2026 (tabela `candidacy`, populada pelo tse_crawler). */
+export interface CandidacyOut {
+  id: number;
+  election_year: number;
+  tse_candidate_id: number;
+  office_code?: number | null;
+  office?: string | null;
+  state?: string | null;
+  ballot_number?: number | null;
+  ballot_name?: string | null;
+  full_name?: string | null;
+  party?: string | null;
+  coalition?: string | null;
+  status?: string | null;
+  photo_url?: string | null;
+  /** Null = candidatura sem parlamentar correspondente na base; não dá para monitorar. */
+  parliamentarian_id?: number | null;
+  match_status: string;
+}
+
+export interface CandidacyOfficeOut {
+  code: number;
+  name: string;
+}
+
+export interface CandidacyFiltersOut {
+  election_years: number[];
+  states: string[];
+  offices: CandidacyOfficeOut[];
+}
