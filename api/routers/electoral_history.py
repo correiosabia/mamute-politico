@@ -17,14 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 try:
-    # Execução como pacote (api.routers.electoral_history).
     from ..db.models.candidacy import Candidacy
     from ..db.models.electoral_history import ElectoralHistory
     from ..db.models.parliamentarian import Parliamentarian
     from ..dependencies import get_db
     from ..feature_gate import PREVIEW_ROWS, FeatureAccess, trajetoria_access
 except (ImportError, ValueError):
-    # Execução local dentro de api/ sem reconhecimento de pacote.
     from db.models.candidacy import Candidacy
     from db.models.electoral_history import ElectoralHistory
     from db.models.parliamentarian import Parliamentarian
@@ -35,7 +33,6 @@ router = APIRouter(tags=["electoral-history"])
 
 
 class ElectoralHistoryEntryOut(BaseModel):
-    """Uma disputa eleitoral na linha do tempo do politico."""
 
     year: int
     office: Optional[str] = None
@@ -126,7 +123,6 @@ def get_candidacy_electoral_history(
     db: Session = Depends(get_db),
     access: FeatureAccess = Depends(trajetoria_access),
 ) -> ElectoralHistoryOut:
-    """Linha do tempo eleitoral pela candidatura 2026."""
     if db.get(Candidacy, candidacy_id) is None:
         raise HTTPException(status_code=404, detail="Candidatura não encontrada")
     return _timeline(

@@ -1,14 +1,3 @@
-"""Rotas de busca de candidaturas (CS-62).
-
-A tabela `candidacy` e populada pelo tse_crawler (CS-16); aqui e so leitura,
-mesma postura de `electoral_history`.
-
-Busca por nome dobra acento dos dois lados via `unaccent_imutavel` (migration
-d0e1f2a3b4c5), entao "joao" encontra "JOÃO". A funcao e o wrapper IMMUTABLE do
-`unaccent`, necessario para o indice GIN de trigrama que atende o
-`ILIKE '%termo%'` — o porque de nao ser `translate()` esta na migration.
-"""
-
 from __future__ import annotations
 
 from typing import List, Literal, Optional
@@ -31,6 +20,7 @@ router = APIRouter(prefix="/candidacies", tags=["candidacies"])
 
 DEFAULT_ELECTION_YEAR = 2026
 
+# Nomes dos cargos por codigo da DivulgaCandContas
 OFFICE_NAMES = {
     1: "Presidente",
     3: "Governador",
@@ -57,7 +47,6 @@ class CandidacyOut(BaseModel):
     coalition: Optional[str] = None
     status: Optional[str] = None
     photo_url: Optional[str] = None
-    # Quem consome usa isto para decidir se da para monitorar: candidatura sem
     # `parliamentarian_id` nao tem parlamentar correspondente na base.
     parliamentarian_id: Optional[int] = None
     match_status: str
@@ -66,14 +55,12 @@ class CandidacyOut(BaseModel):
 
 
 class OfficeOut(BaseModel):
-    """Opcao do dropdown "selecionar cargo"."""
 
     code: int
     name: str
 
 
 class CandidacyFiltersOut(BaseModel):
-    """Opcoes reais dos dropdowns, derivadas do que existe na base."""
 
     election_years: List[int]
     states: List[str]
