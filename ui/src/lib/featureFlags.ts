@@ -61,6 +61,14 @@ export const FEATURE_FLAGS = {
     label: 'Aba Gastos (cota parlamentar) no dashboard do parlamentar',
     since: '2026-08-19',
   },
+  busca_candidaturas: {
+    label: 'Tela Buscar Candidaturas (eleição 2026)',
+    since: '2026-08-19',
+  },
+  notificacoes: {
+    label: 'Sino de notificações no header', // Flag dentro da flag, porém LUIZ pediu temporariamente até resolver com Maurício.
+    since: '2026-08-21',
+  },
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

@@ -12,6 +12,12 @@ vi.mock("@/hooks/useIsAdmin", () => ({
   useIsAdmin: () => ({ isAdmin: false, isLoading: false }),
 }));
 
+// O Header (dentro do Index) lê a flag do sino; sem o mock o hook exigiria
+// QueryClientProvider neste teste, que renderiza a rota isolada.
+vi.mock("@/hooks/useFeatureFlag", () => ({
+  useFeatureFlag: () => false,
+}));
+
 vi.mock("@/components/auth/useLoginModal", () => ({
   useLoginModal: () => ({ openLogin: vi.fn() }),
 }));
