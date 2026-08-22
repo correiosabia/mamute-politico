@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { fetchFeatureFlags } from '@/api/endpoints';
+import { useGhostAuth } from '@/components/auth/ghost-auth/react/useGhostAuth';
 import {
   isFeaturePreviewOn,
   subscribeFeaturePreview,
@@ -22,8 +23,10 @@ export type FeatureAccessValue = 'liberada' | 'bloqueada' | 'oculta';
  * SÓ 'liberada' → 'bloqueada': simular nunca revela o que está oculto.
  */
 export function useFeatureAccess(key: FeatureFlagKey): FeatureAccessValue {
+  const token = useGhostAuth();
+
   const { data } = useQuery({
-    queryKey: ['feature-flags'],
+    queryKey: ['feature-flags', token],
     queryFn: fetchFeatureFlags,
     staleTime: 5 * 60 * 1000,
     retry: false,

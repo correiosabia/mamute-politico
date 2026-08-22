@@ -6,6 +6,11 @@ import type * as endpointsModule from '@/api/endpoints';
 import type { CandidacyOut } from '@/api/types';
 
 vi.mock('@/components/layout/Header', () => ({ Header: () => <header /> }));
+
+const acessoState = { valor: 'liberada' as 'liberada' | 'bloqueada' | 'oculta' };
+vi.mock('@/hooks/useFeatureAccess', () => ({
+  useFeatureAccess: () => acessoState.valor,
+}));
 const toastInfo = vi.fn();
 const toastSuccess = vi.fn();
 vi.mock('sonner', () => ({
@@ -87,16 +92,19 @@ async function renderPagina() {
   );
 }
 
+// No topo, e não dentro de um describe: os dois blocos abaixo dependem disto.
+beforeEach(() => {
+  vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+  listCandidacies.mockReset();
+  listCandidacies.mockResolvedValue([VINCULADA, SEM_VINCULO]);
+  acessoState.valor = 'liberada';
+  toastInfo.mockReset();
+  toastSuccess.mockReset();
+  addMyProjectFavorite.mockReset();
+  addMyProjectFavorite.mockResolvedValue({ id: 1, parliamentarian_id: 77 });
+});
+
 describe('BuscarCandidaturasPage', () => {
-  beforeEach(() => {
-    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
-    listCandidacies.mockReset();
-    listCandidacies.mockResolvedValue([VINCULADA, SEM_VINCULO]);
-    toastInfo.mockReset();
-    toastSuccess.mockReset();
-    addMyProjectFavorite.mockReset();
-    addMyProjectFavorite.mockResolvedValue({ id: 1, parliamentarian_id: 77 });
-  });
 
   it('lista as candidaturas com badge do cargo e partido-UF', async () => {
     await renderPagina();
@@ -183,5 +191,34 @@ describe('BuscarCandidaturasPage', () => {
     expect(
       await screen.findByText('Nenhuma candidatura encontrada com esses filtros.'),
     ).toBeInTheDocument();
+  });
+});
+
+
+describe('BuscarCandidaturasPage — cadeado do plano (CS-58)', () => {
+  it('plano liberado vê a lista sem vitrine', async () => {
+    acessoState.valor = 'liberada';
+    await renderPagina();
+
+    expect(await screen.findByText('Luciana Ferreira')).toBeInTheDocument();
+    expect(screen.queryByText(/exclusivo para assinantes/i)).not.toBeInTheDocument();
+  });
+
+  it('plano em cadeado vê a chamada para assinar por cima dos resultados', async () => {
+    acessoState.valor = 'bloqueada';
+    await renderPagina();
+
+    expect(await screen.findByText(/exclusivo para assinantes/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ASSINAR PARA VER TUDO/i })).toBeInTheDocument();
+  });
+
+  it('feature não lançada ("oculta") abre a tela cheia: o link tem de funcionar', async () => {
+    // Decisão do Luiz: a flag governa o BUSCAR no header, não a rota — link
+    // colado abre a tela para revisão antes do lançamento.
+    acessoState.valor = 'oculta';
+    await renderPagina();
+
+    expect(await screen.findByText('Luciana Ferreira')).toBeInTheDocument();
+    expect(screen.queryByText(/exclusivo para assinantes/i)).not.toBeInTheDocument();
   });
 });

@@ -34,7 +34,7 @@ vi.mock('@/components/auth/fetchCurrentMember', () => ({ signOut: vi.fn() }));
 function renderHeader(props = {}) {
   return render(
     <MemoryRouter>
-      <Header tone="blue" actions="busca" {...props} />
+      <Header tone="blue" {...props} />
     </MemoryRouter>,
   );
 }
@@ -49,9 +49,10 @@ describe('Header — sino de notificações atrás da flag', () => {
     renderHeader();
 
     expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
-    // O resto das ações do design continua: a flag é só do sino.
+    // O resto do canto direito continua: a flag é só do sino.
     expect(screen.getByRole('link', { name: /BUSCAR/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sair' })).toBeInTheDocument();
+    // Dois: o da gaveta mobile e o da barra desktop.
+    expect(screen.getAllByText('CONTA').length).toBeGreaterThan(0);
   });
 
   it('mostra o sino com a flag ligada, e sem badge quando não há contagem', () => {

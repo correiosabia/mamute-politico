@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Filter, Loader2, Plus, X } from 'lucide-react';
@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LazyAvatarImage } from '@/components/ui/lazy-avatar-image';
+import { PaywallOverlay } from '@/components/paywall/PaywallOverlay';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { cn } from '@/lib/utils';
 import {
   addMyProjectFavorite,
@@ -51,6 +53,20 @@ const BADGE_POR_CARGO: Record<number, string> = {
   8: 'CÂMARA DISTRITAL',
 };
 
+/** Envolve os resultados na vitrine da CS-58 só quando o plano pede cadeado. */
+const ComCadeado = ({
+  ativo,
+  children,
+}: {
+  ativo: boolean;
+  children: ReactNode;
+}) =>
+  ativo ? (
+    <PaywallOverlay recurso="a busca de candidaturas">{children}</PaywallOverlay>
+  ) : (
+    <>{children}</>
+  );
+
 interface FiltrosAplicados {
   nome?: string;
   estado?: string;
@@ -74,6 +90,19 @@ const iniciais = (nome: string): string =>
 
 const BuscarCandidaturasPage = () => {
   const queryClient = useQueryClient();
+  /**
+   * Cadeado da CS-58. A rota não é gateada — link colado abre a tela — então é
+   * aqui que o plano decide o que a pessoa vê:
+   *
+   * - 'liberada'  → tela cheia;
+   * - 'bloqueada' → vitrine: resultados desfocados + chamada para assinar;
+   * - 'oculta'    → tela cheia também. 'oculta' é o estado de quem ainda não
+   *   lançou (flag `off`/`admins`), e é justamente o caso em que o link tem de
+   *   funcionar para revisão. Para o plano sem o recurso instigar a compra, o
+   *   admin marca **Cadeado** naquele plano, não "Oculto".
+   */
+  const acesso = useFeatureAccess('busca_candidaturas');
+  const cadeado = acesso === 'bloqueada';
 
   // Estado do formulário do herói (o design tem botão PESQUISAR explícito, então
   // digitar não dispara busca) e o estado efetivamente aplicado à listagem.
@@ -203,7 +232,7 @@ const BuscarCandidaturasPage = () => {
   return (
     <div className="flex min-h-screen flex-col bg-[#f1f1f1]">
       <div className="bg-[#1b76ff]">
-        <Header tone="blue" actions="busca" />
+        <Header tone="blue" />
 
         <section className="container pb-28 pt-10 text-center md:pb-32">
           <h1 className="text-[36px] font-bold leading-tight text-white md:text-[48px]">
@@ -351,6 +380,7 @@ const BuscarCandidaturasPage = () => {
             </div>
           )}
 
+          <ComCadeado ativo={cadeado}>
           <div className="mt-5 max-h-[420px] overflow-y-auto pr-1">
             {candidaciesQuery.isLoading ? (
               <p className="flex items-center gap-2 py-10 text-center text-[14px] text-[#7f7b7b]">
@@ -452,6 +482,7 @@ const BuscarCandidaturasPage = () => {
               </ul>
             )}
           </div>
+          </ComCadeado>
         </div>
       </main>
 

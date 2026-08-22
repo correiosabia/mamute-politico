@@ -56,13 +56,13 @@ describe('Header — BUSCAR como porta de entrada da tela de candidaturas', () =
     expect(buscar()).toHaveAttribute('href', '/candidaturas');
   });
 
-  it('aparece também no arranjo da tela de candidaturas', () => {
+  it('aparece também no header sobre o azul da tela de candidaturas', () => {
     flagState.busca_candidaturas = true;
-    renderHeader({ tone: 'blue', actions: 'busca' });
+    renderHeader({ tone: 'blue' });
 
     expect(buscar()).toHaveAttribute('href', '/candidaturas');
-    // E o SAIR do design segue lá, que é o que distingue esse arranjo.
-    expect(screen.getByRole('button', { name: 'Sair' })).toHaveTextContent('SAIR');
+    // O canto direito é o mesmo do resto do app: o botão de conta.
+    expect(screen.getAllByText('CONTA').length).toBeGreaterThan(0);
   });
 
   it('não aparece para visitante deslogado, mesmo com a flag ligada', () => {

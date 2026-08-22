@@ -7,9 +7,6 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { useAccountModal } from '@/components/auth/useAccountModal';
 import { useLoginModal } from '@/components/auth/useLoginModal';
-import { signOut as revokeGhostSessionOnServer } from '@/components/auth/fetchCurrentMember';
-import { ghostSignOut } from '@/components/auth/ghost-auth/react/useGhostAuth';
-import { toast } from 'sonner';
 import logoMamute from '@/assets/logo-mamute.png';
 
 const siteRootUrl = '/#/';
@@ -77,14 +74,6 @@ export interface HeaderProps {
    */
   tone?: 'gold' | 'blue';
   /**
-   * Ações do canto direito.
-   * 'account' (default) = CONTA / INICIAR SESSÃO, como no resto do app.
-   * 'busca' = SAIR (pílula vermelha), conforme o design da busca de
-   * candidaturas. BUSCAR e sino não moram aqui: cada um tem sua própria flag e
-   * valem em qualquer página.
-   */
-  actions?: 'account' | 'busca';
-  /**
    * Contador do sino. Sem valor (o caso de hoje), o sino aparece sem badge:
    * não existe fonte de notificações no backend — `events` é telemetria de uso
    * e `email_send_log` é log de envio, nenhum dos dois tem estado de lido.
@@ -95,7 +84,6 @@ export interface HeaderProps {
 
 export function Header({
   tone = 'gold',
-  actions = 'account',
   notificationCount = null,
 }: HeaderProps = {}) {
   const location = useLocation();
@@ -105,7 +93,6 @@ export function Header({
   const { openAccount } = useAccountModal();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
   const onBlue = tone === 'blue';
   // O sino é desenho do mockup sem backend por trás: não existe entidade de
   // notificação nem estado de lido/não lido (o módulo de notificação do projeto
@@ -127,21 +114,6 @@ export function Header({
     } else {
       closeMobileMenu();
       openLogin();
-    }
-  };
-
-  // Mesma sequência do AccountModal: revoga a sessão no Ghost e só então
-  // limpa o JWT local, senão a UI "desloga" com sessão viva no servidor.
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      await revokeGhostSessionOnServer();
-      ghostSignOut();
-      toast.success('Sessão encerrada');
-    } catch {
-      toast.error('Não foi possível encerrar a sessão. Tente novamente.');
-    } finally {
-      setSigningOut(false);
     }
   };
 
@@ -414,29 +386,17 @@ export function Header({
           </button>
           {botaoBuscar}
           {sinoNotificacoes}
-          {actions === 'busca' && token ? (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              disabled={signingOut}
-              className="hidden cursor-pointer rounded-[92px] bg-[#ff0004] px-6 py-2 text-[11px] font-bold uppercase tracking-wide text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
-              aria-label="Sair"
-            >
-              {signingOut ? 'SAINDO...' : 'SAIR'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleAuthClick}
-              className={cn(
-                'hidden cursor-pointer rounded-[92px] px-6 py-2 text-[11px] font-bold uppercase tracking-wide transition hover:opacity-90 md:inline-flex',
-                'hover:bg-[#ff0004] hover:text-white bg-[#f5f5f5] text-black'
-              )}
-              aria-label={token ? 'Sair' : 'Iniciar Sessão'}
-            >
-              {token ? <div className="flex items-center gap-2"><User className="h-5 w-5" /><span className="hidden md:block">{" "}CONTA</span></div> : 'INICIAR SESSÃO'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleAuthClick}
+            className={cn(
+              'hidden cursor-pointer rounded-[92px] px-6 py-2 text-[11px] font-bold uppercase tracking-wide transition hover:opacity-90 md:inline-flex',
+              'hover:bg-[#ff0004] hover:text-white bg-[#f5f5f5] text-black'
+            )}
+            aria-label={token ? 'Sair' : 'Iniciar Sessão'}
+          >
+            {token ? <div className="flex items-center gap-2"><User className="h-5 w-5" /><span className="hidden md:block">{" "}CONTA</span></div> : 'INICIAR SESSÃO'}
+          </button>
         </div>
       </div>
     </header>

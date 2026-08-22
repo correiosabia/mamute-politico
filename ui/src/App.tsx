@@ -25,8 +25,6 @@ import AdminEmendasPage from "./pages/AdminEmendasPage";
 import NotFound from "./pages/NotFound";
 import { useGhostAuth } from "@/components/auth/ghost-auth/react/useGhostAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useFeatureFlagStatus } from "@/hooks/useFeatureFlag";
-import type { FeatureFlagKey } from "@/lib/featureFlags";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { AccountModalProvider } from "@/components/auth/AccountModalProvider";
 import { LoginModalProvider } from "@/components/auth/LoginModalProvider";
@@ -57,35 +55,6 @@ function RequireAuth({ children }: { children: JSX.Element }) {
     return <Navigate to="/" replace />;
   }
 
-  return children;
-}
-
-/**
- * Portão de rota por feature flag. Feature nova nasce desligada (chave sem linha
- * no banco vale `off`), então a tela não existe para ninguém até alguém ligar em
- * /admin/configuracoes — e só aparece para o plano depois de sair de "Oculto"
- * na tela de Planos.
- *
- * Espera o `isLoading` antes de decidir, como o `RequireAdmin` abaixo:
- * redirecionar enquanto as flags carregam expulsaria quem tem acesso.
- *
- * `bloqueada` também não passa.
- */
-export function RequireFeature({
-  flag,
-  children,
-}: {
-  flag: FeatureFlagKey;
-  children: JSX.Element;
-}) {
-  const { liberada, isLoading } = useFeatureFlagStatus(flag);
-
-  if (isLoading) {
-    return null;
-  }
-  if (!liberada) {
-    return <Navigate to="/" replace />;
-  }
   return children;
 }
 
@@ -152,9 +121,7 @@ const App = () => (
                 path="/candidaturas"
                 element={
                   <RequireAuth>
-                    <RequireFeature flag="busca_candidaturas">
-                      <BuscarCandidaturasPage />
-                    </RequireFeature>
+                    <BuscarCandidaturasPage />
                   </RequireAuth>
                 }
               />

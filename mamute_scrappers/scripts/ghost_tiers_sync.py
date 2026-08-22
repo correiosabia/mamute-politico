@@ -43,6 +43,7 @@ ENTITLEMENT_KEYS = (
     "qtd_termos",
     "qtd_termos_camara",
     "qtd_termos_senado",
+    "qtd_candidatos",
     "qtd_consultas_ia_mes",
     "qtd_consultas_ia_semana",
     "qtd_email",
