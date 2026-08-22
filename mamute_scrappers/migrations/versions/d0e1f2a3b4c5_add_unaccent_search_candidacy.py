@@ -24,7 +24,7 @@ migration a9b0c1d2e3f4, que trouxe o pg_trgm. **Antes deste deploy alguem com
 superusuario precisa rodar `CREATE EXTENSION unaccent;` no banco de producao.**
 
 Revision ID: d0e1f2a3b4c5
-Revises: c9d0e1f2a3b4
+Revises: cs63b2c3d4e5
 Create Date: 2026-08-21 22:00:00.000000
 
 """
@@ -35,7 +35,7 @@ from alembic import op
 
 
 revision = "d0e1f2a3b4c5"
-down_revision = "c9d0e1f2a3b4"
+down_revision = "cs63b2c3d4e5"
 branch_labels = None
 depends_on = None
 

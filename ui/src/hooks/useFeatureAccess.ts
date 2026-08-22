@@ -30,6 +30,7 @@ export function useFeatureAccess(key: FeatureFlagKey): FeatureAccessValue {
     queryFn: fetchFeatureFlags,
     staleTime: 5 * 60 * 1000,
     retry: false,
+    enabled: Boolean(token),
   });
 
   const previewOn = useSyncExternalStore(
